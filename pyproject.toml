@@ -11,6 +11,9 @@ dependencies = [
     "constructs>=10.0,<11",
     # AWS SDK — used by the broker Lambda and the Phase 1 policy-simulation proof.
     "boto3>=1.34",
+    # LTI 1.3 id_token (JWT/JWKS) verification — Phase 4. [crypto] pulls cryptography
+    # for RS256. Bundled into the LTI Lambda via lti/requirements.txt.
+    "pyjwt[crypto]>=2.8",
 ]
 
 [dependency-groups]

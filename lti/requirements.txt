@@ -1,0 +1,3 @@
+# Runtime deps bundled into the LTI Lambda (PyJWT + cryptography for RS256
+# id_token verification). boto3 is provided by the Lambda runtime.
+pyjwt[crypto]>=2.8

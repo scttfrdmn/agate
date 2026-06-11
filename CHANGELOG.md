@@ -54,5 +54,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `ContextProvider` on `ChatSession` (grounding is sent per turn, never persisted).
   - Tenant-isolation proof (IAM policy simulation): a `chem`-scoped session may
     `QueryVectors` its own index and is **denied** the `psych` index (both directions).
+- Phase 4 — LTI 1.3 tool provider:
+  - `agg/lti.py`: pure, AWS-free mapping of an LTI 1.3 launch (roles, context, NRPS)
+    into the claims dict that the Phase 1 `claims_to_tags()` consumes — so LTI is one
+    concrete source of `agg:affiliation` / `agg:courses`, with no second tag scheme.
+    Instructor → faculty (mid tier), Learner → student (oss); plus pure nonce/state
+    replay-protection decisions.
+  - `lti/handler.py`: the four LTI 1.3 endpoints (`/lti/login`, `/lti/launch`,
+    `/.well-known/jwks.json`, `/lti/deeplink`) on one Lambda. The launch path
+    RS256-verifies the platform id_token against its JWKS and enforces
+    `iss`/`aud`/`exp`/`nonce`/`state` (single-use), failing closed on every check;
+    the validated claims are handed to the SPA for exchange at the Phase 1 broker.
+  - `infra/stacks/lti.py`: HTTP API + Lambda + two DynamoDB on-demand tables
+    (platform registrations; short-lived state/nonce with a TTL attribute). The
+    Lambda asset bundles PyJWT+cryptography via a local (Docker-free) bundler.
+  - Tests sign tokens with an in-test RSA keypair to exercise the real RS256 path:
+    valid launch, replayed state, nonce mismatch, tampered signature, expired token,
+    and wrong audience are all covered.
 
 [Unreleased]: https://github.com/scttfrdmn/aws-genai-gateway/commits/main

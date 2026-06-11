@@ -104,5 +104,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     member, a well-formed adjudication whose `pane` values are a subset of the
     roster labels, cost accumulation, and the malformed- **and** schema-invalid-
     adjudicator fallback paths.
+- Academic interaction model — Phase 3 (Analyze cell / Code Interpreter):
+  - `agg/analyze/schema.py`: pure, AWS-free `extract_code()` (pulls the Python
+    script from the model's fenced output), `parse_invoke_result()` (normalises an
+    AgentCore `InvokeCodeInterpreter` stream result into text/image content blocks),
+    and `result_to_events()` (maps a result to `answer`/`chart` events, surfacing a
+    traceback on error rather than swallowing it).
+  - `agg/analyze/prompts.py`: the `ANALYZE_SYSTEM` prompt (one self-contained,
+    network-free Python script; chart saved to a known path for inline rendering).
+  - `agg/analyze/orchestrator.py`: `run_analyze` over injected `Backend` /
+    `CodeRunner` (the Code Interpreter microVM) / `CostMeter` — generate → emit the
+    editable `code` cell → execute in the sandbox → emit `answer`/`chart`. Execution
+    time is metered as a **compute** line distinct from token cost (`add_compute`),
+    and the re-run path accepts edited code and skips generation.
+  - Tests (fakes only, no AWS): generate→code→chart ordering, the re-run path
+    skipping generation, compute-vs-token metering separation, and the error path.
 
 [Unreleased]: https://github.com/scttfrdmn/aws-genai-gateway/commits/main

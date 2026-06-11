@@ -71,5 +71,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tests sign tokens with an in-test RSA keypair to exercise the real RS256 path:
     valid launch, replayed state, nonce mismatch, tampered signature, expired token,
     and wrong audience are all covered.
+- Academic interaction model (§10.2) — spec added under `docs/`.
+- Academic interaction model — Phase 1 (event protocol + SPA panes):
+  - `web/src/events/protocol.ts`: the run event protocol — the `pane` field on
+    `model`, and the new `divergence`, `citation`, and `artifact` events, alongside
+    the existing `route`/`answer`/`code`/`chart`/`cost`/`receipt`/`guardrail`/
+    `policy_denied` events. Additive and backward-compatible; transport-agnostic
+    `Emit` contract (browser, CLI runner, and test collector share it).
+  - `web/src/events/collector.ts`: an `EventCollector` sink plus a pure
+    `reduce()` / `runStateFrom()` that folds an ordered event stream into render
+    state (Panel panes keyed by label, single-stream Ask answer, Analyze cells,
+    divergence, running cost). Unknown event types pass through (forward-compatible).
+  - `web/src/panes/render.ts`: framework-free rendering of the multi-pane Panel
+    layout, the side-by-side divergence view (agreement/disagreement/unsupported
+    with a verify flag), and the notebook-style editable, re-runnable Analyze cell.
+  - Vitest tests (fakes only, no AWS): the event collector, the reducer over Panel/
+    Ask/Analyze runs, backward-compatibility with unknown events, and the divergence
+    and Analyze-cell rendering.
+- Academic interaction model — Phase 2 (Panel orchestration + adjudicator contract):
+  - `agg/panel/schema.py`: the `Divergence` Pydantic model mirroring the §10.2.5
+    draft-07 schema (forbids extra properties, requires ≥1 position per claim,
+    constrains the stance/kind enums) plus `strip_fences()` for accidental Markdown
+    fences around the adjudicator's JSON.
+  - `agg/panel/prompts.py`: the `ADJUDICATE_SYSTEM` prompt (structured-only output)
+    and a default review prompt; reviewer labels are roster config, kept neutral.
+  - `agg/panel/orchestrator.py`: `run_panel` — N roster members review the same
+    evidence in parallel over injected `Backend`/`CostMeter` interfaces (no AWS in
+    core), each emitting its own `model` start/done + per-pane `cost`; the
+    adjudication tail validates the structured output and emits a `divergence`
+    event, falling back to an unstructured `answer` on malformed/invalid output.
+  - Tests (fakes only, no AWS): per-pane events, identical evidence to every
+    member, a well-formed adjudication whose `pane` values are a subset of the
+    roster labels, cost accumulation, and the malformed- **and** schema-invalid-
+    adjudicator fallback paths.
 
 [Unreleased]: https://github.com/scttfrdmn/aws-genai-gateway/commits/main

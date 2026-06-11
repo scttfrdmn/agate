@@ -88,5 +88,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Vitest tests (fakes only, no AWS): the event collector, the reducer over Panel/
     Ask/Analyze runs, backward-compatibility with unknown events, and the divergence
     and Analyze-cell rendering.
+- Academic interaction model — Phase 2 (Panel orchestration + adjudicator contract):
+  - `agg/panel/schema.py`: the `Divergence` Pydantic model mirroring the §10.2.5
+    draft-07 schema (forbids extra properties, requires ≥1 position per claim,
+    constrains the stance/kind enums) plus `strip_fences()` for accidental Markdown
+    fences around the adjudicator's JSON.
+  - `agg/panel/prompts.py`: the `ADJUDICATE_SYSTEM` prompt (structured-only output)
+    and a default review prompt; reviewer labels are roster config, kept neutral.
+  - `agg/panel/orchestrator.py`: `run_panel` — N roster members review the same
+    evidence in parallel over injected `Backend`/`CostMeter` interfaces (no AWS in
+    core), each emitting its own `model` start/done + per-pane `cost`; the
+    adjudication tail validates the structured output and emits a `divergence`
+    event, falling back to an unstructured `answer` on malformed/invalid output.
+  - Tests (fakes only, no AWS): per-pane events, identical evidence to every
+    member, a well-formed adjudication whose `pane` values are a subset of the
+    roster labels, cost accumulation, and the malformed- **and** schema-invalid-
+    adjudicator fallback paths.
 
 [Unreleased]: https://github.com/scttfrdmn/aws-genai-gateway/commits/main

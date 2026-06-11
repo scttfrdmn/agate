@@ -169,3 +169,77 @@ def test_jwks_endpoint_returns_empty_set_by_default(wired, monkeypatch):
     resp = lti.jwks()
     assert resp["statusCode"] == 200
     assert '"keys": []' in resp["body"] or '"keys":[]' in resp["body"]
+
+
+# --- login (OIDC third-party init) ------------------------------------------
+
+
+def test_login_issues_state_and_redirects_to_platform(wired):
+    _, store = wired
+    resp = lti.login({"iss": ISSUER, "login_hint": "u1", "client_id": CLIENT_ID})
+    assert resp["statusCode"] == 302
+    loc = resp["headers"]["location"]
+    assert loc.startswith("https://lms.example.edu/auth?")
+    assert "state=" in loc and "nonce=" in loc
+    assert "response_type=id_token" in loc
+    # State+nonce persisted for the upcoming launch.
+    assert len(store) == 1
+
+
+def test_login_missing_fields_fails_closed(wired):
+    with pytest.raises(lti.LtiError):
+        lti.login({"iss": ISSUER})  # no login_hint
+
+
+# --- HTTP API router + body parsing -----------------------------------------
+
+
+def _event(path: str, *, method: str = "GET", body: str = "", query: dict | None = None):
+    return {
+        "rawPath": path,
+        "requestContext": {"http": {"method": method, "path": path}},
+        "queryStringParameters": query,
+        "body": body,
+    }
+
+
+def test_router_dispatches_login(wired):
+    resp = lti.handler(
+        _event("/lti/login", query={"iss": ISSUER, "login_hint": "u1", "client_id": CLIENT_ID}),
+        None,
+    )
+    assert resp["statusCode"] == 302
+
+
+def test_router_jwks(wired):
+    resp = lti.handler(_event("/.well-known/jwks.json"), None)
+    assert resp["statusCode"] == 200
+
+
+def test_router_deeplink(wired):
+    resp = lti.handler(_event("/lti/deeplink", method="POST"), None)
+    assert resp["statusCode"] == 200
+
+
+def test_router_unknown_path_404(wired):
+    resp = lti.handler(_event("/nope"), None)
+    assert resp["statusCode"] == 404
+
+
+def test_router_maps_lti_error_to_400(wired):
+    # login with missing login_hint -> LtiError -> 400 (not a 500).
+    resp = lti.handler(_event("/lti/login", query={"iss": ISSUER}), None)
+    assert resp["statusCode"] == 400
+
+
+def test_form_parses_urlencoded_and_json():
+    assert lti._form({"body": "a=1&b=two"}) == {"a": "1", "b": "two"}
+    assert lti._form({"body": '{"a": 1}'}) == {"a": 1}
+    assert lti._form({"body": ""}) == {}
+
+
+def test_form_handles_base64_body():
+    import base64
+
+    encoded = base64.b64encode(b"x=9").decode()
+    assert lti._form({"body": encoded, "isBase64Encoded": True}) == {"x": "9"}

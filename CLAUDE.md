@@ -51,7 +51,11 @@ of truth; this file is the coding contract on top of it. Security rationale is
 ## Code style
 
 **Python**
-- Lint + format with **ruff**. Full type hints. Keep functions small.
+- Write **idiomatic, Pythonic** code — clear names, small functions, standard idioms over cleverness,
+  full type hints. Prefer the obvious construct a Python reader expects.
+- Lint + format with **ruff** (the standard Python linter/formatter as of June 2026; if the toolchain
+  moves on, use whatever the current standard is). `ruff check` and `ruff format` must be clean before
+  a change is done.
 - Keep pure logic pure: `CostMeter` / `pricing` are side-effect-free and unit-tested without AWS.
   Don't couple cost math to boto3 calls.
 - `pytest`; mock boto3 (moto or stubs). No live AWS in unit tests.
@@ -68,7 +72,8 @@ of truth; this file is the coding contract on top of it. Security rationale is
 
 ## Common commands
 
-- `uv sync` — install/refresh Python deps. `uv run pytest` — tests. `uv run ruff check && uv run ruff format`.
+- `uv sync` — install/refresh Python deps. `uv run pytest` — tests **with the coverage gate**.
+  `uv run ruff check && uv run ruff format` — lint + format (must be clean).
 - `npx cdk synth` / `npx cdk deploy <stack>` — synth/deploy (uses the pinned `aws-cdk-lib`).
 - `go test ./...` / `go build ./cli/...`.
 
@@ -76,7 +81,13 @@ of truth; this file is the coding contract on top of it. Security rationale is
 
 - Unit-test all pure logic — cost, pricing, ABAC claim→tag translation, LTI token handling — with no
   AWS dependency.
-- A change isn't done until its tests pass **and** the changelog is updated.
+- **Maintain ≥ 60% unit-test coverage** over our own source (the pure libs and Lambda handlers; CDK
+  stacks are exercised by `cdk synth`, not unit tests). The bar is a floor, not a target — cover the
+  load-bearing and security-critical paths thoroughly, and add tests as appropriate, not just to move
+  the number. The gate is wired into `pytest` (`--cov-fail-under=60`); a plain `uv run pytest` enforces
+  it. The TS suite (`vitest`) covers the SPA's pure logic in the same spirit.
+- A change isn't done until its tests pass, coverage holds, ruff is clean, **and** the changelog is
+  updated.
 
 ## Security
 

@@ -18,8 +18,13 @@ export interface ConverseRequest {
 
 // A streamed token plus optional usage on the final chunk (used by the
 // non-authoritative client-side cost estimate — design §7.2).
+//
+// `delta` is answer text. Reasoning models (e.g. gpt-oss) also stream
+// chain-of-thought as `reasoning` deltas before the answer; they are surfaced on
+// a separate channel so the answer stays clean and the UI can show "thinking…".
 export interface ConverseChunk {
   delta: string;
+  reasoning?: string;
   done: boolean;
   usage?: { inputTokens: number; outputTokens: number };
 }

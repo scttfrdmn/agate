@@ -1,0 +1,41 @@
+[project]
+name = "aws-genai-gateway"
+version = "0.1.0"
+description = "AWS-native GenAI gateway for higher education (agg) — CDK app, identity broker, and shared pure logic."
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+license = { text = "Apache-2.0" }
+dependencies = [
+    # IaC — CDK v2. There is no v3. Pin >=2.215 (CLAUDE.md), allow current line.
+    "aws-cdk-lib>=2.215,<3",
+    "constructs>=10.0,<11",
+    # AWS SDK — used by the broker Lambda and the Phase 1 policy-simulation proof.
+    "boto3>=1.34",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "boto3-stubs[bedrock-runtime,iam,sts,cognito-identity]>=1.34",
+]
+
+# This is a CDK app + shared library, not a published wheel. uv manages the env;
+# we expose the pure packages on sys.path for imports and tests rather than building.
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = [
+    "aws: live, read-only AWS calls (IAM policy simulation). Skipped without creds.",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["agg", "infra", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

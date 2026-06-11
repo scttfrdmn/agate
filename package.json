@@ -1,0 +1,14 @@
+{
+  "name": "aws-genai-gateway-toolchain",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Node toolchain for agg. IaC is Python CDK; the aws-cdk CLI + jsii runtime require Node (see README).",
+  "scripts": {
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.1029.0"
+  }
+}

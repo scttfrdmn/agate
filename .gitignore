@@ -1,0 +1,42 @@
+# --- Secrets / local config (NEVER commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+aws-exports.json
+
+# --- Python / uv ---
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# --- CDK ---
+infra/cdk.out/
+cdk.out/
+cdk.context.json
+.cdk.staging/
+
+# --- Node / web ---
+node_modules/
+web/dist/
+*.tsbuildinfo
+.vite/
+
+# --- Go ---
+cli/agg
+cli/bin/
+*.test
+*.out
+
+# --- Editor / OS ---
+.DS_Store
+.idea/
+.vscode/
+*.swp

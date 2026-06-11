@@ -1,0 +1,13 @@
+{
+  "app": "uv run python infra/app.py",
+  "watch": {
+    "include": ["infra/**", "agg/**", "policy/**"],
+    "exclude": ["**/__pycache__", "web", "cli", "docs", ".venv"]
+  },
+  "context": {
+    "@aws-cdk/core:newStyleStackSynthesis": true,
+    "aws-cdk:enableDiffNoFail": true,
+    "@aws-cdk/aws-iam:minimizePolicies": true,
+    "_comment_federation": "Supply campus IdP federation at deploy time, e.g. -c saml_provider_arn=arn:aws:iam::ACCT:saml-provider/CampusIdP"
+  }
+}

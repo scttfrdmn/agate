@@ -5,8 +5,10 @@
 // the client. History is in-memory only (persistence is a later phase).
 
 import { CredentialManager } from "./auth/credentials";
-import { ChatSession } from "./chat/session";
+import { ChatSession, type ContextProvider } from "./chat/session";
 import { config } from "./config";
+import { withContext } from "./rag/context";
+import { Retriever } from "./rag/retriever";
 import { BedrockTransport } from "./transport/bedrock";
 
 // Phase 2 placeholder IdP token provider. Phase 4 replaces this with the real
@@ -44,7 +46,36 @@ function main(): void {
 
   const creds = new CredentialManager(config.brokerUrl, idpTokenFromHash);
   const transport = new BedrockTransport(config.region, () => creds.get());
-  const session = new ChatSession(transport, config.defaultModelId);
+
+  // RAG is enabled when a vector bucket is configured. The tenant index is
+  // derived from the session scope the broker returns — the credential can only
+  // read the index its agg:tenant tag matches, so retrieval scope == access scope.
+  let contextProvider: ContextProvider | undefined;
+  if (config.vectorBucketName) {
+    contextProvider = async (query: string) => {
+      await creds.get(); // ensure scope is populated
+      const tenant = creds.scope?.tenant;
+      if (!tenant) return [];
+      const retriever = new Retriever(
+        {
+          region: config.region,
+          vectorBucketName: config.vectorBucketName,
+          indexName: `agg-${tenant}`,
+        },
+        () => creds.get(),
+      );
+      const chunks = await retriever.retrieve(query);
+      return withContext([], chunks);
+    };
+  }
+
+  const session = new ChatSession(
+    transport,
+    config.defaultModelId,
+    undefined,
+    undefined,
+    contextProvider,
+  );
 
   const log = document.getElementById("log")!;
   const form = document.getElementById("f") as HTMLFormElement;

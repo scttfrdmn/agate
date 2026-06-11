@@ -72,4 +72,19 @@ describe("ChatSession", () => {
     expect(t.lastRequest?.maxTokens).toBe(256);
     expect(t.lastRequest?.messages.map((m) => m.role)).toEqual(["system", "user"]);
   });
+
+  it("prepends RAG context for the turn without persisting it to history", async () => {
+    const t = new FakeTransport([{ delta: "grounded", done: true }]);
+    const provider = async (q: string) => [
+      { role: "system" as const, content: `context for: ${q}` },
+    ];
+    const s = new ChatSession(t, "m", undefined, undefined, provider);
+    await s.send("what is X?");
+
+    // The transport saw the grounding context first, then the user turn.
+    expect(t.lastRequest?.messages.map((m) => m.role)).toEqual(["system", "user"]);
+    expect(t.lastRequest?.messages[0].content).toBe("context for: what is X?");
+    // History holds only the real turns — context is not persisted.
+    expect(s.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
+  });
 });

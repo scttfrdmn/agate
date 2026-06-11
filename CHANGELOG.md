@@ -38,5 +38,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Vitest unit tests for the refresh decision, message mapping, and chat accumulation;
     an opt-in live `ConverseStream` smoke test (`AGG_LIVE_SMOKE=1`), verified against
     Bedrock.
+- Phase 3 — data plane (S3 Vectors RAG):
+  - `infra/stacks/data.py`: an `agg-docs` S3 bucket (per-tenant prefix, versioned,
+    retained), an S3 Vectors vector bucket with one **index per tenant** (1024-dim,
+    cosine), and a **per-tenant KMS CMK** on each index. Each index is tagged with its
+    `agg:tenant` so the Phase 1 ABAC data-scope policy isolates reads. Built on L1
+    `Cfn*` constructs (no L2 for S3 Vectors yet).
+  - `ingest/handler.py`: embed-on-upload Lambda — S3 `ObjectCreated` → chunk → Bedrock
+    Titan embeddings → `PutVectors` into the tenant's index. Tenant is derived from the
+    key prefix and fails closed; one bad object never aborts the batch.
+  - `agg/rag.py`: pure, AWS-free chunking, tenant-key derivation, and vector-record
+    assembly with full unit-test coverage.
+  - `web/src/rag/`: query-embed → scoped `QueryVectors` on the tenant index → context
+    injection; a pure, unit-tested context builder. RAG is opt-in via an optional
+    `ContextProvider` on `ChatSession` (grounding is sent per turn, never persisted).
+  - Tenant-isolation proof (IAM policy simulation): a `chem`-scoped session may
+    `QueryVectors` its own index and is **denied** the `psych` index (both directions).
 
 [Unreleased]: https://github.com/scttfrdmn/aws-genai-gateway/commits/main

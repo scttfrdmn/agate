@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import aws_cdk as cdk  # noqa: E402
 
+from infra.stacks.data import DataStack  # noqa: E402
 from infra.stacks.identity import IdentityStack  # noqa: E402
 
 app = cdk.App()
@@ -28,5 +29,6 @@ env = cdk.Environment(
 )
 
 IdentityStack(app, "agg-identity", env=env)
+DataStack(app, "agg-data", env=env)
 
 app.synth()

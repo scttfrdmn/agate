@@ -5,6 +5,11 @@
 
 import type { ChatMessage, ConverseChunk, Transport } from "../transport";
 
+// Optional RAG hook: given the user's question, return extra messages (e.g. a
+// grounding system message from withContext()) to prepend for this turn only.
+// Keeping it a plain function leaves ChatSession decoupled from S3 Vectors.
+export type ContextProvider = (query: string) => Promise<ChatMessage[]>;
+
 export interface SendResult {
   text: string;
   usage?: { inputTokens: number; outputTokens: number };
@@ -23,6 +28,10 @@ export class ChatSession {
     private readonly modelId: string,
     system?: string,
     private readonly maxTokens?: number,
+    // Optional retrieval hook (Phase 3 RAG). When set, each turn is grounded in
+    // the user's own in-scope documents; retrieved context is sent for that turn
+    // only and never persisted to history (it is re-derived per question).
+    private readonly contextProvider?: ContextProvider,
   ) {
     if (system) {
       this.history.push({ role: "system", content: system });
@@ -48,13 +57,19 @@ export class ChatSession {
   ): Promise<SendResult> {
     this.history.push({ role: "user", content: userText });
 
+    // Retrieve grounding context for this turn (if RAG is wired). Prepended to
+    // the sent messages but NOT stored in history — it's re-derived per question.
+    const grounding = this.contextProvider
+      ? await this.contextProvider(userText)
+      : [];
+
     let text = "";
     let usage: SendResult["usage"];
     // Snapshot history so the transport never sees a live reference that mutates
     // (we append the assistant turn below) during a lazy stream.
     for await (const chunk of this.transport.converse({
       modelId: this.modelId,
-      messages: [...this.history],
+      messages: [...grounding, ...this.history],
       maxTokens: this.maxTokens,
     })) {
       const c: ConverseChunk = chunk;

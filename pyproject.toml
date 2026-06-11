@@ -11,6 +11,9 @@ dependencies = [
     "constructs>=10.0,<11",
     # AWS SDK — used by the broker Lambda and the Phase 1 policy-simulation proof.
     "boto3>=1.34",
+    # LTI 1.3 id_token (JWT/JWKS) verification — Phase 4. [crypto] pulls cryptography
+    # for RS256. Bundled into the LTI Lambda via lti/requirements.txt.
+    "pyjwt[crypto]>=2.8",
 ]
 
 [dependency-groups]
@@ -18,6 +21,7 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.6",
     "boto3-stubs[bedrock-runtime,iam,sts,cognito-identity]>=1.34",
+    "pytest-cov>=7.1.0",
 ]
 
 # This is a CDK app + shared library, not a published wheel. uv manages the env;
@@ -28,8 +32,19 @@ package = false
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+# Coverage on by default over our own source. The 60% floor is a hard gate
+# (CLAUDE.md); the suite currently sits well above it. CDK stacks under
+# infra/stacks/ are exercised by `cdk synth`, not unit tests, so they are omitted.
+addopts = "--cov=agg --cov=policy --cov=lti --cov=ingest --cov=infra/functions --cov-fail-under=60"
 markers = [
     "aws: live, read-only AWS calls (IAM policy simulation). Skipped without creds.",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
 ]
 
 [tool.ruff]

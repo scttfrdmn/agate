@@ -176,5 +176,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     coordinates are deploy-time context (PLACEHOLDER until supplied).
   - Wired into the CDK app; `cdk synth` verified for all four stacks (identity,
     data, lti, agent), with and without the Cognito authorizer context.
+- Phase 8 — agent path: reference agent container + agent transport:
+  - `agg/agent_dispatch.py`: pure, AWS-free `dispatch()` that resolves the mode
+    (router or explicit override) and drives the matching orchestration — Ask, Panel
+    (`run_panel`), or Analyze (`run_analyze`) — over injected `Backend`/`CodeRunner`/
+    `CostMeter`, emitting the run event stream. Fully unit-tested with fakes.
+  - `agent/`: the reference agent container — a stdlib HTTP server (`server.py`)
+    honouring the AgentCore Runtime protocol (`POST /invocations`, `GET /ping`,
+    port 8080) that decodes the payload, runs dispatch, and returns the event stream
+    as newline-delimited JSON; Bedrock-backed `Backend`/`CodeRunner`/`CostMeter`
+    adapters (`backends.py`); a Python 3.13 non-root `Dockerfile`. No web framework.
+  - `web/src/transport/agentcore.ts`: the agent-path transport implemented —
+    `InvokeAgentRuntime` with scoped credentials and a session id, decoding the
+    NDJSON response blob into the shared `RunEvent` stream; also satisfies the
+    `Transport` interface's `converse` for uniform tier handling.
+  - Tests (fakes only, Python + TypeScript): mode routing/override, per-mode
+    orchestration dispatch, error paths, the invocation→receipt flow, the NDJSON
+    event codec, and the payload round-trip.
 
 [Unreleased]: https://github.com/scttfrdmn/aws-genai-gateway/commits/main

@@ -1,19 +1,23 @@
-"""Phase 3 — the data plane (design §4, §12 Phase 3).
+"""The data plane (design §4; §12 Phase 3 text RAG + §10.2.7 multimodal KB).
 
 Per-tenant document storage + vector retrieval, all storage-priced (NO CLOCKS):
-  * one `agg-docs-*` S3 bucket, partitioned by tenant prefix `s3://.../{tenant}/...`
-  * one S3 Vectors **vector bucket** + one **index per tenant**, each tagged with
-    `agg:tenant` so the Phase 1 ABAC data-scope policy isolates reads.
-  * a **per-tenant KMS CMK** on each vector index (security memo §6: per-index CMK).
+  * one `agg-docs-*` S3 bucket, partitioned by tenant prefix `s3://.../{tenant}/...`,
+    with a `_mm-artifacts/` sub-prefix for processed multimodal artifacts.
+  * one S3 Vectors **vector bucket** + **two indexes per tenant** — a 1024-dim
+    text index and a 3072-dim multimodal index — each tagged with `agg:tenant` so
+    the Phase 1 ABAC data-scope policy isolates reads.
+  * a **per-tenant KMS CMK** encrypting both of that tenant's indexes (security
+    memo §6: per-index CMK).
 
 S3 Vectors has no L2 construct yet, so we use the L1 `Cfn*` constructs from
-`aws_cdk.aws_s3vectors` (CLAUDE.md: use L1 where no L2 exists). Tenants are
-deploy-time config (the university org chart IS the tenancy model, design §7):
-supply `-c tenants=chem,psych,kempner`; defaults to a single demo tenant.
+`aws_cdk.aws_s3vectors` (CLAUDE.md: use L1 where no L2 exists; migration tracked
+in #22). Tenants are deploy-time config (the university org chart IS the tenancy
+model, design §7): supply `-c tenants=chem,psych,kempner`; defaults to one demo.
 
-Embeddings are `amazon.titan-embed-text-v2:0` (1024-dim, cosine) — the ingest
-Lambda and the web query path must agree on this; it is the one knob that, if
-changed, requires re-embedding every index.
+Two embedding contracts, each pinned to its index dimension: text is
+`amazon.titan-embed-text-v2:0` (1024-dim) and multimodal is
+`amazon.nova-2-multimodal-embeddings-v1:0` (3072-dim, gate-verified in #17).
+Changing a model/dimension requires re-embedding that index.
 """
 
 from __future__ import annotations
@@ -43,12 +47,21 @@ from aws_cdk import (
 )
 from constructs import Construct
 
-# Embedding model contract — shared with ingest/ and web/src/rag. Changing the
+# Text embedding contract — shared with ingest/ and web/src/rag. Changing the
 # dimension or model means re-embedding; keep it in one place.
 EMBED_MODEL_ID = "amazon.titan-embed-text-v2:0"
 EMBED_DIMENSION = 1024
 DISTANCE_METRIC = "cosine"
 DATA_TYPE = "float32"
+
+# Multimodal embedding contract (§10.2.7, gate-verified — issue #17). The Nova
+# multimodal model embeds text/image/audio/video at 3072 dims, so the multimodal
+# index has its OWN dimension and is separate from the 1024-dim text index.
+MM_EMBED_MODEL_ID = "amazon.nova-2-multimodal-embeddings-v1:0"
+MM_EMBED_DIMENSION = 3072
+# S3 prefix (within the docs bucket) for processed multimodal artifacts the KB
+# emits — the "designated multimodal storage" the supplemental config points at.
+MM_STORAGE_PREFIX = "_mm-artifacts"
 
 DEFAULT_TENANTS = ["demo"]
 
@@ -88,39 +101,53 @@ class DataStack(Stack):
         )
 
         self.tenant_indexes: dict[str, s3vectors.CfnIndex] = {}
+        self.tenant_mm_indexes: dict[str, s3vectors.CfnIndex] = {}
         self.tenant_keys: dict[str, kms.Key] = {}
 
-        for tenant in tenants:
-            # Per-tenant CMK (security memo §6, §9). Rotated; retained with records.
-            key = kms.Key(
-                self,
-                f"Cmk{_pascal(tenant)}",
-                alias=f"alias/{HANDLE}-{tenant}",
-                enable_key_rotation=True,
-                description=f"agg per-tenant CMK for {tenant} vector index",
-                removal_policy=cdk.RemovalPolicy.RETAIN,
+        def _index(tenant: str, key: kms.Key, *, suffix: str, dimension: int) -> s3vectors.CfnIndex:
+            # One S3 Vectors index. The tenant tag is the ABAC isolation primitive
+            # (Phase 1 §13.3): the data-scope policy permits QueryVectors only where
+            # the index's agg:tenant tag matches the session's principal tag.
+            cid = (
+                f"Index{_pascal(tenant)}{_pascal(suffix)}" if suffix else f"Index{_pascal(tenant)}"
             )
-
-            index = s3vectors.CfnIndex(
+            name = f"{HANDLE}-{tenant}-{suffix}" if suffix else f"{HANDLE}-{tenant}"
+            idx = s3vectors.CfnIndex(
                 self,
-                f"Index{_pascal(tenant)}",
+                cid,
                 vector_bucket_name=vector_bucket.vector_bucket_name,
-                index_name=f"{HANDLE}-{tenant}",
+                index_name=name,
                 data_type=DATA_TYPE,
-                dimension=EMBED_DIMENSION,
+                dimension=dimension,
                 distance_metric=DISTANCE_METRIC,
                 encryption_configuration=s3vectors.CfnIndex.EncryptionConfigurationProperty(
                     sse_type="aws:kms",
                     kms_key_arn=key.key_arn,
                 ),
-                # The tenant tag is the ABAC isolation primitive (Phase 1 §13.3):
-                # the data-scope policy permits QueryVectors only where the index's
-                # agg:tenant tag matches the session's agg:tenant principal tag.
                 tags=[cdk.CfnTag(key=tag_key("tenant"), value=tenant)],
             )
-            index.add_dependency(vector_bucket)
+            idx.add_dependency(vector_bucket)
+            return idx
 
-            self.tenant_indexes[tenant] = index
+        for tenant in tenants:
+            # Per-tenant CMK (security memo §6, §9). Rotated; retained with records.
+            # The same CMK encrypts both the tenant's text and multimodal indexes.
+            key = kms.Key(
+                self,
+                f"Cmk{_pascal(tenant)}",
+                alias=f"alias/{HANDLE}-{tenant}",
+                enable_key_rotation=True,
+                description=f"agg per-tenant CMK for {tenant} vector indexes",
+                removal_policy=cdk.RemovalPolicy.RETAIN,
+            )
+
+            # Text index (1024-dim) — the Phase 3 RAG store, unchanged.
+            self.tenant_indexes[tenant] = _index(tenant, key, suffix="", dimension=EMBED_DIMENSION)
+            # Multimodal index (3072-dim, §10.2.7) — separate index, same tenant
+            # tag, same CMK. Built ALONGSIDE the text index, not replacing it.
+            self.tenant_mm_indexes[tenant] = _index(
+                tenant, key, suffix="mm", dimension=MM_EMBED_DIMENSION
+            )
             self.tenant_keys[tenant] = key
 
         # --- Embed-on-upload ingest Lambda --------------------------------
@@ -183,6 +210,16 @@ class DataStack(Stack):
         cdk.CfnOutput(self, "VectorBucketName", value=vector_bucket.vector_bucket_name)
         cdk.CfnOutput(self, "Tenants", value=",".join(tenants))
         cdk.CfnOutput(self, "EmbedModelId", value=EMBED_MODEL_ID)
+        cdk.CfnOutput(self, "MultimodalEmbedModelId", value=MM_EMBED_MODEL_ID)
+        cdk.CfnOutput(self, "MultimodalIndexDimension", value=str(MM_EMBED_DIMENSION))
+        # Supplemental multimodal-storage location (§10.2.7): processed visual
+        # artifacts live under this prefix of the docs bucket. A managed KB's
+        # SupplementalDataStorageConfiguration points at s3://{docs}/{tenant}/_mm-artifacts/.
+        cdk.CfnOutput(
+            self,
+            "MultimodalStoragePrefix",
+            value=f"s3://{docs_bucket.bucket_name}/<tenant>/{MM_STORAGE_PREFIX}/",
+        )
 
         self.docs_bucket = docs_bucket
         self.vector_bucket = vector_bucket

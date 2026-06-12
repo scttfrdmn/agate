@@ -119,5 +119,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     and the re-run path accepts edited code and skips generation.
   - Tests (fakes only, no AWS): generate→code→chart ordering, the re-run path
     skipping generation, compute-vs-token metering separation, and the error path.
+- Academic interaction model — Phase 4 (multimodal knowledge base):
+  - §10.2.7 Phase-0 verification gate completed first (issue #17): confirmed
+    `amazon.nova-2-multimodal-embeddings-v1:0` (TEXT/IMAGE/AUDIO/VIDEO → embedding,
+    **3072-dim**), S3 Vectors as a first-class Bedrock-KB backend
+    (`s3_vectors_configuration`), and the supplemental multimodal-storage location.
+  - `agg/multimodal.py`: pure, AWS-free helpers — the Nova embedding request/response
+    mapping, ingestion-path selection (native multimodal vs parser+text fallback),
+    and visual-citation resolution (`citation` event + figure/table corpus deep links).
+  - `infra/stacks/data.py`: a **3072-dim multimodal S3 Vectors index per tenant**,
+    built alongside (not replacing) the 1024-dim text index, sharing the tenant CMK
+    and `agg:tenant` tag; a `_mm-artifacts/` supplemental-storage prefix. Embedding
+    dimension is now per-index config, not a global constant.
+  - `web/src/rag/multimodal.ts` + `citation.ts`: query-by-image and figure-aware
+    text retrieval against the multimodal index, and visual-citation/deep-link
+    resolution mirroring the Python helpers.
+  - Tests (fakes only, no AWS) across Python and TypeScript: embedding request
+    shapes, path selection, the 3072-vs-1024 dimension guard, and citation/deep-link
+    resolution for text vs figure vs table.
 
 [Unreleased]: https://github.com/scttfrdmn/aws-genai-gateway/commits/main

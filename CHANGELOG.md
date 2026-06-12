@@ -164,3 +164,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tests (fakes only): classification of tokens/cues/ambiguous input, override
     precedence, and that the routing call is metered, emits only `route`, and is
     skipped entirely when the user forces a mode.
+- Phase 8 — agent path: AgentCore Runtime deploy stack (`infra/stacks/agent.py`):
+  - `CfnRuntime` hosting the (already-built) Panel/Analyze/router orchestration as a
+    framework-agnostic container, with `network_mode=PUBLIC` (no VPC) so it scales to
+    zero with no idle clock; a `CfnRuntimeEndpoint`; and a `CfnCodeInterpreterCustom`
+    (PUBLIC) sandbox for Analyze. L1 `Cfn*` (no L2 yet; migration tracked in #22).
+  - Inbound auth via a Cognito `custom_jwt_authorizer` (OIDC discovery URL + app
+    audience from deploy context) so the campus user's identity flows into the
+    session; the Runtime's own execution role is the scoped outbound tool identity
+    (Bedrock invoke + tenant S3 Vectors read). The agent container image and IdP
+    coordinates are deploy-time context (PLACEHOLDER until supplied).
+  - Wired into the CDK app; `cdk synth` verified for all four stacks (identity,
+    data, lti, agent), with and without the Cognito authorizer context.
+
+[Unreleased]: https://github.com/scttfrdmn/aws-genai-gateway/commits/main

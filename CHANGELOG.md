@@ -150,5 +150,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tests (fakes only) across Python and TypeScript: full Panel/Analyze stream
     capture, deduped models in first-seen order, JSON round-trip, canonical
     none-omission, the cost-tag CSV export, and forward-compat with unknown events.
-
-[Unreleased]: https://github.com/scttfrdmn/aws-genai-gateway/commits/main
+- Academic interaction model — Phase 6 (router + mode override), completing §10.2:
+  - `agg/router.py`: pure `classify_mode()` (a router model's one-word reply →
+    SYNTHESIS/DEBATE/ANALYSIS, robust to noise, cue-word fallback, never escalating
+    past the cheapest default) and `resolve_mode()` (explicit override wins). The
+    `run_router` orchestration makes the cheap routing call (one fast model,
+    `max_tokens≈5`) over an injected `Backend`/`CostMeter`, meters it, and emits a
+    `route` event — **never an `answer`**; an explicit override short-circuits with
+    no call and no spend.
+  - `web/src/router.ts`: the UI↔wire mode mapping (`ask`/`panel`/`analyze` ↔
+    `SYNTHESIS`/`DEBATE`/`ANALYSIS`) and override-precedence resolution for the
+    explicit mode control.
+  - Tests (fakes only): classification of tokens/cues/ambiguous input, override
+    precedence, and that the routing call is metered, emits only `route`, and is
+    skipped entirely when the user forces a mode.

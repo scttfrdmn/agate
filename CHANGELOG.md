@@ -137,5 +137,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tests (fakes only, no AWS) across Python and TypeScript: embedding request
     shapes, path selection, the 3072-vs-1024 dimension guard, and citation/deep-link
     resolution for text vs figure vs table.
+- Academic interaction model — Phase 5 (reproducible run artifact):
+  - `agg/artifact.py`: pure, AWS-free `RunArtifact` Pydantic model + `build_artifact()`
+    that folds a run's typed event stream into one shareable, citable record — mode,
+    question, panel roster, models used, transcript, generated code, citations (text
+    and visual), the divergence structure (reusing the `Divergence` model), and the
+    receipt. `receipt_to_csv()` exports a chargeback-tagged receipt (grant/course
+    code) and `to_json()` the canonical record; `created_at`/`run_id` are inputs
+    (no clock in core).
+  - `web/src/events/artifact.ts`: a browser "save run" `serializeRun()` mirroring the
+    Python artifact shape, plus a matching `receiptToCsv()` (CSV-escaped, tagged).
+  - Tests (fakes only) across Python and TypeScript: full Panel/Analyze stream
+    capture, deduped models in first-seen order, JSON round-trip, canonical
+    none-omission, the cost-tag CSV export, and forward-compat with unknown events.
 
 [Unreleased]: https://github.com/scttfrdmn/aws-genai-gateway/commits/main

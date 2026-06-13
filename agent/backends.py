@@ -40,10 +40,7 @@ class BedrockBackend:
             messages=[{"role": "user", "content": [{"text": prompt}]}],
             inferenceConfig={"maxTokens": max_tokens},
         )
-        text = "".join(
-            block.get("text", "")
-            for block in resp["output"]["message"]["content"]
-        )
+        text = "".join(block.get("text", "") for block in resp["output"]["message"]["content"])
         usage = {
             "inputTokens": resp["usage"]["inputTokens"],
             "outputTokens": resp["usage"]["outputTokens"],
@@ -74,37 +71,9 @@ class CodeInterpreterRunner:
         return parse_invoke_result(raw, elapsed_s=round(time.monotonic() - t0, 3))
 
 
-class RunMeter:
-    """Thread-safe cost meter. Uses the shared CostMeter pricing when wired; here a
-    minimal running total is kept so the container always emits coherent cost events
-    even before the full pricing engine (Phase 5 of design §12) is attached."""
-
-    def __init__(self):
-        self._total = 0.0
-        self.rows: list[dict[str, Any]] = []
-        import threading
-
-        self._lock = threading.Lock()
-
-    @property
-    def total(self) -> float:
-        return self._total
-
-    def add_llm(self, label: str, tier: str, model_label: str, usage: dict[str, int]) -> float:
-        # Placeholder per-token estimate until the authoritative pricing engine is
-        # wired; the SPA shows this as a non-authoritative live figure (design §7.2).
-        cost = (usage.get("inputTokens", 0) + usage.get("outputTokens", 0)) * 1e-6
-        with self._lock:
-            self._total += cost
-            self.rows.append({"label": label, "kind": "llm", "cost": round(cost, 6)})
-        return cost
-
-    def add_compute(self, label: str, seconds: float) -> float:
-        cost = seconds * 1e-4
-        with self._lock:
-            self._total += cost
-            self.rows.append({"label": label, "kind": "compute", "cost": round(cost, 6)})
-        return cost
+# Cost metering is the authoritative `cost.CostMeter` (design §7.2/§13.6), wired in
+# `agent/server.py`. It satisfies the same `add_llm`/`add_compute`/`total` protocol
+# the orchestration calls, so no container-local meter is needed here.
 
 
 def encode_payload(obj: dict[str, Any]) -> bytes:

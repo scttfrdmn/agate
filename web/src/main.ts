@@ -1,36 +1,55 @@
-// SPA entry — Tier 0 browser-direct chat (design §12 Phase 2).
+// SPA entry — the academic interaction model UI (§10.2, demo-readiness #39).
 //
-// Flow: campus IdP token -> broker -> scoped STS creds -> BedrockTransport
-// ConverseStream, streamed into a minimal UI. No server in the path, no secret in
-// the client. History is in-memory only (persistence is a later phase).
+// Three modes share one client surface:
+//   Ask     -> Tier 0 browser-direct ConverseStream (BedrockTransport), streamed
+//              into the answer pane.
+//   Panel   -> AgentCore Runtime: N models read the same evidence; panes + the
+//              side-by-side divergence view render from the run event stream.
+//   Analyze -> AgentCore Runtime + Code Interpreter: editable code cell + chart.
+//
+// The mode is the user's explicit choice (academics prefer control); the router
+// only suggests a default for free-form input. Panel/Analyze go through the agent
+// path, which derives the caller's tier/tenant from the IdP token server-side
+// (SEC-4b) — the SPA just forwards the token, never a tier.
 
 import { CredentialManager } from "./auth/credentials";
-import { ChatSession, type ContextProvider } from "./chat/session";
+import { ChatSession } from "./chat/session";
 import { config } from "./config";
+import { reduce, type RunState, emptyRunState } from "./events/collector";
+import type { RunEvent } from "./events/protocol";
+import { renderCells, renderPanel } from "./panes/render";
 import { withContext } from "./rag/context";
 import { Retriever } from "./rag/retriever";
+import { AgentCoreTransport } from "./transport/agentcore";
 import { BedrockTransport } from "./transport/bedrock";
+import { type UiMode, UI_MODES, uiToRoute } from "./router";
 
-// Phase 2 placeholder IdP token provider. Phase 4 replaces this with the real
-// campus-IdP redirect/session; the broker validates the token server-side either
-// way. We read it from the URL hash (#idp_token=...) for local end-to-end testing.
-function idpTokenFromHash(): Promise<string> {
-  const hash = new URLSearchParams(location.hash.slice(1));
-  const token = hash.get("idp_token") ?? "";
-  return Promise.resolve(token);
+// Phase-2 placeholder IdP token provider (real OIDC redirect is Phase 4 wiring; the
+// broker + agent verify it server-side either way). Read from the URL hash for the
+// demo: #idp_token=<the campus-IdP JWT>.
+function idpToken(): string {
+  return new URLSearchParams(location.hash.slice(1)).get("idp_token") ?? "";
 }
 
 function render(app: HTMLElement): void {
   app.innerHTML = `
-    <main style="max-width:48rem;margin:2rem auto;font-family:system-ui">
-      <h1>agg</h1>
-      <p id="scope" style="color:#666"></p>
-      <div id="log" style="white-space:pre-wrap;border:1px solid #ddd;padding:1rem;min-height:8rem"></div>
-      <form id="f" style="display:flex;gap:.5rem;margin-top:1rem">
-        <input id="q" style="flex:1;padding:.5rem" placeholder="Ask…" autocomplete="off" />
+    <main style="max-width:64rem;margin:1.5rem auto;font-family:system-ui">
+      <h1 style="margin:0">agg</h1>
+      <p id="scope" style="color:#666;margin:.25rem 0 1rem"></p>
+      <form id="f" style="display:flex;gap:.5rem;align-items:center">
+        <select id="mode" style="padding:.5rem">
+          ${UI_MODES.map((m) => `<option value="${m.value}">${m.label}</option>`).join("")}
+        </select>
+        <input id="q" style="flex:1;padding:.5rem" placeholder="Ask a research question…" autocomplete="off" />
         <button>Send</button>
       </form>
+      <div id="out" style="margin-top:1rem"></div>
+      <p id="cost" style="color:#888;font-size:.85em;margin-top:.5rem"></p>
     </main>`;
+}
+
+function showCost(total: number): void {
+  document.getElementById("cost")!.textContent = total ? `running cost: $${total.toFixed(4)}` : "";
 }
 
 function main(): void {
@@ -40,77 +59,119 @@ function main(): void {
 
   if (!config.brokerUrl) {
     document.getElementById("scope")!.textContent =
-      "Set VITE_BROKER_URL to the deployed broker to enable chat.";
+      "Set VITE_BROKER_URL (and VITE_AGENT_RUNTIME_ARN for Panel/Analyze) to enable chat.";
     return;
   }
 
-  const creds = new CredentialManager(config.brokerUrl, idpTokenFromHash);
-  const transport = new BedrockTransport(config.region, () => creds.get());
+  const creds = new CredentialManager(config.brokerUrl, () => Promise.resolve(idpToken()));
+  const bedrock = new BedrockTransport(config.region, () => creds.get());
+  const agent = config.agentRuntimeArn
+    ? new AgentCoreTransport({ region: config.region, runtimeArn: config.agentRuntimeArn }, () => creds.get())
+    : null;
 
-  // RAG is enabled when a vector bucket is configured. The tenant index is
-  // derived from the session scope the broker returns — the credential can only
-  // read the index its agg:tenant tag matches, so retrieval scope == access scope.
-  let contextProvider: ContextProvider | undefined;
-  if (config.vectorBucketName) {
-    contextProvider = async (query: string) => {
-      await creds.get(); // ensure scope is populated
-      const tenant = creds.scope?.tenant;
-      if (!tenant) return [];
-      const retriever = new Retriever(
-        {
-          region: config.region,
-          vectorBucketName: config.vectorBucketName,
-          indexName: `agg-${tenant}`,
-        },
-        () => creds.get(),
-      );
-      const chunks = await retriever.retrieve(query);
-      return withContext([], chunks);
-    };
-  }
-
-  const session = new ChatSession(
-    transport,
-    config.defaultModelId,
-    undefined,
-    undefined,
-    contextProvider,
-  );
-
-  const log = document.getElementById("log")!;
+  const out = document.getElementById("out")!;
   const form = document.getElementById("f") as HTMLFormElement;
   const input = document.getElementById("q") as HTMLInputElement;
+  const modeSel = document.getElementById("mode") as HTMLSelectElement;
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const q = input.value.trim();
     if (!q) return;
     input.value = "";
-    log.textContent += `\n> ${q}\n`;
+    const mode = modeSel.value as UiMode;
+    out.replaceChildren();
 
     try {
-      let reasoningShown = false;
-      await session.send(q, {
-        onReasoning: () => {
-          // Show a single lightweight "thinking…" marker for reasoning models.
-          if (!reasoningShown) {
-            log.textContent += "[thinking…] ";
-            reasoningShown = true;
-          }
-        },
-        onDelta: (delta) => {
-          log.textContent += delta;
-        },
-      });
+      if (mode === "ask") {
+        await runAsk(q, bedrock, creds, out);
+      } else {
+        if (!agent) {
+          out.textContent = "Panel/Analyze need VITE_AGENT_RUNTIME_ARN (the deployed agent).";
+          return;
+        }
+        await runAgent(q, mode, agent, out);
+      }
       const s = creds.scope;
       if (s) {
         document.getElementById("scope")!.textContent =
           `tier=${s.tier} · tenant=${s.tenant} · ${s.affiliation}`;
       }
     } catch (err) {
-      log.textContent += `\n[error: ${(err as Error).message}]\n`;
+      out.textContent = `[error: ${(err as Error).message}]`;
     }
   });
+}
+
+// --- Ask (Tier 0, streamed) -------------------------------------------------
+
+async function runAsk(
+  q: string,
+  bedrock: BedrockTransport,
+  creds: CredentialManager,
+  out: HTMLElement,
+): Promise<void> {
+  const log = document.createElement("div");
+  log.style.cssText = "white-space:pre-wrap;border:1px solid #ddd;padding:1rem;min-height:6rem";
+  out.appendChild(log);
+  log.textContent = `> ${q}\n`;
+
+  // RAG grounding when a vector store is configured (scoped to the session's tenant).
+  let contextProvider;
+  if (config.vectorBucketName) {
+    contextProvider = async (query: string) => {
+      await creds.get();
+      const tenant = creds.scope?.tenant;
+      if (!tenant) return [];
+      const retriever = new Retriever(
+        { region: config.region, vectorBucketName: config.vectorBucketName, indexName: `agg-${tenant}` },
+        () => creds.get(),
+      );
+      return withContext([], await retriever.retrieve(query));
+    };
+  }
+  const session = new ChatSession(bedrock, config.defaultModelId, undefined, undefined, contextProvider);
+  await session.send(q, {
+    onReasoning: () => (log.textContent += log.textContent.includes("[thinking…]") ? "" : "[thinking…] "),
+    onDelta: (d) => (log.textContent += d),
+  });
+}
+
+// --- Panel / Analyze (agent path, event stream -> panes) --------------------
+
+async function runAgent(
+  q: string,
+  mode: UiMode,
+  agent: AgentCoreTransport,
+  out: HTMLElement,
+): Promise<void> {
+  let state: RunState = emptyRunState();
+  const panel = document.createElement("div");
+  const cells = document.createElement("div");
+  out.append(panel, cells);
+
+  const repaint = () => {
+    // renderPanel draws one column per model pane PLUS the reconciliation
+    // (divergence) column when present, so panes + divergence render together.
+    if (state.panes.length || state.divergence) renderPanel(state, panel);
+    if (state.cells.length) renderCells(state.cells, cells);
+    showCost(state.costTotal);
+  };
+
+  const emit = (ev: RunEvent) => {
+    state = reduce(state, ev);
+    repaint();
+  };
+
+  await agent.run(
+    {
+      question: q,
+      idp_token: idpToken(), // verified server-side; SPA never sends a tier
+      mode: uiToRoute(mode),
+    },
+    emit,
+  );
+  repaint();
 }
 
 main();

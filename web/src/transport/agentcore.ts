@@ -25,6 +25,9 @@ export interface AgentCoreConfig {
 // The invocation payload the reference agent (agent/server.py) expects.
 export interface AgentInvocation {
   question: string;
+  // The campus-IdP token the container verifies server-side to derive the caller's
+  // tier/tenant (SEC-4b) — never trust a payload tier field. Required for a real run.
+  idp_token?: string;
   mode?: "SYNTHESIS" | "DEBATE" | "ANALYSIS";
   evidence?: string;
   roster?: Array<Record<string, unknown>>;

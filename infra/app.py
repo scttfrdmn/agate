@@ -24,6 +24,7 @@ from infra.stacks.data import DataStack  # noqa: E402
 from infra.stacks.governance import GovernanceStack  # noqa: E402
 from infra.stacks.identity import IdentityStack  # noqa: E402
 from infra.stacks.lti import LtiStack  # noqa: E402
+from infra.stacks.web import WebStack  # noqa: E402
 
 app = cdk.App()
 
@@ -39,6 +40,7 @@ LtiStack(app, "agg-lti", env=env)
 AgentStack(app, "agg-agent", env=env)
 AuditStack(app, "agg-audit", env=env)
 GovernanceStack(app, "agg-governance", env=env)
+WebStack(app, "agg-web", env=env)
 # Optional Tier 1 — only deploy when an institution requires exact pre-call caps,
 # centralized inspection, or non-Bedrock routing (design §2, §12 Phase 6).
 ChokepointStack(app, "agg-chokepoint", env=env)

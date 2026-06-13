@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import aws_cdk as cdk
 from agg.entitlements import model_arns_for_tier
-from agg.names import DOCS_BUCKET_PREFIX, HANDLE
+from agg.names import HANDLE
 from aws_cdk import (
     Stack,
 )
@@ -82,31 +82,16 @@ class AgentStack(Stack):
                 resources=model_resources,
             )
         )
-        # SEC-2: scope retrieval to this deployment's vector bucket + docs bucket,
-        # not Resource:*. (A single shared execution role can't interpolate
-        # ${PrincipalTag/agg:tenant}; the container enforces the per-request tenant,
-        # and this bounds the role to agg's own data resources.)
-        vector_bucket = f"{HANDLE}-vectors-{account}-{region}"
-        docs_bucket = f"{DOCS_BUCKET_PREFIX}-{account}-{region}"
-        execution_role.add_to_policy(
-            iam.PolicyStatement(
-                sid="TenantRetrieval",
-                effect=iam.Effect.ALLOW,
-                actions=["s3vectors:QueryVectors", "s3vectors:GetVectors"],
-                resources=[
-                    f"arn:aws:s3vectors:{region}:{account}:bucket/{vector_bucket}",
-                    f"arn:aws:s3vectors:{region}:{account}:bucket/{vector_bucket}/index/*",
-                ],
-            )
-        )
-        execution_role.add_to_policy(
-            iam.PolicyStatement(
-                sid="DocsRead",
-                effect=iam.Effect.ALLOW,
-                actions=["s3:GetObject"],
-                resources=[f"arn:aws:s3:::{docs_bucket}/*"],
-            )
-        )
+        # SEC-2b: the agent does NOT retrieve — `evidence` is supplied in the
+        # invocation payload (the SPA runs the scoped S3 Vectors query Tier-0-style
+        # and passes the result). So the execution role is granted NO retrieval/data
+        # permissions: there is no code path that reads tenant data, and a single
+        # shared role couldn't scope it per-tenant anyway. If a retrieval TOOL is
+        # later added to the agent, it MUST derive the tenant from the verified token
+        # (agg.jwt_verify -> claims_to_tags) and scope the query to that tenant's
+        # `agg-{tenant}` index — and only then is a correspondingly-scoped grant added
+        # here. Keeping the grant off until the code exists is least-privilege and
+        # closes the latent cross-tenant read the review flagged.
 
         # --- Code Interpreter (Analyze microVM) ---------------------------
         # PUBLIC network (no VPC) — sandboxed code execution, scales to zero.

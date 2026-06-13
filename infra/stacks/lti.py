@@ -15,12 +15,7 @@ NO CLOCKS: HTTP API + Lambda are per-request; DynamoDB is on-demand (PAY_PER_REQ
 
 from __future__ import annotations
 
-import shutil
-import subprocess
-from pathlib import Path
-
 import aws_cdk as cdk
-import jsii
 from agg.names import HANDLE
 from aws_cdk import (
     Stack,
@@ -38,66 +33,12 @@ from aws_cdk import (
     aws_lambda as lambda_,
 )
 from constructs import Construct
-from infra.assets import LAMBDA_ASSET_EXCLUDES
-
-# Repo root (three levels up from infra/stacks/lti.py).
-_ROOT = Path(__file__).resolve().parent.parent.parent
-
-# Bundling command (Docker fallback): install runtime deps into the asset, then
-# copy the pure agg/ package and the lti/ handlers next to them.
-_BUNDLE_CMD = (
-    "set -e; "
-    "pip install -r lti/requirements.txt -t /asset-output >/dev/null; "
-    "cp -r agg /asset-output/; "
-    "cp -r lti /asset-output/"
-)
-
-
-@jsii.implements(cdk.ILocalBundling)
-class _LocalPipBundler:
-    """Bundle the LTI Lambda locally (no Docker) by pip-installing requirements
-    and copying the agg/ + lti/ source into the asset output dir. Falls back to
-    the Docker image if pip isn't available."""
-
-    def try_bundle(self, output_dir: str, options) -> bool:  # noqa: ARG002
-        if shutil.which("pip") is None and shutil.which("pip3") is None:
-            return False
-        pip = shutil.which("pip3") or shutil.which("pip")
-        try:
-            subprocess.run(
-                [
-                    pip,
-                    "install",
-                    "-r",
-                    str(_ROOT / "lti" / "requirements.txt"),
-                    "-t",
-                    output_dir,
-                    "--quiet",
-                ],
-                check=True,
-            )
-            for pkg in ("agg", "lti"):
-                shutil.copytree(
-                    _ROOT / pkg,
-                    Path(output_dir) / pkg,
-                    dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns("__pycache__"),
-                )
-        except (subprocess.CalledProcessError, OSError):
-            return False
-        return True
+from infra.assets import pip_bundled_code
 
 
 def _lti_code() -> lambda_.Code:
-    return lambda_.Code.from_asset(
-        ".",
-        exclude=LAMBDA_ASSET_EXCLUDES,
-        bundling=cdk.BundlingOptions(
-            image=lambda_.Runtime.PYTHON_3_13.bundling_image,
-            command=["bash", "-c", _BUNDLE_CMD],
-            local=_LocalPipBundler(),
-        ),
-    )
+    # Bundles PyJWT + the agg/ and lti/ source (shared bundler in infra.assets).
+    return pip_bundled_code("agg", "lti")
 
 
 class LtiStack(Stack):

@@ -18,7 +18,9 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from agg.agent_dispatch import InvocationError, dispatch
-from agg.entitlements import DEFAULT_TIER, TIERS, models_for_tier
+from agg.entitlements import DEFAULT_TIER, models_for_tier
+from agg.jwt_verify import TokenError, config_from_env, verify_token
+from agg.tags import ClaimsError, claims_to_tags
 from cost import CostMeter
 
 from agent.backends import (
@@ -32,17 +34,33 @@ CODE_INTERPRETER_ID = os.environ.get("AGG_CODE_INTERPRETER_ID", "")
 PORT = int(os.environ.get("PORT", "8080"))
 
 
-def run_invocation(payload: dict, *, verified_tier: str | None = None) -> list[dict]:
+def _verified_tier(payload: dict) -> str:
+    """Derive the caller's tier from the VERIFIED IdP token in the payload (SEC-4b).
+
+    The tier is NOT taken from a request header or a payload field — it is the
+    `agg:tier` derived from the token's claims after real RS256/JWKS verification
+    (shared agg.jwt_verify), the same path the broker and choke point use. Any
+    verification failure or missing token falls back to the cheapest tier (oss) —
+    fail closed, never unrestricted.
+    """
+    cfg = config_from_env()
+    try:
+        claims = verify_token(payload.get("idp_token", ""), **cfg)
+        return claims_to_tags(claims).tier
+    except (TokenError, ClaimsError):
+        return DEFAULT_TIER
+
+
+def run_invocation(payload: dict) -> list[dict]:
     """Run one invocation and return the ordered event stream.
 
     Per-invocation backends so a microVM serving one session holds no cross-session
     state. Emits a terminal `receipt` event built from the meter's rows.
 
-    SEC-2: `verified_tier` is the agg:tier from the VALIDATED inbound JWT (AgentCore
-    Identity / Cognito authorizer), NOT from the payload. We expand it to the set of
-    entitled model ids and pass it to dispatch, which rejects any payload-named model
-    outside that set before invoking. An unknown/missing verified tier falls back to
-    the cheapest tier (oss) — fail closed, never unrestricted.
+    SEC-2/SEC-4b: the entitled-model set comes from the tier derived from the
+    VERIFIED inbound token (`_verified_tier`), never from a payload field or an
+    unsourced header. `dispatch` rejects any payload-named model outside that set
+    before invoking; an unverifiable token fails closed to oss.
     """
     events: list[dict] = []
     emit = events.append
@@ -54,7 +72,7 @@ def run_invocation(payload: dict, *, verified_tier: str | None = None) -> list[d
     meter = CostMeter()
     runner = CodeInterpreterRunner(REGION, CODE_INTERPRETER_ID) if CODE_INTERPRETER_ID else None
 
-    tier = verified_tier if verified_tier in TIERS else DEFAULT_TIER
+    tier = _verified_tier(payload)
     allowed_models = set(models_for_tier(tier))
 
     try:
@@ -94,12 +112,10 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(length) if length else b""
         try:
             payload = decode_payload(body)
-            # SEC-2: the verified agg:tier comes from the inbound identity the
-            # AgentCore custom_jwt_authorizer validated and propagates as a header —
-            # NOT from the payload. Absent -> run_invocation falls back to the
-            # cheapest tier (fail closed).
-            verified_tier = self.headers.get("X-Agg-Verified-Tier")
-            events = run_invocation(payload, verified_tier=verified_tier)
+            # SEC-4b: the tier is derived from the VERIFIED IdP token inside
+            # run_invocation — not from a request header (which had no trusted
+            # source). The SPA includes idp_token in the invocation payload.
+            events = run_invocation(payload)
             self._send(200, _events_to_blob(events), content_type="application/x-ndjson")
         except Exception as exc:  # noqa: BLE001 — never 500 silently
             self._send(500, json.dumps({"error": "agent_error", "detail": str(exc)}).encode())

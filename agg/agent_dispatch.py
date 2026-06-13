@@ -81,9 +81,7 @@ def dispatch(
         requested = _collect_requested_models(payload)
         forbidden = requested - allowed_models
         if forbidden:
-            raise InvocationError(
-                f"models not entitled for this session: {sorted(forbidden)}"
-            )
+            raise InvocationError(f"models not entitled for this session: {sorted(forbidden)}")
 
     router_cfg = payload.get("router") or {"tier": "oss", "label": "router", "max_tokens": 5}
     mode = run_router(

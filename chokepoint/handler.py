@@ -28,6 +28,7 @@ import os
 from typing import Any
 
 import boto3
+from agg.jwt_verify import TokenError, config_from_env, verify_token
 from agg.tags import ClaimsError, claims_to_tags
 from cost import evaluate_precall
 from cost.pricing import default_pricebook
@@ -62,11 +63,7 @@ def lookup_budget(tenant: str, user: str, period: str) -> float | None:
     """
     if not BUDGET_TABLE:
         return None
-    item = (
-        _ddb.Table(BUDGET_TABLE)
-        .get_item(Key={"pk": f"{tenant}#{user}#{period}"})
-        .get("Item")
-    )
+    item = _ddb.Table(BUDGET_TABLE).get_item(Key={"pk": f"{tenant}#{user}#{period}"}).get("Item")
     if not item:
         # fall back to a tenant-level budget row if present
         item = _ddb.Table(BUDGET_TABLE).get_item(Key={"pk": f"{tenant}#{period}"}).get("Item")
@@ -105,17 +102,14 @@ def assume_user_role(tags, user: str) -> Any:
 
 
 def validate_idp_token(token: str) -> dict:
-    """Validate the campus-IdP token -> claims. Same Phase-1 placeholder seam as the
-    broker (real JWKS verification lands with the IdP wiring); fails closed."""
-    if not token:
-        raise ChokepointError("no IdP token presented")
+    """Verify the campus-IdP token (real RS256/JWKS via the shared verifier) and
+    return its claims. Same verifier the broker uses — no unsigned-token path
+    (SEC-4). OIDC config from env; any failure raises ChokepointError (fail closed)."""
+    cfg = config_from_env()
     try:
-        claims = json.loads(token)
-    except (ValueError, TypeError) as exc:
-        raise ChokepointError("malformed IdP token") from exc
-    if not isinstance(claims, dict):
-        raise ChokepointError("IdP token did not decode to a claim set")
-    return claims
+        return verify_token(token, **cfg)
+    except TokenError as exc:
+        raise ChokepointError(str(exc)) from exc
 
 
 def _period_now() -> str:

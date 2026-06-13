@@ -22,7 +22,8 @@ S3 Vectors / Bedrock KB / AgentCore have L1 `Cfn*` only (migration tracked in #2
 from __future__ import annotations
 
 import aws_cdk as cdk
-from agg.names import HANDLE
+from agg.entitlements import model_arns_for_tier
+from agg.names import DOCS_BUCKET_PREFIX, HANDLE
 from aws_cdk import (
     Stack,
 )
@@ -63,6 +64,11 @@ class AgentStack(Stack):
             assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
             description="agg agent Runtime execution role — Bedrock invoke + tenant retrieval",
         )
+        # SEC-2: bound the role's Bedrock invoke to agg's entitled models only (the
+        # full tier superset = frontier, cumulative). Per-SESSION tier enforcement is
+        # done in the container against the verified JWT (model_arns_for_tier); this
+        # IAM bound is the outer universe, not the per-user scope.
+        model_resources = model_arns_for_tier("frontier", region=region, account=account)
         execution_role.add_to_policy(
             iam.PolicyStatement(
                 sid="BedrockInvoke",
@@ -73,15 +79,32 @@ class AgentStack(Stack):
                     "bedrock:Converse",
                     "bedrock:ConverseStream",
                 ],
-                resources=["*"],
+                resources=model_resources,
             )
         )
+        # SEC-2: scope retrieval to this deployment's vector bucket + docs bucket,
+        # not Resource:*. (A single shared execution role can't interpolate
+        # ${PrincipalTag/agg:tenant}; the container enforces the per-request tenant,
+        # and this bounds the role to agg's own data resources.)
+        vector_bucket = f"{HANDLE}-vectors-{account}-{region}"
+        docs_bucket = f"{DOCS_BUCKET_PREFIX}-{account}-{region}"
         execution_role.add_to_policy(
             iam.PolicyStatement(
                 sid="TenantRetrieval",
                 effect=iam.Effect.ALLOW,
-                actions=["s3vectors:QueryVectors", "s3vectors:GetVectors", "s3:GetObject"],
-                resources=["*"],
+                actions=["s3vectors:QueryVectors", "s3vectors:GetVectors"],
+                resources=[
+                    f"arn:aws:s3vectors:{region}:{account}:bucket/{vector_bucket}",
+                    f"arn:aws:s3vectors:{region}:{account}:bucket/{vector_bucket}/index/*",
+                ],
+            )
+        )
+        execution_role.add_to_policy(
+            iam.PolicyStatement(
+                sid="DocsRead",
+                effect=iam.Effect.ALLOW,
+                actions=["s3:GetObject"],
+                resources=[f"arn:aws:s3:::{docs_bucket}/*"],
             )
         )
 

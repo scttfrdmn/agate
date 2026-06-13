@@ -27,6 +27,7 @@ import json
 import os
 
 import boto3
+from agg.jwt_verify import TokenError, config_from_env, verify_token
 from agg.tags import ClaimsError, claims_to_tags
 
 # Resolved at deploy time (set as Lambda env vars by the identity stack).
@@ -41,26 +42,19 @@ class BrokerError(Exception):
 
 
 def validate_idp_token(token: str) -> dict[str, object]:
-    """Validate the campus-IdP token and return its claims.
+    """Verify the campus-IdP token (real RS256/JWKS) and return its claims.
 
-    PHASE 1 PLACEHOLDER. A production broker MUST:
-      * fetch + cache the IdP JWKS,
-      * verify signature, `iss`, `aud`, `exp`/`nbf`, and nonce,
-      * only then trust the claims.
-    Wiring a concrete IdP (Shibboleth/Entra/Okta) is Phase 4 territory; for Phase 1
-    end-to-end proof we accept a pre-validated claims JSON so the scoping path can be
-    exercised without standing up an IdP. This function is the seam where real JWT
-    validation lands — it must fail closed on any check.
+    Uses the shared `agg.jwt_verify` — signature against the IdP JWKS, plus
+    iss/aud/exp/sub. The OIDC config (JWKS URL / issuer / audience) comes from env
+    set at deploy time. If the verifier is unconfigured or the token fails any
+    check, this raises BrokerError and the broker vends NO credentials (fail closed).
+    There is no unsigned-token path — that was the SEC-4 placeholder, now removed.
     """
-    if not token:
-        raise BrokerError("no IdP token presented")
+    cfg = config_from_env()
     try:
-        claims = json.loads(token)
-    except (ValueError, TypeError) as exc:
-        raise BrokerError("malformed IdP token") from exc
-    if not isinstance(claims, dict):
-        raise BrokerError("IdP token did not decode to a claim set")
-    return claims
+        return verify_token(token, **cfg)
+    except TokenError as exc:
+        raise BrokerError(str(exc)) from exc
 
 
 def vend_credentials(claims: dict[str, object], *, subject: str) -> dict[str, object]:

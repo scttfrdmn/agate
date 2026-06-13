@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Phase 6 — optional Tier 1 choke point (exact pre-call budget enforcement):
+  - `cost/precall.py`: pure `evaluate_precall` / `estimate_call_cost` — reject a call
+    *before* it runs when its **worst-case** cost (input tokens + `max_tokens` at the
+    model rate) plus authoritative spend would exceed budget. Strictly stricter than
+    the soft cap (which only declines the *next* call once over); fails closed on a
+    zero/negative budget or invalid spend.
+  - `chokepoint/handler.py`: the Tier 1 Lambda — reads authoritative spend from the
+    `spend` table, runs the pre-call gate (a budget rejection returns **402** and the
+    model is never invoked), and on allow invokes Converse **assuming the user's own
+    scoped role** (same ABAC as Tier 0, plus enforcement).
+  - `infra/stacks/chokepoint.py`: a Lambda **Function URL** (response streaming,
+    AWS_IAM-authed) — no ALB, no always-on container, no clock. Built only when an
+    institution opts into Tier 1; default deployments omit it.
+  - `web/src/transport/openai.ts`: the Tier 1/2 transport implemented — SigV4-signed
+    fetch of the Function URL with the scoped creds; pure `buildRequestBody` /
+    `responseToChunks` (incl. surfacing a 402 budget rejection as terminal text).
+  - Tests (fakes only, Python + TypeScript): the pre-call gate matrix incl. "stricter
+    than soft cap", the handler rejecting before any model call, request/response
+    mapping, and the 402 path.
 - Phase 5 — governance/audit + authoritative spend (completes the §12 Phase 5
   metering arc; the soft cap now has a real, log-derived number to enforce):
   - `meter/parse.py`: pure, AWS-free translation of a Bedrock model-invocation log

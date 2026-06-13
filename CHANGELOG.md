@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Phase 5 — governance/audit + authoritative spend (completes the §12 Phase 5
+  metering arc; the soft cap now has a real, log-derived number to enforce):
+  - `meter/parse.py`: pure, AWS-free translation of a Bedrock model-invocation log
+    record into a priced `SpendRecord` — attributes tenant/user from the assumed-role
+    identity + `agg:tenant` tag, derives the `{tenant}#{user}#{period}` (+ rollup)
+    spend-table keys (§13.6), and prices via the shared `cost` engine. Fully tested.
+  - `meter/handler.py`: the S3-triggered spend Lambda — reads invocation-log objects
+    (incl. gzip), recomputes **authoritative** spend, and atomically increments the
+    per-user and tenant-rollup rows; `read_spend()` is the helper the broker calls at
+    credential refresh for the soft cap. One bad record never aborts the batch.
+  - `infra/stacks/audit.py`: a restricted audit log bucket (Bedrock-delivery resource
+    policy), the `spend` DynamoDB table (on-demand), the spend Lambda + S3 trigger,
+    and an `AwsCustomResource` enabling Bedrock invocation logging (account-level
+    config with no CFN resource type); stack-level cost-allocation tag. NO CLOCKS.
+  - Tested end-to-end (fakes, no AWS): metering a log object increments both rows,
+    and `evaluate_soft_cap` denies/allows against the resulting authoritative spend.
 - Phase 0 — repository scaffold: CDK v2 Python app (`infra/`, `uv`-managed, Python 3.13),
   Go module for the `agg` CLI (`cli/`), Vite + TypeScript SPA skeleton (`web/`), and the
   component directories from design §11 (`policy/`, `cost/`, `meter/`, `lti/`, `agent/`,

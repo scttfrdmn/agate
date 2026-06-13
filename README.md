@@ -102,6 +102,17 @@ Real login needs OIDC config on the broker (it verifies the IdP token — no pla
 set `AGG_OIDC_JWKS_URL`, `AGG_OIDC_ISSUER`, `AGG_OIDC_AUDIENCE` for your campus IdP (or a
 demo Cognito User Pool / any OIDC provider). Without them the broker fails closed.
 
+**1a. Demo IdP (only if you have no campus IdP to point at).**
+```bash
+npx cdk deploy agg-demo-idp            # throwaway Cognito User Pool that issues real RS256 JWTs
+```
+The stack outputs `OidcIssuer`, `OidcJwksUrl`, and `OidcAudience` — set those as
+`AGG_OIDC_ISSUER` / `AGG_OIDC_JWKS_URL` / `AGG_OIDC_AUDIENCE` on the broker (and the agent's
+`cognito_discovery_url` / `cognito_audience`). Create a demo user and set their
+`custom:affiliation` / `custom:tenant` / `custom:courses` attributes — a pre-token Lambda maps
+those onto the `agg` claims, so the demo token scopes exactly like a campus token. Production
+skips this stack entirely.
+
 **2. Data + a demo corpus (Ask/RAG).**
 ```bash
 npx cdk deploy agg-data -c tenants=demo

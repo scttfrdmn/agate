@@ -21,6 +21,7 @@ from infra.stacks.agent import AgentStack  # noqa: E402
 from infra.stacks.audit import AuditStack  # noqa: E402
 from infra.stacks.chokepoint import ChokepointStack  # noqa: E402
 from infra.stacks.data import DataStack  # noqa: E402
+from infra.stacks.demo_idp import DemoIdpStack  # noqa: E402
 from infra.stacks.governance import GovernanceStack  # noqa: E402
 from infra.stacks.identity import IdentityStack  # noqa: E402
 from infra.stacks.lti import LtiStack  # noqa: E402
@@ -44,5 +45,8 @@ WebStack(app, "agg-web", env=env)
 # Optional Tier 1 — only deploy when an institution requires exact pre-call caps,
 # centralized inspection, or non-Bedrock routing (design §2, §12 Phase 6).
 ChokepointStack(app, "agg-chokepoint", env=env)
+# Demo-only OIDC IdP — a throwaway Cognito User Pool for showing the gateway
+# without a campus IdP. Production omits this and points the broker at the real IdP.
+DemoIdpStack(app, "agg-demo-idp", env=env)
 
 app.synth()

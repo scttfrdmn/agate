@@ -89,6 +89,19 @@ class AuditStack(Stack):
             point_in_time_recovery=True,
         )
 
+        # --- budget table (on-demand) -------------------------------------
+        # Per-tenant/user budget allocations the Tier 1 choke point reads SERVER-SIDE
+        # (keyed by the verified identity, never by a request field — SEC-1). PK is
+        # `{tenant}#{user}#{period}` with a `{tenant}#{period}` fallback row.
+        budget_table = ddb.Table(
+            self,
+            "Budget",
+            table_name=f"{HANDLE}-budget",
+            partition_key=ddb.Attribute(name="pk", type=ddb.AttributeType.STRING),
+            billing_mode=ddb.BillingMode.PAY_PER_REQUEST,
+            removal_policy=cdk.RemovalPolicy.RETAIN,
+        )
+
         # --- spend Lambda (recompute authoritative spend from logs) -------
         spend_fn = lambda_.Function(
             self,
@@ -170,9 +183,11 @@ class AuditStack(Stack):
         # --- Outputs -------------------------------------------------------
         cdk.CfnOutput(self, "AuditBucketName", value=log_bucket.bucket_name)
         cdk.CfnOutput(self, "SpendTableName", value=spend_table.table_name)
+        cdk.CfnOutput(self, "BudgetTableName", value=budget_table.table_name)
         cdk.CfnOutput(self, "SpendMeterFunction", value=spend_fn.function_name)
         cdk.CfnOutput(self, "CloudTrailArn", value=trail.trail_arn)
 
         self.log_bucket = log_bucket
         self.spend_table = spend_table
+        self.budget_table = budget_table
         self.trail = trail

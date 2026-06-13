@@ -96,14 +96,25 @@ def test_instructor_launch_maps_to_faculty_mid_tier():
     assert tags.tier == "mid"
 
 
-def test_tenant_falls_back_to_context_label():
+def test_tenant_never_derived_from_context_claim():
+    # SEC-3: the context claim (course label/id) is attacker-influenceable on a
+    # shared LMS, so it must NOT become the tenant. With no registration tenant,
+    # fail closed even though a context label is present.
     claims = {CLAIM_ROLES: [LEARNER], CLAIM_CONTEXT: {"id": "C1", "label": "psych-dept"}}
-    agg = lti_claims_to_agg_claims(claims)
-    assert agg["tenant"] == "psych-dept"
+    with pytest.raises(LtiClaimError):
+        lti_claims_to_agg_claims(claims)
+
+
+def test_registration_tenant_is_authoritative():
+    # The course context is still captured as a COURSE, never as the tenant.
+    claims = {CLAIM_ROLES: [LEARNER], CLAIM_CONTEXT: {"id": "CHEM-101", "label": "evil-tenant"}}
+    agg = lti_claims_to_agg_claims(claims, tenant="harvard-chem")
+    assert agg["tenant"] == "harvard-chem"
+    assert agg["courses"] == ["CHEM-101"]
 
 
 def test_no_tenant_fails_closed():
-    claims = {CLAIM_ROLES: [LEARNER]}  # no context, no registration tenant
+    claims = {CLAIM_ROLES: [LEARNER]}  # no registration tenant
     with pytest.raises(LtiClaimError):
         lti_claims_to_agg_claims(claims)
 

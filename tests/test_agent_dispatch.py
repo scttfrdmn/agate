@@ -182,3 +182,46 @@ def test_analysis_without_runner_is_an_error():
             meter=FakeMeter(),
             emit=emit,
         )
+
+
+# --- SEC-2: model entitlement enforcement (allowed_models) -------------------
+
+
+def test_dispatch_rejects_model_outside_allowed_set():
+    # An oss-entitled session names a frontier model in the roster -> rejected
+    # BEFORE any model call (no router call, no panel).
+    _, emit = _collect()
+    backend = FakeBackend(route_word="DEBATE")
+    with pytest.raises(InvocationError, match="not entitled"):
+        dispatch(
+            {"question": "x", "mode": "DEBATE", "evidence": "e",
+             "roster": ROSTER, "adjudicator": ADJUDICATOR},
+            backend=backend, meter=FakeMeter(), emit=emit,
+            allowed_models={"open-weight-70b"},  # NOT "frontier"
+        )
+    # nothing was invoked
+    assert backend.systems == []
+
+
+def test_dispatch_allows_when_all_models_entitled():
+    events, emit = _collect()
+    backend = FakeBackend(route_word="DEBATE")
+    out = dispatch(
+        {"question": "x", "mode": "DEBATE", "evidence": "e",
+         "roster": ROSTER, "adjudicator": ADJUDICATOR},
+        backend=backend, meter=FakeMeter(), emit=emit,
+        allowed_models={"frontier", "open-weight-70b"},
+    )
+    assert out["mode"] == "DEBATE"
+
+
+def test_dispatch_no_allowed_models_skips_check():
+    # allowed_models=None preserves old behavior (tests not exercising entitlement).
+    events, emit = _collect()
+    out = dispatch(
+        {"question": "x", "mode": "ANALYSIS",
+         "generator": {"tier": "frontier", "label": "g", "max_tokens": 64}},
+        backend=FakeBackend(route_word="ANALYSIS"), meter=FakeMeter(), emit=emit,
+        code_runner=FakeRunner(),
+    )
+    assert out["mode"] == "ANALYSIS"

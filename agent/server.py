@@ -18,6 +18,7 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from agg.agent_dispatch import InvocationError, dispatch
+from agg.entitlements import DEFAULT_TIER, TIERS, models_for_tier
 from cost import CostMeter
 
 from agent.backends import (
@@ -31,11 +32,17 @@ CODE_INTERPRETER_ID = os.environ.get("AGG_CODE_INTERPRETER_ID", "")
 PORT = int(os.environ.get("PORT", "8080"))
 
 
-def run_invocation(payload: dict) -> list[dict]:
+def run_invocation(payload: dict, *, verified_tier: str | None = None) -> list[dict]:
     """Run one invocation and return the ordered event stream.
 
     Per-invocation backends so a microVM serving one session holds no cross-session
     state. Emits a terminal `receipt` event built from the meter's rows.
+
+    SEC-2: `verified_tier` is the agg:tier from the VALIDATED inbound JWT (AgentCore
+    Identity / Cognito authorizer), NOT from the payload. We expand it to the set of
+    entitled model ids and pass it to dispatch, which rejects any payload-named model
+    outside that set before invoking. An unknown/missing verified tier falls back to
+    the cheapest tier (oss) — fail closed, never unrestricted.
     """
     events: list[dict] = []
     emit = events.append
@@ -47,8 +54,18 @@ def run_invocation(payload: dict) -> list[dict]:
     meter = CostMeter()
     runner = CodeInterpreterRunner(REGION, CODE_INTERPRETER_ID) if CODE_INTERPRETER_ID else None
 
+    tier = verified_tier if verified_tier in TIERS else DEFAULT_TIER
+    allowed_models = set(models_for_tier(tier))
+
     try:
-        dispatch(payload, backend=backend, meter=meter, emit=emit, code_runner=runner)
+        dispatch(
+            payload,
+            backend=backend,
+            meter=meter,
+            emit=emit,
+            code_runner=runner,
+            allowed_models=allowed_models,
+        )
     except InvocationError as exc:
         emit({"type": "answer", "title": "error", "text": str(exc)})
 
@@ -77,7 +94,12 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(length) if length else b""
         try:
             payload = decode_payload(body)
-            events = run_invocation(payload)
+            # SEC-2: the verified agg:tier comes from the inbound identity the
+            # AgentCore custom_jwt_authorizer validated and propagates as a header —
+            # NOT from the payload. Absent -> run_invocation falls back to the
+            # cheapest tier (fail closed).
+            verified_tier = self.headers.get("X-Agg-Verified-Tier")
+            events = run_invocation(payload, verified_tier=verified_tier)
             self._send(200, _events_to_blob(events), content_type="application/x-ndjson")
         except Exception as exc:  # noqa: BLE001 — never 500 silently
             self._send(500, json.dumps({"error": "agent_error", "detail": str(exc)}).encode())

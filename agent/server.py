@@ -18,11 +18,11 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from agg.agent_dispatch import InvocationError, dispatch
+from cost import CostMeter
 
 from agent.backends import (
     BedrockBackend,
     CodeInterpreterRunner,
-    RunMeter,
     decode_payload,
 )
 
@@ -41,7 +41,10 @@ def run_invocation(payload: dict) -> list[dict]:
     emit = events.append
 
     backend = BedrockBackend(REGION)
-    meter = RunMeter()
+    # Authoritative dollar metering (cost.CostMeter); a roster-supplied PriceBook
+    # could be threaded in per invocation, but the hard-default rates keep the
+    # receipt coherent out of the box.
+    meter = CostMeter()
     runner = CodeInterpreterRunner(REGION, CODE_INTERPRETER_ID) if CODE_INTERPRETER_ID else None
 
     try:
@@ -50,7 +53,7 @@ def run_invocation(payload: dict) -> list[dict]:
         emit({"type": "answer", "title": "error", "text": str(exc)})
 
     # Close the run with an itemised receipt (the meter's rows + total).
-    emit({"type": "receipt", "rows": meter.rows, "total": round(meter.total, 6)})
+    emit(meter.receipt().to_event())
     return events
 
 

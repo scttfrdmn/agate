@@ -193,5 +193,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tests (fakes only, Python + TypeScript): mode routing/override, per-mode
     orchestration dispatch, error paths, the invocation→receipt flow, the NDJSON
     event codec, and the payload round-trip.
+- Phase 5 — real-time metering: the `CostMeter` cost engine (`cost/`):
+  - `cost/meter.py`: a pure, thread-safe `CostMeter` computing **actual dollars** per
+    call from authoritative usage × rates, itemised into a `Receipt` (rows + total)
+    that doubles as chargeback. One engine for LLM, embedding, retrieval (per-1k),
+    and compute (per-second) lines; satisfies the `add_llm`/`add_compute`/`total`
+    protocol the orchestration already calls, plus `add_embedding`/`add_retrieval`.
+  - `cost/pricing.py`: a `PriceBook` resolving rates config-override → hard-default
+    (and an optional live Price List fetch at the edge), so a missing rate never
+    blocks a call. Respects the documented Price List quirks (S3 Vectors is config-
+    only; FM pricing namespace; us-east-1-only API).
+  - `cost/softcap.py`: the pure soft-cap decision (§7.1) — spend-vs-budget, failing
+    closed on a zero/negative budget or an invalid (negative) spend; the broker reads
+    authoritative spend at credential refresh and declines to vend model creds when
+    over budget.
+  - The reference agent now meters with the real `CostMeter` (replacing the
+    placeholder), emitting an itemised `receipt` event to close each run.
+  - `web/src/cost.ts`: the SPA port of the same engine for a live, **non-authoritative**
+    running estimate (display only; the enforced number is computed server-side).
+  - Tests (fakes only, Python + TypeScript): dollar math per kind, config-vs-default
+    rate resolution, the S3-Vectors config fallback, thread-safe parallel metering,
+    the soft-cap decision matrix, and Python/TS parity on a worked example.
 
 [Unreleased]: https://github.com/scttfrdmn/aws-genai-gateway/commits/main

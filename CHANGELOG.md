@@ -215,4 +215,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     rate resolution, the S3-Vectors config fallback, thread-safe parallel metering,
     the soft-cap decision matrix, and Python/TS parity on a worked example.
 
+### Fixed
+- **Phase 1 proven live** (first real AWS deploy, us-east-1): the identity stack
+  deploys and the full chain works against real Bedrock — broker Lambda derives the
+  `agg:` tags, vends scoped STS creds, and IAM/ABAC allows an entitled model and
+  denies a non-entitled one (oss session: gpt-oss allowed / frontier denied;
+  frontier session: both allowed, cumulative). Two corrections the live deploy
+  surfaced:
+  - Lambda asset packaging excluded `infra/cdk.out` but not the **root** `cdk.out`,
+    causing a recursive self-copy (`ENAMETOOLONG`) on first deploy. Replaced the
+    three divergent per-stack exclude lists with one shared `infra/assets.py`
+    `LAMBDA_ASSET_EXCLUDES` covering `cdk.out`, caches, and other-language trees.
+  - The entitlement table used stale/mis-typed model ids. Updated to ids verified
+    present in-region, and — crucially — invoking a cross-region **inference
+    profile** (Claude 4.x) requires `bedrock:InvokeModel` on **both** the profile
+    ARN **and** the underlying foundation-model ARN; `model_resource_arns()` now
+    emits both, region-wildcarded for the underlying FM.
+
 [Unreleased]: https://github.com/scttfrdmn/aws-genai-gateway/commits/main

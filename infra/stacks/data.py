@@ -46,6 +46,7 @@ from aws_cdk import (
     aws_s3vectors as s3vectors,
 )
 from constructs import Construct
+from infra.assets import LAMBDA_ASSET_EXCLUDES
 
 # Text embedding contract — shared with ingest/ and web/src/rag. Changing the
 # dimension or model means re-embedding; keep it in one place.
@@ -158,20 +159,7 @@ class DataStack(Stack):
             function_name=f"{HANDLE}-ingest",
             runtime=lambda_.Runtime.PYTHON_3_13,
             handler="ingest.handler.handler",
-            code=lambda_.Code.from_asset(
-                ".",
-                exclude=[
-                    "web",
-                    "cli",
-                    "docs",
-                    "tests",
-                    ".git",
-                    "**/__pycache__",
-                    "infra/cdk.out",
-                    ".venv",
-                    "node_modules",
-                ],
-            ),
+            code=lambda_.Code.from_asset(".", exclude=LAMBDA_ASSET_EXCLUDES),
             timeout=cdk.Duration.minutes(2),
             memory_size=512,
             environment={

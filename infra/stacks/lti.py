@@ -38,6 +38,7 @@ from aws_cdk import (
     aws_lambda as lambda_,
 )
 from constructs import Construct
+from infra.assets import LAMBDA_ASSET_EXCLUDES
 
 # Repo root (three levels up from infra/stacks/lti.py).
 _ROOT = Path(__file__).resolve().parent.parent.parent
@@ -90,17 +91,7 @@ class _LocalPipBundler:
 def _lti_code() -> lambda_.Code:
     return lambda_.Code.from_asset(
         ".",
-        exclude=[
-            "web",
-            "cli",
-            "docs",
-            "tests",
-            ".git",
-            "**/__pycache__",
-            "infra/cdk.out",
-            ".venv",
-            "node_modules",
-        ],
+        exclude=LAMBDA_ASSET_EXCLUDES,
         bundling=cdk.BundlingOptions(
             image=lambda_.Runtime.PYTHON_3_13.bundling_image,
             command=["bash", "-c", _BUNDLE_CMD],

@@ -32,6 +32,7 @@ from aws_cdk import (
     aws_lambda as lambda_,
 )
 from constructs import Construct
+from infra.assets import LAMBDA_ASSET_EXCLUDES
 from policy.generate import data_scope_policy, model_access_policy
 
 # Sentinel for federation config that must be supplied before deploy.
@@ -159,20 +160,7 @@ class IdentityStack(Stack):
             function_name=f"{HANDLE}-broker",
             runtime=lambda_.Runtime.PYTHON_3_13,
             handler="infra.functions.broker.handler.handler",
-            code=lambda_.Code.from_asset(
-                ".",
-                exclude=[
-                    "web",
-                    "cli",
-                    "docs",
-                    "tests",
-                    ".git",
-                    "**/__pycache__",
-                    "infra/cdk.out",
-                    ".venv",
-                    "node_modules",
-                ],
-            ),
+            code=lambda_.Code.from_asset(".", exclude=LAMBDA_ASSET_EXCLUDES),
             timeout=cdk.Duration.seconds(10),
             memory_size=256,
             environment={

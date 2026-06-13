@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Refactor pass (no behavior change; demo-readiness #35–#37): removed three
+  duplications surfaced now that the build is complete.
+  - `agg/contracts.py` defines the `Backend` / `CostMeter` Protocols + `Emit` /
+    `Usage` aliases once; the panel, analyze, and router orchestrators import them
+    instead of each redeclaring their own.
+  - `meter.read_spend_item()` is the single spend-table accessor (shared key format);
+    the spend Lambda and the Tier 1 choke point both use it rather than two copies.
+  - `web/src/auth/sdkCreds.ts` is the one `ScopedCredentials` → SDK-credentials
+    adapter; the five transport/RAG clients import it instead of copy-pasting.
+
 ### Added
 - Audit — CloudTrail management-plane trail (`infra/stacks/audit.py`): a multi-region
   `cloudtrail.Trail` with log-file validation, writing management events (role

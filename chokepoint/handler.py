@@ -28,6 +28,7 @@ from typing import Any
 import boto3
 from cost import evaluate_precall
 from cost.pricing import default_pricebook
+from meter import read_spend_item
 
 SPEND_TABLE = os.environ.get("AGG_SPEND_TABLE", "")
 AUTHENTICATED_ROLE_ARN = os.environ.get("AGG_AUTHENTICATED_ROLE_ARN", "")
@@ -50,12 +51,11 @@ def estimate_input_tokens(messages: list[dict], explicit: int | None) -> int:
 
 
 def read_spend(tenant: str, user: str, period: str) -> float:
-    """Authoritative spend for (tenant,user,period) from the spend table (§13.6)."""
+    """Authoritative spend for (tenant,user,period) from the spend table (§13.6).
+    Shares meter.read_spend_item so the key format can't drift between the two."""
     if not SPEND_TABLE:
         return 0.0
-    key = f"{tenant}#{user}#{period}"
-    item = _ddb.Table(SPEND_TABLE).get_item(Key={"pk": key}).get("Item")
-    return float(item["spend_usd"]) if item and "spend_usd" in item else 0.0
+    return read_spend_item(_ddb.Table(SPEND_TABLE), tenant, user, period)
 
 
 def assume_user_role(tenant: str, user: str, tier: str, courses: list[str]) -> Any:

@@ -8,6 +8,7 @@ import { SignatureV4 } from "@smithy/signature-v4";
 import { Sha256 } from "@aws-crypto/sha256-js";
 
 import type { ScopedCredentials } from "../auth";
+import { toSdkCredentials as sdkCreds } from "../auth/sdkCreds";
 import type { ChatMessage, ConverseChunk, ConverseRequest, Transport } from "./index";
 
 export interface OpenAIConfig {
@@ -17,13 +18,6 @@ export interface OpenAIConfig {
   scope: () => { tenant: string; user: string; period: string; tier: string; courses: string[]; budget?: number };
 }
 
-function sdkCreds(c: ScopedCredentials) {
-  return {
-    accessKeyId: c.accessKeyId,
-    secretAccessKey: c.secretAccessKey,
-    sessionToken: c.sessionToken,
-  };
-}
 
 // Pure: build the Tier 1 request body from a ConverseRequest + session scope.
 // Exported for testing without the network.

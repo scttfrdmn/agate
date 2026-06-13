@@ -11,6 +11,7 @@ import {
 } from "@aws-sdk/client-bedrock-agentcore";
 
 import type { ScopedCredentials } from "../auth";
+import { toSdkCredentials as sdkCreds } from "../auth/sdkCreds";
 import type { Emit, RunEvent } from "../events/protocol";
 import type { ConverseChunk, ConverseRequest, Transport } from "./index";
 
@@ -33,14 +34,6 @@ export interface AgentInvocation {
   code?: string;
 }
 
-function sdkCreds(c: ScopedCredentials) {
-  return {
-    accessKeyId: c.accessKeyId,
-    secretAccessKey: c.secretAccessKey,
-    sessionToken: c.sessionToken,
-    expiration: new Date(c.expiration),
-  };
-}
 
 // Parse the agent's newline-delimited-JSON response blob into RunEvents. Pure and
 // exported for testing. Blank lines and unparseable lines are skipped (robust to a

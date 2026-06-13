@@ -128,3 +128,14 @@ def spend_key(tenant: str, user: str, period: str) -> str:
 def spend_rollup_key(tenant: str, period: str) -> str:
     """Tenant-level rollup key: aggregate spend for the period (§13.6)."""
     return f"{tenant}#{period}"
+
+
+def read_spend_item(table, tenant: str, user: str, period: str) -> float:
+    """Read authoritative per-user spend from a DynamoDB spend table.
+
+    Takes the table resource (not a module global) so both the spend Lambda and the
+    Tier 1 choke point share one accessor + key format without coupling their
+    Lambda-scoped clients. Absent row → 0.0.
+    """
+    item = table.get_item(Key={"pk": spend_key(tenant, user, period)}).get("Item")
+    return float(item["spend_usd"]) if item and "spend_usd" in item else 0.0

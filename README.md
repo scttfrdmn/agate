@@ -88,6 +88,56 @@ Bootstrap provisions a CDK toolkit stack (an S3 staging bucket, ECR repo, and de
 None of it carries a wall-clock clock — it is storage + IAM only, consistent with NO CLOCKS.
 Pin the region to where Bedrock + S3 Vectors are available for your institution.
 
+## Deploying a demo
+
+The eight stacks are independent; deploy only what a given demo needs. The Tier 0 path
+(`agg-identity`) is $0-idle and the safest first deploy; the data/agent/web stacks add
+storage + a container.
+
+**1. Identity (the crux — Tier 0).**
+```bash
+npx cdk deploy agg-identity            # Cognito Identity Pool, broker Lambda, ABAC role
+```
+Real login needs OIDC config on the broker (it verifies the IdP token — no placeholder):
+set `AGG_OIDC_JWKS_URL`, `AGG_OIDC_ISSUER`, `AGG_OIDC_AUDIENCE` for your campus IdP (or a
+demo Cognito User Pool / any OIDC provider). Without them the broker fails closed.
+
+**2. Data + a demo corpus (Ask/RAG).**
+```bash
+npx cdk deploy agg-data -c tenants=demo
+agg tenant add demo                    # the CLI tracks tenants/budgets
+agg ingest --tenant demo --bucket agg-docs-<acct>-<region> ./sample.pdf --confirm
+```
+
+**3. Agent path (Panel/Analyze).** Build + push the reference container, then deploy:
+```bash
+docker build -t agg-agent ./agent && \
+  docker tag agg-agent <ecr-repo>:latest && docker push <ecr-repo>:latest
+npx cdk deploy agg-agent -c agent_container_uri=<ecr-repo>:latest \
+  -c cognito_discovery_url=<oidc-discovery-url> -c cognito_audience=<app-id>
+npx cdk deploy agg-governance          # Guardrails + Cedar policies (optional but recommended)
+```
+
+**4. Web (the SPA).** Build with the deployed endpoints, then host:
+```bash
+cd web && VITE_BROKER_URL=<broker-url> VITE_AWS_REGION=<region> \
+  VITE_VECTOR_BUCKET=agg-vectors-<acct>-<region> \
+  VITE_AGENT_RUNTIME_ARN=<runtime-arn> npm run build && cd ..
+npx cdk deploy agg-web                 # publishes web/dist to S3 + CloudFront
+```
+The `agg-web` output `SiteUrl` is the demo URL.
+
+**5. Optional Tier 1** (`agg-chokepoint`) and **audit** (`agg-audit`) only if the demo needs
+exact pre-call caps or the spend/forensic trail.
+
+**Teardown:** `npx cdk destroy agg-web agg-agent agg-data agg-identity` (RETAIN'd buckets/KMS
+in `agg-data`/`agg-audit` are kept deliberately — delete them by hand when done).
+
+> **Demo honesty note.** Until a campus IdP is wired, login is whatever OIDC provider you point
+> the broker/agent at. The auth path is *real* (RS256/JWKS verified server-side) — there is no
+> "paste an unsigned token" shortcut anymore. Tier 0 (Ask) is the proven-clean path; Panel/Analyze
+> run on the agent. No resource bills while idle except per-byte storage.
+
 ## License
 
 See [`LICENSE`](LICENSE) (to be added). Open source by construction — no vendor capture.

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Audit — CloudTrail management-plane trail (`infra/stacks/audit.py`): a multi-region
+  `cloudtrail.Trail` with log-file validation, writing management events (role
+  assumption, config changes) to the audit bucket under a `cloudtrail/` prefix. It
+  is the forensic complement to the data-plane Bedrock invocation logs — together
+  they give the per-identity "prove who accessed what" trail (design §8). The Trail
+  construct's delivery bucket-policy statements compose with the existing Bedrock
+  log-delivery statement on the same bucket. NO CLOCKS (storage-priced).
 - Phase 5 governance tail — Guardrails + AgentCore Policy (Cedar):
   - `policy/cedar.py`: pure generation of the Cedar policy set (§13.4) from the SAME
     `agg.entitlements` table that drives the IAM model-access policy — a per-tier

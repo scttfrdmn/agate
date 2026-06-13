@@ -11,6 +11,9 @@ per-request-priced — NO CLOCKS):
   * the **spend Lambda** (`meter.handler`) triggered on new log objects — it
     recomputes dollars from the logged token counts × Price List rates and upserts
     the table. The broker reads this at credential refresh for the soft cap.
+  * a **CloudTrail** trail (management-plane events: role assumption, config
+    changes) to the same bucket under its own prefix, with file validation — the
+    forensic complement to the data-plane invocation logs (§8).
 
 Cost-allocation tags are applied at the stack level so per-tenant Bedrock spend is
 attributable in Cost Explorer alongside the log-derived figure.
@@ -22,6 +25,9 @@ import aws_cdk as cdk
 from agg.names import HANDLE
 from aws_cdk import (
     Stack,
+)
+from aws_cdk import (
+    aws_cloudtrail as cloudtrail,
 )
 from aws_cdk import (
     aws_dynamodb as ddb,
@@ -139,6 +145,25 @@ class AuditStack(Stack):
         )
         logging_cr.node.add_dependency(log_bucket)
 
+        # --- CloudTrail (the management-plane forensic trail, §8) ---------
+        # Bedrock invocation logging (above) captures the *data* plane — who invoked
+        # which model. CloudTrail captures the *management* plane — who assumed which
+        # role, who changed config — into the same audit bucket under its own prefix.
+        # Together they give the per-identity "prove who accessed what" trail (§8).
+        # File validation lets a reviewer detect tampering; the Trail construct adds
+        # the bucket policy CloudTrail delivery requires.
+        trail = cloudtrail.Trail(
+            self,
+            "Trail",
+            trail_name=f"{HANDLE}-audit",
+            bucket=log_bucket,
+            s3_key_prefix="cloudtrail/",
+            include_global_service_events=True,
+            is_multi_region_trail=True,
+            enable_file_validation=True,
+            management_events=cloudtrail.ReadWriteType.ALL,
+        )
+
         # --- Cost-allocation tags (per-tenant chargeback attribution) -----
         cdk.Tags.of(self).add("agg:component", "audit")
 
@@ -146,6 +171,8 @@ class AuditStack(Stack):
         cdk.CfnOutput(self, "AuditBucketName", value=log_bucket.bucket_name)
         cdk.CfnOutput(self, "SpendTableName", value=spend_table.table_name)
         cdk.CfnOutput(self, "SpendMeterFunction", value=spend_fn.function_name)
+        cdk.CfnOutput(self, "CloudTrailArn", value=trail.trail_arn)
 
         self.log_bucket = log_bucket
         self.spend_table = spend_table
+        self.trail = trail

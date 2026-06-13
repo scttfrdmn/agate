@@ -20,8 +20,34 @@ func TestDispatchNoArgsShowsUsage(t *testing.T) {
 	}
 }
 
-func TestStubReturnsNonZero(t *testing.T) {
-	if got := dispatch([]string{"deploy"}); got != 1 {
-		t.Fatalf("stub exit = %d, want 1", got)
+func TestDispatchHelp(t *testing.T) {
+	if got := dispatch([]string{"help"}); got != 0 {
+		t.Fatalf("help exit = %d, want 0", got)
+	}
+}
+
+func TestTenantListOnMissingConfigIsEmptyOK(t *testing.T) {
+	// A missing config is treated as empty (not an error): `tenant list` exits 0.
+	if got := dispatch([]string{"tenant", "--config", t.TempDir() + "/.agg.json", "list"}); got != 0 {
+		t.Fatalf("tenant list exit = %d, want 0", got)
+	}
+}
+
+func TestTenantUsageWithoutSubcommand(t *testing.T) {
+	if got := dispatch([]string{"tenant"}); got != 2 {
+		t.Fatalf("tenant (no subcommand) exit = %d, want 2", got)
+	}
+}
+
+func TestDeployWithoutTenantsFails(t *testing.T) {
+	// Plan-only, but no tenants in a fresh config -> error exit 1 (never deploys).
+	if got := dispatch([]string{"deploy", "--config", t.TempDir() + "/.agg.json"}); got != 1 {
+		t.Fatalf("deploy with no tenants exit = %d, want 1", got)
+	}
+}
+
+func TestIngestUsageWithoutTenant(t *testing.T) {
+	if got := dispatch([]string{"ingest", "somefile.txt"}); got != 2 {
+		t.Fatalf("ingest without --tenant exit = %d, want 2", got)
 	}
 }

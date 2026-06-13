@@ -5,6 +5,8 @@
 *.pem
 *.key
 aws-exports.json
+.agg.json
+!.agg.example.json
 
 # --- Python / uv ---
 .venv/

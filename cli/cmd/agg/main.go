@@ -1,15 +1,18 @@
 // Command agg is the admin CLI for aws-genai-gateway.
 //
-// Phase 0 ships the skeleton: a dispatcher, `version`, and stubs for the
-// commands fleshed out in Phase 7 (deploy / tenant / budget / ingest). Commands
-// are small and verb-first, coreutils-style. Standard library only for now —
-// no SDK dependency until a command needs one.
+// Commands are small and verb-first, coreutils-style. The cloud-mutating commands
+// (deploy, ingest) build and PRINT a plan by default and run it only with an
+// explicit --confirm — agg never changes cloud state implicitly.
 package main
 
 import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
+
+	"github.com/scttfrdmn/aws-genai-gateway/cli/internal/commands"
+	"github.com/scttfrdmn/aws-genai-gateway/cli/internal/config"
 )
 
 // Version is the agg release (SemVer). Override at build time with:
@@ -17,66 +20,230 @@ import (
 //	go build -ldflags "-X main.Version=0.1.0"
 var Version = "0.1.0"
 
+func main() {
+	os.Exit(dispatch(os.Args[1:]))
+}
+
 type command struct {
 	name  string
 	short string
 	run   func(args []string) int
 }
 
-func main() {
-	os.Exit(dispatch(os.Args[1:]))
+func commandSet() []command {
+	return []command{
+		{"version", "print the agg version", cmdVersion},
+		{"tenant", "manage tenants (add/list)", cmdTenant},
+		{"budget", "set/show a tenant's budget", cmdBudget},
+		{"deploy", "plan/deploy the CDK stacks", cmdDeploy},
+		{"ingest", "plan/upload a document into a tenant corpus", cmdIngest},
+	}
 }
 
 func dispatch(args []string) int {
-	commands := []command{
-		{"version", "print the agg version", cmdVersion},
-		{"deploy", "deploy/update the agg stacks (Phase 7)", stub("deploy")},
-		{"tenant", "manage tenants/cost centers (Phase 7)", stub("tenant")},
-		{"budget", "set per-tenant/user budgets (Phase 7)", stub("budget")},
-		{"ingest", "ingest documents into a tenant index (Phase 7)", stub("ingest")},
-	}
-
+	cmds := commandSet()
 	if len(args) == 0 {
-		usage(commands)
+		usage(cmds)
 		return 2
 	}
 	name, rest := args[0], args[1:]
 	if name == "-h" || name == "--help" || name == "help" {
-		usage(commands)
+		usage(cmds)
 		return 0
 	}
-	for _, c := range commands {
+	for _, c := range cmds {
 		if c.name == name {
 			return c.run(rest)
 		}
 	}
 	fmt.Fprintf(os.Stderr, "agg: unknown command %q\n", name)
-	usage(commands)
+	usage(cmds)
 	return 2
 }
 
 func cmdVersion(args []string) int {
-	fs := flag.NewFlagSet("version", flag.ContinueOnError)
-	if err := fs.Parse(args); err != nil {
+	if err := flag.NewFlagSet("version", flag.ContinueOnError).Parse(args); err != nil {
 		return 2
 	}
 	fmt.Printf("agg %s\n", Version)
 	return 0
 }
 
-// stub returns a placeholder runner for commands implemented in a later phase.
-func stub(name string) func([]string) int {
-	return func([]string) int {
-		fmt.Fprintf(os.Stderr, "agg %s: not implemented yet (Phase 7)\n", name)
-		return 1
+// --- tenant ----------------------------------------------------------------
+
+func cmdTenant(args []string) int {
+	fs := flag.NewFlagSet("tenant", flag.ContinueOnError)
+	path := fs.String("config", config.DefaultPath, "config file")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	rest := fs.Args()
+	if len(rest) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: agg tenant <add|list> [id]")
+		return 2
+	}
+	c, err := config.Load(*path)
+	if err != nil {
+		return fail(err)
+	}
+	switch rest[0] {
+	case "list":
+		for _, t := range c.Tenants {
+			b := c.Budgets[t]
+			if b.USD > 0 {
+				fmt.Printf("%s\t$%.2f %s\n", t, b.USD, b.Period)
+			} else {
+				fmt.Println(t)
+			}
+		}
+		return 0
+	case "add":
+		if len(rest) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: agg tenant add <id>")
+			return 2
+		}
+		added, err := c.AddTenant(rest[1])
+		if err != nil {
+			return fail(err)
+		}
+		if !added {
+			fmt.Printf("tenant %q already present\n", rest[1])
+			return 0
+		}
+		if err := config.Save(*path, c); err != nil {
+			return fail(err)
+		}
+		fmt.Printf("added tenant %q\n", rest[1])
+		return 0
+	default:
+		fmt.Fprintf(os.Stderr, "agg tenant: unknown subcommand %q\n", rest[0])
+		return 2
 	}
 }
 
-func usage(commands []command) {
+// --- budget ----------------------------------------------------------------
+
+func cmdBudget(args []string) int {
+	// Pull the leading positionals (`set <tenant>`) before flag parsing so the
+	// natural `agg budget set chem --usd 250` ordering works (Go's flag package
+	// otherwise stops at the first positional).
+	sub, tenant, flags, ok := splitBudgetArgs(args)
+	if !ok {
+		fmt.Fprintln(os.Stderr, "usage: agg budget set <tenant> --usd <amount> [--period <label>]")
+		return 2
+	}
+	fs := flag.NewFlagSet("budget", flag.ContinueOnError)
+	path := fs.String("config", config.DefaultPath, "config file")
+	usd := fs.Float64("usd", -1, "budget ceiling in USD")
+	period := fs.String("period", "", "budget period label (e.g. 2026-fall)")
+	if err := fs.Parse(flags); err != nil {
+		return 2
+	}
+	if sub != "set" {
+		fmt.Fprintln(os.Stderr, "usage: agg budget set <tenant> --usd <amount> [--period <label>]")
+		return 2
+	}
+	if *usd < 0 {
+		fmt.Fprintln(os.Stderr, "agg budget set: --usd is required and must be >= 0")
+		return 2
+	}
+	c, err := config.Load(*path)
+	if err != nil {
+		return fail(err)
+	}
+	if err := c.SetBudget(tenant, *usd, *period); err != nil {
+		return fail(err)
+	}
+	if err := config.Save(*path, c); err != nil {
+		return fail(err)
+	}
+	fmt.Printf("set budget for %q: $%.2f %s\n", tenant, *usd, *period)
+	return 0
+}
+
+// splitBudgetArgs separates the leading `set <tenant>` positionals from the flags
+// that follow, so flags may appear after the positionals.
+func splitBudgetArgs(args []string) (sub, tenant string, flags []string, ok bool) {
+	if len(args) < 2 {
+		return "", "", nil, false
+	}
+	return args[0], args[1], args[2:], true
+}
+
+// --- deploy ----------------------------------------------------------------
+
+func cmdDeploy(args []string) int {
+	fs := flag.NewFlagSet("deploy", flag.ContinueOnError)
+	path := fs.String("config", config.DefaultPath, "config file")
+	confirm := fs.Bool("confirm", false, "actually run the deploy (default: plan only)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	c, err := config.Load(*path)
+	if err != nil {
+		return fail(err)
+	}
+	plan, err := commands.DeployPlan(c, fs.Args())
+	if err != nil {
+		return fail(err)
+	}
+	return runOrPlan(plan, *confirm)
+}
+
+// --- ingest ----------------------------------------------------------------
+
+func cmdIngest(args []string) int {
+	fs := flag.NewFlagSet("ingest", flag.ContinueOnError)
+	path := fs.String("config", config.DefaultPath, "config file")
+	tenant := fs.String("tenant", "", "destination tenant")
+	bucket := fs.String("bucket", "", "docs bucket (agg-docs-<acct>-<region>)")
+	confirm := fs.Bool("confirm", false, "actually upload (default: plan only)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *tenant == "" || len(fs.Args()) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: agg ingest --tenant <id> [--bucket <name>] <file> [--confirm]")
+		return 2
+	}
+	c, err := config.Load(*path)
+	if err != nil {
+		return fail(err)
+	}
+	plan, _, err := commands.IngestPlan(c, *tenant, *bucket, fs.Args()[0])
+	if err != nil {
+		return fail(err)
+	}
+	return runOrPlan(plan, *confirm)
+}
+
+// --- shared helpers --------------------------------------------------------
+
+// runOrPlan prints the plan; with confirm it executes it, streaming output.
+func runOrPlan(plan commands.Plan, confirm bool) int {
+	fmt.Printf("plan: %s\n  %s\n", plan.Summary, plan.String())
+	if !confirm {
+		fmt.Println("(dry run — re-run with --confirm to execute)")
+		return 0
+	}
+	cmd := exec.Command(plan.Argv[0], plan.Argv[1:]...) //nolint:gosec // argv built from validated config
+	cmd.Stdout, cmd.Stderr, cmd.Stdin = os.Stdout, os.Stderr, os.Stdin
+	if err := cmd.Run(); err != nil {
+		return fail(err)
+	}
+	return 0
+}
+
+func fail(err error) int {
+	fmt.Fprintf(os.Stderr, "agg: %v\n", err)
+	return 1
+}
+
+func usage(cmds []command) {
 	fmt.Fprintf(os.Stderr, "agg — admin CLI for aws-genai-gateway (%s)\n\n", Version)
 	fmt.Fprintln(os.Stderr, "usage: agg <command> [args]")
 	fmt.Fprintln(os.Stderr, "\ncommands:")
-	for _, c := range commands {
+	for _, c := range cmds {
 		fmt.Fprintf(os.Stderr, "  %-9s %s\n", c.name, c.short)
 	}
+	fmt.Fprintln(os.Stderr, "\ncloud-mutating commands (deploy, ingest) plan by default; pass --confirm to run.")
 }

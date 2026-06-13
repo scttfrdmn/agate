@@ -214,6 +214,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tests (fakes only, Python + TypeScript): dollar math per kind, config-vs-default
     rate resolution, the S3-Vectors config fallback, thread-safe parallel metering,
     the soft-cap decision matrix, and Python/TS parity on a worked example.
+- Phase 7 — the `agg` admin CLI (Go): real `tenant`, `budget`, `deploy`, and
+  `ingest` commands replacing the Phase 0 stubs.
+  - `internal/config`: a pure `.agg.json` model — tenant set (validated against the
+    `agg:tenant` charset, kept sorted/deduped) and per-tenant budgets (which the
+    soft cap reads). Load treats a missing file as empty; full table tests.
+  - `internal/commands`: pure plan construction — `deploy` turns the tenant set into
+    `cdk deploy ... -c tenants=...`; `ingest` targets the FERPA-correct
+    `s3://agg-docs-…/{tenant}/<file>` prefix. Both return the exact argv, tested.
+  - The cloud-mutating commands (`deploy`, `ingest`) **plan by default and run only
+    with `--confirm`** — agg never changes cloud state implicitly. `budget set`
+    accepts the natural `set <tenant> --usd N` ordering.
+  - `gofmt`/`go vet` clean; `go test ./...` green across the three packages.
 
 ### Fixed
 - **Phase 1 proven live** (first real AWS deploy, us-east-1): the identity stack

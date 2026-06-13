@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Demo readiness — `infra/stacks/demo_idp.py` (`agg-demo-idp`): an optional,
+  throwaway Cognito User Pool that issues real RS256 JWTs so the gateway can be
+  demoed without a campus IdP. A pre-token-generation Lambda
+  (`infra/functions/demo_idp/pretoken.py`) maps the demo user's
+  `custom:affiliation|tenant|courses|grant` attributes onto the top-level `agg`
+  claim names, so the demo token verifies (SEC-4) and scopes (ABAC) exactly like a
+  campus token with no gateway changes. The stack outputs the OIDC issuer, JWKS URL,
+  and audience to wire into the broker/agent `AGG_OIDC_*` config. Production omits
+  this stack and points the broker at the real IdP.
 - Demo readiness — the SPA now drives the full academic interaction model (#39):
   `web/src/main.ts` adds a mode selector (Ask / Panel / Analyze) and routes each
   mode — Ask streams Tier 0 browser-direct; Panel and Analyze invoke the AgentCore

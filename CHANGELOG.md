@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Demo readiness — the SPA now drives the full academic interaction model (#39):
+  `web/src/main.ts` adds a mode selector (Ask / Panel / Analyze) and routes each
+  mode — Ask streams Tier 0 browser-direct; Panel and Analyze invoke the AgentCore
+  agent and render the multi-pane layout, the side-by-side divergence view, the
+  notebook Analyze cell, and a live cost receipt from the run event stream. The
+  agent invocation carries the IdP token (verified server-side; the SPA never sends
+  a tier).
+- Demo readiness — `infra/stacks/web.py` (design §11, #40): the static SPA on a
+  private S3 bucket behind CloudFront with Origin Access Control (no public bucket,
+  no fixed CloudFront fee → NO CLOCKS), SPA deep-link error mapping, and a
+  `BucketDeployment` that publishes `web/dist` when present. Outputs the site URL.
+
 ### Security
+- SEC-2b: the agent execution role no longer holds S3 Vectors / S3 read permissions
+  — the agent does not retrieve (evidence is supplied in the invocation payload, the
+  SPA having run the tenant-scoped query Tier-0-style). Removing the unused grant
+  closes the latent cross-tenant data read the review flagged; a future retrieval
+  tool must derive the tenant from the verified token before any grant is re-added.
 - **SEC-4 — real JWT verification replaces the Phase-1 placeholder across all entry
   points.** A re-review of the SEC-1/2 fixes found they had relocated trust to inputs
   whose trustworthiness wasn't established: the chokepoint reused the broker's

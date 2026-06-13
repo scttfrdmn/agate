@@ -8,6 +8,9 @@ export interface AppConfig {
   defaultModelId: string;
   // S3 Vectors bucket holding the per-tenant indexes (empty = RAG disabled).
   vectorBucketName: string;
+  // AgentCore Runtime ARN for the agent path (Panel/Analyze). Empty = agent modes
+  // disabled (the SPA shows Ask only).
+  agentRuntimeArn: string;
 }
 
 const env = import.meta.env;
@@ -19,4 +22,5 @@ export const config: AppConfig = {
   // target a frontier model the session may not be entitled to.
   defaultModelId: env.VITE_DEFAULT_MODEL_ID ?? "openai.gpt-oss-20b-1:0",
   vectorBucketName: env.VITE_VECTOR_BUCKET ?? "",
+  agentRuntimeArn: env.VITE_AGENT_RUNTIME_ARN ?? "",
 };

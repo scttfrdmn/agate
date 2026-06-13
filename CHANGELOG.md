@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Phase 5 governance tail — Guardrails + AgentCore Policy (Cedar):
+  - `policy/cedar.py`: pure generation of the Cedar policy set (§13.4) from the SAME
+    `agg.entitlements` table that drives the IAM model-access policy — a per-tier
+    `InvokeModel` permit (tier+tenant matched), a tenant/course-scoped `Retrieve`
+    permit, a per-user `CallTool` permit, and a defence-in-depth cross-tenant
+    `forbid`. The human-auditable layer and the enforced IAM layer cannot drift.
+  - `infra/stacks/governance.py`: a Bedrock `CfnGuardrail` (content filters across
+    the standard categories + PROMPT_ATTACK on input, PII anonymization) and an
+    AgentCore `CfnPolicyEngine` + `CfnPolicy` loaded with the generated Cedar text.
+    L1 `Cfn*` (no L2 yet; migration tracked in #22). NO CLOCKS — Guardrails bill
+    per-use, the policy engine is config.
+  - Tests (no AWS): every tier covered, the Cedar model set mirrors the entitlement
+    table, retrieval/tool/forbid clauses present; `cdk synth` confirms the Cedar text
+    and the 6 content filters land in the template.
 - Phase 6 — optional Tier 1 choke point (exact pre-call budget enforcement):
   - `cost/precall.py`: pure `evaluate_precall` / `estimate_call_cost` — reject a call
     *before* it runs when its **worst-case** cost (input tokens + `max_tokens` at the

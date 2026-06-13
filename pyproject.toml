@@ -37,7 +37,7 @@ testpaths = ["tests"]
 # Coverage on by default over our own source. The 60% floor is a hard gate
 # (CLAUDE.md); the suite currently sits well above it. CDK stacks under
 # infra/stacks/ are exercised by `cdk synth`, not unit tests, so they are omitted.
-addopts = "--cov=agg --cov=policy --cov=lti --cov=ingest --cov=cost --cov=agent --cov=meter --cov=infra/functions --cov-fail-under=60"
+addopts = "--cov=agg --cov=policy --cov=lti --cov=ingest --cov=cost --cov=agent --cov=meter --cov=chokepoint --cov=infra/functions --cov-fail-under=60"
 markers = [
     "aws: live, read-only AWS calls (IAM policy simulation). Skipped without creds.",
 ]

@@ -8,6 +8,7 @@ fallbacks and an optional live Price List fetch at the edge.
 """
 
 from cost.meter import CostMeter, CostRow, Receipt
+from cost.precall import PrecallResult, estimate_call_cost, evaluate_precall
 from cost.pricing import (
     ModelRate,
     PriceBook,
@@ -20,8 +21,11 @@ __all__ = [
     "CostMeter",
     "CostRow",
     "ModelRate",
+    "PrecallResult",
     "PriceBook",
     "Receipt",
     "default_pricebook",
+    "estimate_call_cost",
+    "evaluate_precall",
     "evaluate_soft_cap",
 ]

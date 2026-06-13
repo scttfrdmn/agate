@@ -18,39 +18,15 @@ from __future__ import annotations
 import json
 import threading
 import time
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Protocol
+from typing import Any
 
 from pydantic import ValidationError
 
+from agg.contracts import Backend, CostMeter, Emit
 from agg.panel.schema import Divergence, strip_fences
 
-Emit = Callable[[dict[str, Any]], None]
-
-# Usage dict as returned by a Converse response: {"inputTokens": int, "outputTokens": int}.
-Usage = dict[str, int]
-
-
-class Backend(Protocol):
-    """Minimal model-invocation surface the panel needs (mirrors the chat path)."""
-
-    def converse(
-        self, tier: str, system: str, prompt: str, max_tokens: int
-    ) -> tuple[str, Usage, Any]:
-        """Return (text, usage, matches). `matches` is retrieval metadata, unused here."""
-        ...
-
-
-class CostMeter(Protocol):
-    """Thread-safe running cost meter (the same surface used elsewhere)."""
-
-    @property
-    def total(self) -> float: ...
-
-    def add_llm(self, label: str, tier: str, model_label: str, usage: Usage) -> float:
-        """Record one LLM call's cost and return its incremental dollar amount."""
-        ...
+__all__ = ["Backend", "CostMeter", "run_panel"]
 
 
 def _monotonic() -> float:

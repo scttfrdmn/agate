@@ -11,6 +11,7 @@ import {
 } from "@aws-sdk/client-bedrock-runtime";
 
 import type { ScopedCredentials } from "../auth";
+import { toSdkCredentials } from "../auth/sdkCreds";
 import type { ChatMessage, ConverseChunk, ConverseRequest, Transport } from "./index";
 
 // Pure: map our transport-level messages to the Bedrock Converse wire shape.
@@ -33,15 +34,6 @@ export function toConverseMessages(messages: ChatMessage[]): {
   return { system, messages: out };
 }
 
-// Adapt boto-style ScopedCredentials to the SDK credential provider shape.
-function toSdkCredentials(c: ScopedCredentials) {
-  return {
-    accessKeyId: c.accessKeyId,
-    secretAccessKey: c.secretAccessKey,
-    sessionToken: c.sessionToken,
-    expiration: new Date(c.expiration),
-  };
-}
 
 export class BedrockTransport implements Transport {
   readonly tier = "bedrock" as const;

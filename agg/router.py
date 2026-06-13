@@ -12,8 +12,9 @@ cheap call over an injected `Backend`/`CostMeter` (fakes in tests).
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
+
+from agg.contracts import Backend, CostMeter, Emit
 
 Mode = Literal["SYNTHESIS", "DEBATE", "ANALYSIS"]
 MODES: tuple[Mode, ...] = ("SYNTHESIS", "DEBATE", "ANALYSIS")
@@ -21,9 +22,6 @@ MODES: tuple[Mode, ...] = ("SYNTHESIS", "DEBATE", "ANALYSIS")
 # The cheapest-mode default: a single cited synthesis (Ask, Tier 0). When the
 # router is ambiguous we fall back here — never to a more expensive mode.
 DEFAULT_MODE: Mode = "SYNTHESIS"
-
-Emit = Callable[[dict[str, Any]], None]
-Usage = dict[str, int]
 
 # The routing system prompt: classify to exactly one word from the vocabulary.
 ROUTER_SYSTEM = """\
@@ -44,19 +42,6 @@ _CUES: dict[Mode, tuple[str, ...]] = {
     "DEBATE": ("debate", "panel", "compare", "disagree", "perspective", "contrast"),
     "SYNTHESIS": ("synth", "ask", "summar", "explain", "cite", "answer"),
 }
-
-
-class Backend(Protocol):
-    def converse(
-        self, tier: str, system: str, prompt: str, max_tokens: int
-    ) -> tuple[str, Usage, Any]: ...
-
-
-class CostMeter(Protocol):
-    @property
-    def total(self) -> float: ...
-
-    def add_llm(self, label: str, tier: str, model_label: str, usage: Usage) -> float: ...
 
 
 def classify_mode(raw: str) -> Mode:

@@ -10,6 +10,7 @@ S3-triggered Lambda and the CDK `audit.py` stack are the assembly around it.
 from meter.parse import (
     SpendRecord,
     parse_invocation_record,
+    read_spend_item,
     spend_key,
     spend_rollup_key,
 )
@@ -17,6 +18,7 @@ from meter.parse import (
 __all__ = [
     "SpendRecord",
     "parse_invocation_record",
+    "read_spend_item",
     "spend_key",
     "spend_rollup_key",
 ]

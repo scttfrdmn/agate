@@ -13,6 +13,7 @@ import {
 } from "@aws-sdk/client-s3vectors";
 
 import type { ScopedCredentials } from "../auth";
+import { toSdkCredentials as sdkCreds } from "../auth/sdkCreds";
 import type { RetrievedChunk } from "./context";
 
 // Must match the ingest contract (infra/stacks/data.py EMBED_MODEL_ID/DIMENSION).
@@ -28,14 +29,6 @@ export interface RetrieverConfig {
   topK?: number;
 }
 
-function sdkCreds(c: ScopedCredentials) {
-  return {
-    accessKeyId: c.accessKeyId,
-    secretAccessKey: c.secretAccessKey,
-    sessionToken: c.sessionToken,
-    expiration: new Date(c.expiration),
-  };
-}
 
 export class Retriever {
   constructor(

@@ -11,6 +11,7 @@ import {
 import { QueryVectorsCommand, S3VectorsClient } from "@aws-sdk/client-s3vectors";
 
 import type { ScopedCredentials } from "../auth";
+import { toSdkCredentials as sdkCreds } from "../auth/sdkCreds";
 import { elementFromMetadata, type VisualElement } from "./citation";
 
 // Must match the gate-verified contract (agg/multimodal.py, issue #17).
@@ -30,14 +31,6 @@ export interface VisualMatch {
   distance?: number;
 }
 
-function sdkCreds(c: ScopedCredentials) {
-  return {
-    accessKeyId: c.accessKeyId,
-    secretAccessKey: c.secretAccessKey,
-    sessionToken: c.sessionToken,
-    expiration: new Date(c.expiration),
-  };
-}
 
 // Build the Nova SINGLE_EMBEDDING body for a text or image query. Pure — exported
 // for unit testing without the SDK. Exactly one of text/image must be provided.

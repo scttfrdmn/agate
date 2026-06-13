@@ -15,41 +15,20 @@ shared `CostMeter`; tests supply fakes.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any, Protocol
 
 from agg.analyze.schema import ExecResult, extract_code, result_to_events
+from agg.contracts import Backend, CostMeter, Emit
 
-Emit = Callable[[dict[str, Any]], None]
-Usage = dict[str, int]
-
-
-class Backend(Protocol):
-    """Model-invocation surface used to generate the script (same as elsewhere)."""
-
-    def converse(
-        self, tier: str, system: str, prompt: str, max_tokens: int
-    ) -> tuple[str, Usage, Any]: ...
+__all__ = ["Backend", "CodeRunner", "CostMeter", "run_analyze"]
 
 
 class CodeRunner(Protocol):
-    """The isolated execution surface (AgentCore Code Interpreter microVM)."""
+    """The isolated execution surface (AgentCore Code Interpreter microVM).
+    Analyze-specific, so it stays here rather than in the shared contracts."""
 
     def execute(self, code: str, *, language: str = "python") -> ExecResult:
         """Run code in the sandbox and return a normalised ExecResult."""
-        ...
-
-
-class CostMeter(Protocol):
-    """Running cost meter with both token and compute lines."""
-
-    @property
-    def total(self) -> float: ...
-
-    def add_llm(self, label: str, tier: str, model_label: str, usage: Usage) -> float: ...
-
-    def add_compute(self, label: str, seconds: float) -> float:
-        """Record a compute (execution-time) cost line and return its dollar amount."""
         ...
 
 

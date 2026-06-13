@@ -22,6 +22,7 @@ import boto3
 from meter.parse import (
     RecordError,
     parse_invocation_record,
+    read_spend_item,
     spend_key,
     spend_rollup_key,
 )
@@ -63,8 +64,7 @@ def record_spend(spend) -> None:
 
 def read_spend(tenant: str, user: str, period: str) -> float:
     """Authoritative spend for the soft cap (broker reads this at creds refresh)."""
-    item = _ddb.Table(SPEND_TABLE).get_item(Key={"pk": spend_key(tenant, user, period)}).get("Item")
-    return float(item["spend_usd"]) if item and "spend_usd" in item else 0.0
+    return read_spend_item(_ddb.Table(SPEND_TABLE), tenant, user, period)
 
 
 def handler(event: dict, context: object) -> dict:

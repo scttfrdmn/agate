@@ -32,7 +32,7 @@ from aws_cdk import (
     aws_lambda as lambda_,
 )
 from constructs import Construct
-from infra.assets import LAMBDA_ASSET_EXCLUDES
+from infra.assets import pip_bundled_code
 from policy.generate import data_scope_policy, model_access_policy
 
 # Sentinel for federation config that must be supplied before deploy.
@@ -153,14 +153,15 @@ class IdentityStack(Stack):
         )
 
         # --- Broker Lambda -------------------------------------------------
-        # Bundles the infra/ + agg/ + policy/ source so claims_to_tags runs in-Lambda.
+        # Bundles infra/ + agg/ + policy/ source AND PyJWT, so claims_to_tags and the
+        # real token verifier (agg.jwt_verify) run in-Lambda (SEC-4).
         broker = lambda_.Function(
             self,
             "Broker",
             function_name=f"{HANDLE}-broker",
             runtime=lambda_.Runtime.PYTHON_3_13,
             handler="infra.functions.broker.handler.handler",
-            code=lambda_.Code.from_asset(".", exclude=LAMBDA_ASSET_EXCLUDES),
+            code=pip_bundled_code("agg", "infra", "policy"),
             timeout=cdk.Duration.seconds(10),
             memory_size=256,
             environment={

@@ -52,6 +52,57 @@ def test_run_invocation_bad_payload_surfaces_error_then_receipt(stub_backends):
     assert events[-1]["type"] == "receipt"
 
 
+def test_unverifiable_token_falls_back_to_oss(stub_backends, monkeypatch):
+    # SEC-4b: no/invalid token -> oss tier -> a frontier model in the payload is
+    # rejected by dispatch before any model call.
+    events = server.run_invocation(
+        {
+            "question": "compare",
+            "mode": "DEBATE",
+            "evidence": "e",
+            "roster": [
+                {
+                    "tier": "us.anthropic.claude-opus-4-1-20250805-v1:0",
+                    "label": "x",
+                    "max_tokens": 64,
+                }
+            ],
+            "adjudicator": {"tier": "openai.gpt-oss-20b-1:0", "label": "adj", "max_tokens": 64},
+            "idp_token": "",  # unverifiable -> oss
+        }
+    )
+    # dispatch raised InvocationError (model not entitled) -> surfaced as error answer
+    assert any(e["type"] == "answer" and e.get("title") == "error" for e in events)
+    assert any("not entitled" in e.get("text", "") for e in events if e["type"] == "answer")
+
+
+def test_verified_frontier_tier_allows_frontier_model(stub_backends, monkeypatch):
+    # A verified frontier tier permits a frontier model (the positive case).
+    monkeypatch.setattr(server, "_verified_tier", lambda payload: "frontier")
+    events = server.run_invocation(
+        {
+            "question": "compare",
+            "mode": "DEBATE",
+            "evidence": "e",
+            "roster": [
+                {
+                    "tier": "us.anthropic.claude-opus-4-1-20250805-v1:0",
+                    "label": "x",
+                    "max_tokens": 64,
+                }
+            ],
+            "adjudicator": {
+                "tier": "us.anthropic.claude-opus-4-1-20250805-v1:0",
+                "label": "adj",
+                "max_tokens": 64,
+            },
+        }
+    )
+    # no entitlement error; ran to a receipt
+    assert not any(e.get("title") == "error" for e in events if e["type"] == "answer")
+    assert events[-1]["type"] == "receipt"
+
+
 def test_events_to_blob_is_ndjson():
     blob = server._events_to_blob(
         [{"type": "answer", "text": "hi"}, {"type": "cost", "total": 1.0}]

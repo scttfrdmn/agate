@@ -8,8 +8,8 @@ FROM public.ecr.aws/docker/library/python:3.13-slim
 
 WORKDIR /app
 
-# boto3 is the only runtime dep beyond the stdlib server + the pure agg package.
-RUN pip install --no-cache-dir "boto3>=1.34" "pydantic>=2.7"
+# boto3 + pydantic + PyJWT (the last for agg.jwt_verify's real token verification).
+RUN pip install --no-cache-dir "boto3>=1.34" "pydantic>=2.7" "pyjwt[crypto]>=2.8"
 
 # The pure orchestration + the container shims. Copy only what the agent needs.
 COPY agg/ ./agg/

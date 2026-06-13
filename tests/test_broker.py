@@ -65,14 +65,31 @@ def test_fails_closed_on_missing_tenant(stub_sts):
     assert stub_sts.last_call is None
 
 
-def test_handler_returns_403_on_bad_claims(stub_sts):
+@pytest.fixture
+def verified_token(monkeypatch):
+    """Simulate a VERIFIED token: validate_idp_token returns the decoded claims.
+    Real signature/JWKS verification is covered by tests/test_jwt_verify.py; here we
+    exercise the broker's scoping path given an already-verified claim set."""
+
+    def _decode(token):
+        claims = json.loads(token)
+        # Mirror verify_token's fail-closed contract for the unverifiable cases the
+        # handler relies on (missing/blank token).
+        if not isinstance(claims, dict):
+            raise broker.BrokerError("bad token")
+        return claims
+
+    monkeypatch.setattr(broker, "validate_idp_token", _decode)
+
+
+def test_handler_returns_403_on_bad_claims(stub_sts, verified_token):
     event = {"body": json.dumps({"idp_token": json.dumps({"affiliation": "faculty"})})}
     resp = broker.handler(event, None)
     assert resp["statusCode"] == 403
     assert "credentials" not in resp["body"]
 
 
-def test_handler_200_on_good_claims(stub_sts):
+def test_handler_200_on_good_claims(stub_sts, verified_token):
     token = json.dumps(
         {"sub": "u1", "affiliation": "student", "tenant": "chem", "courses": ["CHEM-101"]}
     )
@@ -82,3 +99,12 @@ def test_handler_200_on_good_claims(stub_sts):
     body = json.loads(resp["body"])
     assert body["scope"]["tier"] == "oss"
     assert body["scope"]["courses"] == ["CHEM-101"]
+
+
+def test_handler_rejects_unverifiable_token_when_unconfigured(stub_sts):
+    # With no OIDC config and the REAL validate_idp_token, an unsigned/garbage token
+    # must fail closed (403) — the SEC-4 placeholder path is gone.
+    event = {"body": json.dumps({"idp_token": "not-a-real-jwt"})}
+    resp = broker.handler(event, None)
+    assert resp["statusCode"] == 403
+    assert "credentials" not in resp["body"]

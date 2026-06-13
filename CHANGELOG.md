@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
+- **SEC-4 — real JWT verification replaces the Phase-1 placeholder across all entry
+  points.** A re-review of the SEC-1/2 fixes found they had relocated trust to inputs
+  whose trustworthiness wasn't established: the chokepoint reused the broker's
+  unsigned-token placeholder behind a live Function URL (SEC-4a), and the agent
+  derived its tier from an unsourced `X-Agg-Verified-Tier` header (SEC-4b).
+  - `agg/jwt_verify.py`: one shared real verifier — RS256 against the IdP JWKS,
+    pinned algorithm (no `alg=none`/HS-confusion), `iss`/`aud`/`exp`/`sub` enforced,
+    JWKS client injectable for tests. Used by the broker, the choke point, and the
+    agent so verification can't drift between them.
+  - The broker and choke point now verify the token (no unsigned-JSON path); the
+    agent derives its tier from the verified token (the forgeable header is gone),
+    fail-closing to the cheapest tier. Every failure denies (no vend / 4xx).
+  - `infra/assets.py` `pip_bundled_code()` bundles PyJWT into the broker, choke
+    point, and LTI Lambda assets (and the agent Dockerfile installs it), so the
+    verifier has its dependency at runtime; a missing dep fails closed at import.
+  - Tests: real RS256 tokens (in-test keypair) covering tamper/expiry/wrong-aud/
+    wrong-iss/`alg=none`/missing-claim rejection, plus regressions proving the agent
+    falls back to oss on an unverifiable token and the broker/chokepoint deny.
 - Security review pass (3 HIGH findings fixed before any demo deploy). The Tier 0
   chat path reviewed clean; all three findings were the newer paths trusting
   client/token-supplied scope instead of re-deriving it from a verified identity.

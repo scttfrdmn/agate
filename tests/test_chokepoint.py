@@ -55,6 +55,21 @@ def wired(monkeypatch):
     monkeypatch.setattr(cp, "read_spend", lambda tenant, user, period: w.spend)
     monkeypatch.setattr(cp, "lookup_budget", lambda tenant, user, period: w.budget)
     monkeypatch.setattr(cp, "AUTHENTICATED_ROLE_ARN", "arn:aws:iam::123:role/agg-authenticated")
+
+    # Simulate a VERIFIED token: decode the JSON the test passes as `idp_token`.
+    # Real signature/JWKS verification is covered by tests/test_jwt_verify.py.
+    def _decode(token):
+        if not token:
+            raise cp.ChokepointError("no token")
+        try:
+            claims = json.loads(token)
+        except ValueError as exc:
+            raise cp.ChokepointError("bad token") from exc
+        if not isinstance(claims, dict):
+            raise cp.ChokepointError("bad token")
+        return claims
+
+    monkeypatch.setattr(cp, "validate_idp_token", _decode)
     return w
 
 

@@ -29,7 +29,7 @@ from aws_cdk import (
     aws_lambda as lambda_,
 )
 from constructs import Construct
-from infra.assets import LAMBDA_ASSET_EXCLUDES
+from infra.assets import pip_bundled_code
 
 PLACEHOLDER = "PLACEHOLDER"
 
@@ -50,7 +50,7 @@ class ChokepointStack(Stack):
             function_name=f"{HANDLE}-chokepoint",
             runtime=lambda_.Runtime.PYTHON_3_13,
             handler="chokepoint.handler.handler",
-            code=lambda_.Code.from_asset(".", exclude=LAMBDA_ASSET_EXCLUDES),
+            code=pip_bundled_code("agg", "chokepoint", "cost", "meter"),
             timeout=cdk.Duration.seconds(30),
             memory_size=256,
             environment={

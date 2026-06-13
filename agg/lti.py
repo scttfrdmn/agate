@@ -91,12 +91,16 @@ def lti_claims_to_agg_claims(claims: dict, *, tenant: str | None = None) -> dict
 
     - affiliation  <- LTI roles
     - courses      <- LTI context id (the launched course); NRPS can add more later
-    - tenant       <- caller-supplied (from platform registration), or the context
-                      claim's label as a fallback. The tenant is an institutional
-                      decision tied to the registered platform, never user-supplied.
+    - tenant       <- the REGISTRATION tenant ONLY. The tenant is the data-isolation
+                      key (-> agg:tenant tag -> S3 prefix + vector index), so it is an
+                      institutional decision tied to the registered platform and is
+                      NEVER derived from the id_token. The LTI context claim (course
+                      label/id) is set by course creators, i.e. attacker-influenceable
+                      on a shared LMS; falling back to it would let a user pick another
+                      tenant's corpus (SEC-3). We fail closed instead.
 
-    Raises LtiClaimError if no tenant can be determined, so the broker fails closed
-    rather than vending an unscoped session.
+    Raises LtiClaimError if the registration carries no tenant, so the broker vends
+    no session rather than an attacker-scoped one.
     """
     roles = claims.get(CLAIM_ROLES) or []
     if not isinstance(roles, list):
@@ -107,14 +111,12 @@ def lti_claims_to_agg_claims(claims: dict, *, tenant: str | None = None) -> dict
     course = course_from_context(claims)
     courses = [course] if course else []
 
+    # Tenant comes only from the registration (a server-side trusted value). No
+    # fallback to any token-carried claim — see SEC-3.
     resolved_tenant = tenant
     if not resolved_tenant:
-        ctx = claims.get(CLAIM_CONTEXT) or {}
-        if isinstance(ctx, dict):
-            resolved_tenant = ctx.get("label") or ctx.get("id")
-    if not resolved_tenant:
         raise LtiClaimError(
-            "cannot determine tenant from launch (no registration tenant or context)"
+            "registration carries no tenant; refusing to derive it from the launch token"
         )
 
     return {

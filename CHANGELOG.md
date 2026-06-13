@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Security review pass (3 HIGH findings fixed before any demo deploy). The Tier 0
+  chat path reviewed clean; all three findings were the newer paths trusting
+  client/token-supplied scope instead of re-deriving it from a verified identity.
+  - **SEC-1 — Tier 1 choke point authority confusion (`chokepoint/handler.py`).** It
+    read `tenant`/`user`/`tier`/`courses`/`budget` from the request body and stamped
+    them into STS session tags — allowing ABAC tag forgery, budget bypass (omit the
+    field → no cap), and spend mis-attribution. Now identity is derived from the
+    validated IdP token via `claims_to_tags` (same path as the broker), budget is
+    looked up server-side from a new `agg-budget` table keyed by the verified
+    identity, and input tokens are always estimated server-side. The body carries
+    only `idp_token` + `model`/`messages`/`max_tokens`.
+  - **SEC-2 — agent path had no tenant/tier enforcement (`agg/agent_dispatch.py`,
+    `agent/server.py`, `infra/stacks/agent.py`).** The container invoked any model
+    the payload named, and the Runtime execution role granted Bedrock + S3 Vectors on
+    `Resource:*`. Dispatch now rejects any model outside the verified caller's tier
+    (`allowed_models`, from the inbound-JWT `agg:tier`, fail-closed to oss); the
+    execution role is scoped to agg's entitled model ARNs and this deployment's
+    vector/docs bucket ARNs.
+  - **SEC-3 — LTI tenant fallback (`agg/lti.py`).** A registration without a `tenant`
+    fell back to the LTI context claim (instructor-controlled), enabling cross-tenant
+    access on a shared LMS. The fallback is removed; a missing registration tenant
+    now fails closed (`LtiClaimError`).
+
 ### Changed
 - Refactor pass (no behavior change; demo-readiness #35–#37): removed three
   duplications surfaced now that the build is complete.

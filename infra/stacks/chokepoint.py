@@ -38,8 +38,10 @@ class ChokepointStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        # Cross-stack wiring (supply at deploy: -c spend_table=... -c auth_role_arn=...).
+        # Cross-stack wiring (supply at deploy: -c spend_table=... -c budget_table=...
+        # -c auth_role_arn=...). Budget is read server-side, never from the request.
         spend_table = self.node.try_get_context("spend_table") or f"{HANDLE}-spend"
+        budget_table = self.node.try_get_context("budget_table") or f"{HANDLE}-budget"
         auth_role_arn = self.node.try_get_context("auth_role_arn") or PLACEHOLDER
 
         fn = lambda_.Function(
@@ -53,18 +55,22 @@ class ChokepointStack(Stack):
             memory_size=256,
             environment={
                 "AGG_SPEND_TABLE": spend_table,
+                "AGG_BUDGET_TABLE": budget_table,
                 "AGG_AUTHENTICATED_ROLE_ARN": auth_role_arn,
                 "AGG_DEFAULT_MAX_TOKENS": "1024",
             },
             description="agg Tier 1 choke point — exact pre-call budget enforcement (optional)",
         )
 
-        # Read authoritative spend; assume the user's scoped role for the call.
+        # Read authoritative spend + the server-side budget; assume the user's scoped role.
         fn.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["dynamodb:GetItem"],
-                resources=[f"arn:aws:dynamodb:{self.region}:{self.account}:table/{spend_table}"],
+                resources=[
+                    f"arn:aws:dynamodb:{self.region}:{self.account}:table/{spend_table}",
+                    f"arn:aws:dynamodb:{self.region}:{self.account}:table/{budget_table}",
+                ],
             )
         )
         if auth_role_arn != PLACEHOLDER:

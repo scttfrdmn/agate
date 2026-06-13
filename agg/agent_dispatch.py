@@ -28,6 +28,20 @@ class InvocationError(ValueError):
     """The payload is missing what a mode needs — surfaced as an error event."""
 
 
+def _collect_requested_models(payload: dict[str, Any]) -> set[str]:
+    """Every model id the payload would cause us to invoke (the `tier` field of
+    each member doubles as the Bedrock model id at the Backend boundary)."""
+    requested: set[str] = set()
+    for member in payload.get("roster") or []:
+        if isinstance(member, dict) and member.get("tier"):
+            requested.add(member["tier"])
+    for key in ("adjudicator", "router", "generator"):
+        cfg = payload.get(key)
+        if isinstance(cfg, dict) and cfg.get("tier"):
+            requested.add(cfg["tier"])
+    return requested
+
+
 def dispatch(
     payload: dict[str, Any],
     *,
@@ -35,6 +49,7 @@ def dispatch(
     meter: Any,
     emit: Emit,
     code_runner: Any | None = None,
+    allowed_models: set[str] | None = None,
 ) -> dict[str, Any]:
     """Route one invocation payload to its orchestration and emit the run stream.
 
@@ -48,11 +63,27 @@ def dispatch(
       generator  (dict) — Analyze codegen model {tier,label,max_tokens}
       code       (str)  — Analyze re-run: user-edited code (skips generation)
 
+    `allowed_models` is the set of model ids the VERIFIED caller may invoke (derived
+    by the container from the inbound JWT's agg:tier via model_arns_for_tier-style
+    expansion). When provided, every model id the payload names must be in it, or we
+    raise InvocationError BEFORE any model call — this is the agent-path equivalent
+    of Tier 0's IAM model-access policy (SEC-2). When None (e.g. unit tests that
+    aren't exercising entitlement), no check is applied.
+
     Returns a small result dict (the chosen mode + any orchestration return value).
     """
     question = (payload.get("question") or "").strip()
     if not question and not payload.get("code"):
         raise InvocationError("payload has no question")
+
+    # SEC-2: reject any model the verified caller isn't entitled to, before we call.
+    if allowed_models is not None:
+        requested = _collect_requested_models(payload)
+        forbidden = requested - allowed_models
+        if forbidden:
+            raise InvocationError(
+                f"models not entitled for this session: {sorted(forbidden)}"
+            )
 
     router_cfg = payload.get("router") or {"tier": "oss", "label": "router", "max_tokens": 5}
     mode = run_router(

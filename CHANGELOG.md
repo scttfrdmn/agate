@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Lambda asset bundling: the Docker-free local bundler now fetches **Linux/x86_64**
+  wheels for the Lambda runtime instead of host-platform wheels. `pyjwt[crypto]`
+  pulls `cryptography` (a native extension); on a macOS/arm64 dev box the local
+  bundler was installing a macOS wheel, so the deployed broker crashed at import
+  with `invalid ELF header` (`Runtime.ImportModuleError`). `pip_bundled_code()` now
+  passes `--platform manylinux2014_x86_64 --implementation cp --python-version 3.13
+  --only-binary=:all:`. Caught deploying the Tier 0 identity stack live; the broker
+  now verifies tokens and vends scoped STS end-to-end.
+
 ### Changed
 - **Renamed the project `agg` → `agate`** (named for agate, a banded form of bedrock —
   ties to Amazon Bedrock). The rename is now complete across both the code identifiers

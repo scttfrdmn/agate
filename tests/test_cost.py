@@ -26,6 +26,49 @@ def test_unknown_model_falls_back_never_crashes():
     assert rate.input_per_mtok > 0  # falls back to cheapest, no exception
 
 
+# --- #88: concrete model ids price by id, not the oss fallback --------------
+
+
+def test_concrete_frontier_id_prices_far_above_oss():
+    # The bug: a frontier Opus id used to resolve to the oss rate. It must now price
+    # at the frontier rate — materially higher than an oss model.
+    pb = default_pricebook()
+    opus = pb.llm_rate("us.anthropic.claude-opus-4-1-20250805-v1:0")
+    gpt_oss = pb.llm_rate("openai.gpt-oss-20b-1:0")
+    assert opus.input_per_mtok > gpt_oss.input_per_mtok * 10
+    assert opus.output_per_mtok > gpt_oss.output_per_mtok * 10
+
+
+def test_each_tier_id_resolves_distinctly():
+    pb = default_pricebook()
+    oss = pb.llm_rate("openai.gpt-oss-20b-1:0").input_per_mtok
+    mid = pb.llm_rate("us.anthropic.claude-haiku-4-5-20251001-v1:0").input_per_mtok
+    frontier = pb.llm_rate("us.anthropic.claude-opus-4-1-20250805-v1:0").input_per_mtok
+    assert oss < mid < frontier  # distinct, monotonic by tier
+
+
+def test_fallback_tier_prices_unlisted_id_at_its_tier_not_oss():
+    pb = default_pricebook()
+    # An unlisted id WITH a frontier fallback prices at frontier, not oss.
+    r = pb.llm_rate("anthropic.future-frontier-model", fallback_tier="frontier")
+    assert r.input_per_mtok == pb.llm_rate("frontier").input_per_mtok
+    # Without a fallback it still degrades to oss (never crashes).
+    r2 = pb.llm_rate("anthropic.future-frontier-model")
+    assert r2.input_per_mtok == pb.llm_rate("oss").input_per_mtok
+
+
+def test_config_override_still_wins_over_per_model_default():
+    pb = PriceBook(
+        model_rates={
+            "us.anthropic.claude-opus-4-1-20250805-v1:0": ModelRate(
+                input_per_mtok=1.0, output_per_mtok=2.0
+            )
+        }
+    )
+    r = pb.llm_rate("us.anthropic.claude-opus-4-1-20250805-v1:0", fallback_tier="frontier")
+    assert r.input_per_mtok == 1.0  # config beats the baked default
+
+
 def test_s3_vectors_retrieval_uses_config_fallback():
     # S3 Vectors isn't in the Price List → config/hard-default only.
     assert default_pricebook().retrieval_rate_per_k() > 0

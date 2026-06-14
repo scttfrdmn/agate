@@ -40,6 +40,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     tenant boundary remains IAM-enforced for vectors as before.
 
 ### Fixed
+- **Per-model pricing — every model was metered at the cheapest (oss) rate (#88).**
+  `_DEFAULT_MODEL_RATES` was keyed only by logical tier (`oss`/`mid`/`frontier`), but
+  the meter and choke point pass the concrete Bedrock model id
+  (`us.anthropic.claude-opus-4-1-…`), which matched nothing and fell through to the
+  oss rate — so a frontier Opus call was metered at ~$0.10/$0.40 instead of ~$15/$75,
+  making spend, the admin console, and the #81 budget cascade materially wrong.
+  `cost/pricing.py` now carries best-effort published list rates for each concrete id
+  in `entitlements.TIER_MODELS`, and `llm_rate(model_id, fallback_tier=…)` resolves
+  config → per-id default → the id's *tier* default → oss, so even an unlisted id
+  prices at its tier rather than oss. The meter and choke point pass
+  `entitlements.tier_for_model(model_id)` as that fallback. Rates are **approximate,
+  not authoritative** (no live fetch — NO CLOCKS); a deploy-time Price List fetcher
+  (#90) will bake in real numbers. Historical spend rows are **not** retroactively
+  repriced; new calls price correctly. Config overrides still win.
 - **Spend attribution is now unforgeable (#79).** The broker encodes the tenant into
   the STS RoleSessionName as `<tenant>@<subject>` (`agate.tags.role_session_name`), so
   it appears in the assumed-role ARN of every Bedrock invocation-log line. The spend

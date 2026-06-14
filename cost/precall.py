@@ -66,14 +66,16 @@ def estimate_call_cost(
     max_tokens: int,
     *,
     pricebook: PriceBook | None = None,
+    fallback_tier: str | None = None,
 ) -> float:
     """Worst-case USD for one call: input billed in full, output billed at its cap.
 
     `max_tokens` is the per-call output ceiling each tier carries (design §7.1), so
-    this is an upper bound on the call's cost — never an under-estimate.
+    this is an upper bound on the call's cost — never an under-estimate. `fallback_tier`
+    is passed to `llm_rate` so an unlisted concrete id prices at its tier (#88).
     """
     pb = pricebook or default_pricebook()
-    rate = pb.llm_rate(model_id)
+    rate = pb.llm_rate(model_id, fallback_tier=fallback_tier)
     return round(
         (max(0, input_tokens) / 1e6) * rate.input_per_mtok
         + (max(0, max_tokens) / 1e6) * rate.output_per_mtok,
@@ -89,6 +91,7 @@ def evaluate_precall(
     spend: float,
     budget: float | None,
     pricebook: PriceBook | None = None,
+    fallback_tier: str | None = None,
 ) -> PrecallResult:
     """Allow/reject a call before it runs, by exact worst-case projection.
 
@@ -99,7 +102,9 @@ def evaluate_precall(
 
     Fails closed on a malformed (negative) spend, mirroring the soft cap.
     """
-    est = estimate_call_cost(model_id, input_tokens, max_tokens, pricebook=pricebook)
+    est = estimate_call_cost(
+        model_id, input_tokens, max_tokens, pricebook=pricebook, fallback_tier=fallback_tier
+    )
     projected = round(spend + est, 6)
     ok, reason = _node_decision(est, spend, budget)
     return PrecallResult("allow" if ok else "reject", est, projected, reason)
@@ -112,6 +117,7 @@ def evaluate_cascade(
     max_tokens: int,
     nodes: list[tuple[str, float, float | None]],
     pricebook: PriceBook | None = None,
+    fallback_tier: str | None = None,
 ) -> CascadeResult:
     """Allow a call only if it fits under EVERY node's budget (hierarchical cascade).
 
@@ -123,7 +129,9 @@ def evaluate_cascade(
     (e.g. an unconfined session with no caps). Pure and AWS-free — the chokepoint
     supplies each node's authoritative spend + budget.
     """
-    est = estimate_call_cost(model_id, input_tokens, max_tokens, pricebook=pricebook)
+    est = estimate_call_cost(
+        model_id, input_tokens, max_tokens, pricebook=pricebook, fallback_tier=fallback_tier
+    )
     for label, spend, budget in nodes:
         ok, reason = _node_decision(est, spend, budget)
         if not ok:

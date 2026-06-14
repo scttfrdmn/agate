@@ -50,14 +50,26 @@ class ClaimsError(ValueError):
     """
 
 
+# Operator role. `admin` unlocks the governed-access console (usage analytics,
+# entitlement/budget management). It is NOT a tier and does not widen model/data
+# access — it gates the admin surface only. Defaults to `member` (least privilege);
+# only an explicit recognised admin claim promotes, so a missing/garbled claim can
+# never accidentally grant admin (fail-closed, design §13.1).
+Role = str
+ROLE_ADMIN: Role = "admin"
+ROLE_MEMBER: Role = "member"
+_ADMIN_CLAIM_VALUES = frozenset({"admin", "administrator", "agate-admin"})
+
+
 @dataclass(frozen=True, slots=True)
 class SessionTags:
-    """The four `agate:` tags, validated and ready to hand to STS."""
+    """The `agate:` tags, validated and ready to hand to STS."""
 
     affiliation: Affiliation
     tenant: str
     courses: tuple[str, ...]
     tier: Tier
+    role: Role = ROLE_MEMBER
 
     def to_sts_tags(self) -> list[dict[str, str]]:
         """STS AssumeRole `Tags` form: [{"Key": "agate:affiliation", "Value": ...}, ...].
@@ -70,7 +82,26 @@ class SessionTags:
             {"Key": tag_key("tenant"), "Value": self.tenant},
             {"Key": tag_key("courses"), "Value": COURSE_SEP.join(self.courses)},
             {"Key": tag_key("tier"), "Value": self.tier},
+            {"Key": tag_key("role"), "Value": self.role},
         ]
+
+
+def _normalise_role(raw: object) -> Role:
+    """admin ONLY when the claim explicitly says so; everything else is member.
+
+    Fail-closed: an unrecognised, missing, or malformed role claim yields `member`,
+    never `admin`. Admin is an opt-in promotion, like the grant->frontier path.
+    """
+    if raw is None:
+        return ROLE_MEMBER
+    if isinstance(raw, str):
+        values = re.split(r"[;,]\s*", raw)
+    elif isinstance(raw, (list, tuple)):
+        values = [str(v) for v in raw]
+    else:
+        values = [str(raw)]
+    is_admin = any(v.strip().lower() in _ADMIN_CLAIM_VALUES for v in values)
+    return ROLE_ADMIN if is_admin else ROLE_MEMBER
 
 
 def _normalise_affiliation(raw: object) -> Affiliation:
@@ -174,6 +205,7 @@ def claims_to_tags(claims: dict[str, object]) -> SessionTags:
       * tenant       <- "tenant" | "schacHomeOrganization" | "department" | "dept"
       * courses      <- "courses" | "enrolledCourses" | "course_ids"  (list or delimited str)
       * grant        <- "grant" | "grantTagged"  (truthy -> promote to frontier)
+      * role         <- "role" | "agate_role" | "isAdmin"  (admin -> console access)
 
     Raises ClaimsError if the tenant cannot be determined — the broker must then
     fail closed and vend no credentials.
@@ -184,10 +216,13 @@ def claims_to_tags(claims: dict[str, object]) -> SessionTags:
     tenant = _normalise_tenant(get("tenant", "schachomeorganization", "department", "dept"))
     courses = _normalise_courses(get("courses", "enrolledcourses", "course_ids"))
     grant = _truthy(get("grant", "granttagged", "grant_tagged"))
+    role = _normalise_role(get("role", "agate_role", "isadmin"))
 
     tier = derive_tier(affiliation, grant=grant)
 
-    return SessionTags(affiliation=affiliation, tenant=tenant, courses=courses, tier=tier)
+    return SessionTags(
+        affiliation=affiliation, tenant=tenant, courses=courses, tier=tier, role=role
+    )
 
 
 def _claim_getter(claims: dict[str, object]):

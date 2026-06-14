@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Governed-access foundations** (Phase 9 Track 1, #63 — first slice). The
+  differentiator vs NebulaONE ("usage limits per user") and Amazon Quick (no
+  per-capita entitlement): admin is gated at the *credential* boundary, not the app.
+  - `agate:role` is now a fifth ABAC session tag, derived in `claims_to_tags` from a
+    `role`/`isAdmin` claim — **fail-closed**: only an explicit recognised admin claim
+    yields `admin`; anything missing/garbled is `member`. It gates the console only,
+    not model/data access.
+  - `agate/admin.py`: pure, AWS-free spend analytics — per-tenant rollups, top
+    spenders, and a console payload derived from the authoritative spend-table rows
+    (never trusts a stored total it can't re-derive). Unit-tested.
+  - `infra/functions/admin/handler.py`: the console API — verifies the IdP token,
+    requires the verified `agate:role == admin` (else 403, no data), then returns the
+    analytics. Read-only this slice; per-request, no clock.
+  - Shared app chrome (`web/src/chrome/nav.ts`): a top bar with a hamburger toggle
+    and an accessible **pop-out side-navigation drawer** (labelled dialog, Esc to
+    close, focus management, scrim) — used by the main SPA now and the admin console
+    next. Wired into the main SPA. Unit-tested.
 - **SPA design system + accessibility baseline** (Phase 9 Track 0, #62). Extracted a
   dark, dense visual language into `web/src/styles/agate.css` (CSS custom-property
   tokens, self-hosted **Atkinson Hyperlegible** via `@fontsource`, a CSS-grid

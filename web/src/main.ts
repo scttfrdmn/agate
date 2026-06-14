@@ -13,6 +13,7 @@
 // (SEC-4b) — the SPA just forwards the token, never a tier.
 
 import { CredentialManager } from "./auth/credentials";
+import { currentToken, isLoggedIn, login, logout, type LoginConfig } from "./auth/login";
 import { ChatSession } from "./chat/session";
 import { config } from "./config";
 import { reduce, type RunState, emptyRunState } from "./events/collector";
@@ -24,17 +25,30 @@ import { AgentCoreTransport } from "./transport/agentcore";
 import { BedrockTransport } from "./transport/bedrock";
 import { type UiMode, UI_MODES, uiToRoute } from "./router";
 
-// Phase-2 placeholder IdP token provider (real OIDC redirect is Phase 4 wiring; the
-// broker + agent verify it server-side either way). Read from the URL hash for the
-// demo: #idp_token=<the campus-IdP JWT>.
+// IdP token provider. With the demo Hosted UI wired (VITE_COGNITO_*), this is the
+// id_token captured from the login redirect (stored in sessionStorage, scrubbed
+// from the URL). Without it, it falls back to a manual `#idp_token=<jwt>` in the
+// hash. Either way the broker + agent verify it server-side (RS256/JWKS).
 function idpToken(): string {
-  return new URLSearchParams(location.hash.slice(1)).get("idp_token") ?? "";
+  return currentToken();
 }
+
+// Hosted-UI config, present only when the demo IdP env vars are set.
+const loginConfig: LoginConfig | null = config.cognitoDomain
+  ? {
+      domain: config.cognitoDomain,
+      clientId: config.cognitoClientId,
+      redirectUri: location.origin + location.pathname,
+    }
+  : null;
 
 function render(app: HTMLElement): void {
   app.innerHTML = `
     <main style="max-width:64rem;margin:1.5rem auto;font-family:system-ui">
-      <h1 style="margin:0">agate</h1>
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <h1 style="margin:0">agate</h1>
+        <button id="auth" style="padding:.35rem .75rem"></button>
+      </div>
       <p id="scope" style="color:#666;margin:.25rem 0 1rem"></p>
       <form id="f" style="display:flex;gap:.5rem;align-items:center">
         <select id="mode" style="padding:.5rem">
@@ -57,9 +71,31 @@ function main(): void {
   if (!app) return;
   render(app);
 
+  const scopeEl = document.getElementById("scope")!;
+  const form = document.getElementById("f") as HTMLFormElement;
+  const authBtn = document.getElementById("auth") as HTMLButtonElement;
+
   if (!config.brokerUrl) {
-    document.getElementById("scope")!.textContent =
+    scopeEl.textContent =
       "Set VITE_BROKER_URL (and VITE_AGENT_RUNTIME_ARN for Panel/Analyze) to enable chat.";
+    authBtn.style.display = "none";
+    return;
+  }
+
+  // Login gate. With the Hosted UI wired, an unauthenticated visitor sees only a
+  // "Log in" button; the chat form is disabled until they have a token.
+  const loggedIn = isLoggedIn();
+  if (loginConfig) {
+    authBtn.textContent = loggedIn ? "Log out" : "Log in";
+    authBtn.onclick = () => (loggedIn ? logout(loginConfig) : login(loginConfig));
+  } else {
+    authBtn.style.display = "none";
+  }
+  if (!loggedIn) {
+    scopeEl.textContent = loginConfig
+      ? "Log in to start — you'll get a session scoped to your entitlements."
+      : "No token: append #idp_token=<jwt> to the URL, or wire VITE_COGNITO_DOMAIN for a login button.";
+    form.querySelectorAll("input,select,button").forEach((el) => ((el as HTMLInputElement).disabled = true));
     return;
   }
 
@@ -70,7 +106,6 @@ function main(): void {
     : null;
 
   const out = document.getElementById("out")!;
-  const form = document.getElementById("f") as HTMLFormElement;
   const input = document.getElementById("q") as HTMLInputElement;
   const modeSel = document.getElementById("mode") as HTMLSelectElement;
 
@@ -174,4 +209,7 @@ async function runAgent(
   repaint();
 }
 
+// Capture any token from a login redirect fragment (and scrub the URL) before the
+// first render, so isLoggedIn() reflects a just-completed login.
+currentToken();
 main();

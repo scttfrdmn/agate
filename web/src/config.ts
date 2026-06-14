@@ -11,6 +11,10 @@ export interface AppConfig {
   // AgentCore Runtime ARN for the agent path (Panel/Analyze). Empty = agent modes
   // disabled (the SPA shows Ask only).
   agentRuntimeArn: string;
+  // Cognito Hosted-UI login (demo IdP). Empty domain = no login button; the SPA
+  // falls back to a manually pasted `#idp_token=` in the hash.
+  cognitoDomain: string;
+  cognitoClientId: string;
 }
 
 const env = import.meta.env;
@@ -23,4 +27,6 @@ export const config: AppConfig = {
   defaultModelId: env.VITE_DEFAULT_MODEL_ID ?? "openai.gpt-oss-20b-1:0",
   vectorBucketName: env.VITE_VECTOR_BUCKET ?? "",
   agentRuntimeArn: env.VITE_AGENT_RUNTIME_ARN ?? "",
+  cognitoDomain: env.VITE_COGNITO_DOMAIN ?? "",
+  cognitoClientId: env.VITE_COGNITO_CLIENT_ID ?? "",
 };

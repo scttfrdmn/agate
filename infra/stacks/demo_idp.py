@@ -70,21 +70,31 @@ class DemoIdpStack(Stack):
         )
 
         # A hosted-UI domain so the pool has a discovery/JWKS endpoint + login page.
+        domain_prefix = f"{HANDLE}-demo-{self.account}"
         pool.add_domain(
             "DemoDomain",
-            cognito_domain=cognito.CognitoDomainOptions(
-                domain_prefix=f"{HANDLE}-demo-{self.account}"
-            ),
+            cognito_domain=cognito.CognitoDomainOptions(domain_prefix=domain_prefix),
         )
+        hosted_ui = f"https://{domain_prefix}.auth.{self.region}.amazoncognito.com"
+
+        # Where the Hosted UI may redirect back after login/logout — the SPA's
+        # origin(s). Supply the deployed site URL via `-c site_url=https://…`
+        # (the agate-web SiteUrl output). localhost is included for `vite dev`.
+        site_url = self.node.try_get_context("site_url")
+        callback_urls = ["http://localhost:5173/"]
+        if site_url:
+            callback_urls.append(site_url if site_url.endswith("/") else site_url + "/")
 
         # OIDC client for the SPA (the `aud` the broker/agent pin).
         client = pool.add_client(
             "SpaClient",
             user_pool_client_name=f"{HANDLE}-spa",
-            generate_secret=False,  # public SPA client (PKCE)
+            generate_secret=False,  # public SPA client (PKCE / implicit)
             o_auth=cognito.OAuthSettings(
                 flows=cognito.OAuthFlows(authorization_code_grant=True, implicit_code_grant=True),
                 scopes=[cognito.OAuthScope.OPENID, cognito.OAuthScope.PROFILE],
+                callback_urls=callback_urls,
+                logout_urls=callback_urls,
             ),
             # Username/password auth so a demo operator (or a script) can mint a
             # token for a demo user without standing up the hosted-UI redirect flow.
@@ -100,6 +110,7 @@ class DemoIdpStack(Stack):
 
         # --- Outputs: the OIDC config to set on the broker/agent stacks ----
         cdk.CfnOutput(self, "UserPoolId", value=pool.user_pool_id)
+        cdk.CfnOutput(self, "HostedUiDomain", value=hosted_ui)
         cdk.CfnOutput(self, "OidcIssuer", value=issuer)
         cdk.CfnOutput(self, "OidcJwksUrl", value=f"{issuer}/.well-known/jwks.json")
         cdk.CfnOutput(self, "OidcAudience", value=client.user_pool_client_id)

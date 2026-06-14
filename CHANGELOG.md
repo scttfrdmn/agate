@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Click-to-demo login via Cognito Hosted UI** (`web/src/auth/login.ts`). The SPA
+  now shows a *Log in* / *Log out* button and gates chat on auth: an unauthenticated
+  visitor is redirected to the demo pool's Hosted UI (OIDC implicit flow), comes back
+  with an `id_token` in the URL fragment, and the SPA captures it into sessionStorage
+  and scrubs it from the URL. The broker verifies it server-side exactly as a campus
+  token. Falls back to a manual `#idp_token=` paste when `VITE_COGNITO_DOMAIN` is
+  unset. Config via `VITE_COGNITO_DOMAIN` / `VITE_COGNITO_CLIENT_ID`. `agate-demo-idp`
+  registers the SPA origin as the client's callback/logout URL (`-c site_url=…`,
+  localhost included for `vite dev`) and outputs `HostedUiDomain`. Pure token/URL
+  logic is unit-tested.
 - `agate-identity` now exposes the broker over a **Lambda Function URL** (CORS,
   `AuthType NONE` — the broker authenticates from the verified JWT, not an AWS
   principal), output as `BrokerUrl`, so the browser SPA can reach it. Per-request,

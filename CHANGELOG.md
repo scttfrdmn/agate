@@ -52,6 +52,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than applied by hand post-deploy.
 
 ### Fixed
+- Analyze mode failed live (HTTP 500): the agent Runtime execution role could
+  invoke Bedrock but not the **Code Interpreter** it runs generated code in
+  (Ask/Panel never call it, so they worked). Added
+  `bedrock-agentcore:InvokeCodeInterpreter` (+ Start/Stop/Get session) scoped to the
+  agate code interpreters. Analyze now returns the full `route → code → answer →
+  receipt` stream with both codegen and execution cost rows, verified live.
+- AgentCore endpoint version pinning: the `default` `CfnRuntimeEndpoint` is now
+  bound to the Runtime's current `AgentRuntimeVersion` (`Fn::GetAtt`), so a deploy
+  that bumps the image also rolls the endpoint to the new version. Previously the
+  endpoint kept serving the prior version until repointed by hand (symptom: a stale
+  container, or HTTP 424 when the new image differed).
 - Agent container Dockerfile was missing `COPY cost/` — `agent/server.py` imports
   `cost.CostMeter`, so the Runtime crashed at startup with `ModuleNotFoundError:
   No module named 'cost'`. Now copies the `cost` package alongside `agate`/`agent`.

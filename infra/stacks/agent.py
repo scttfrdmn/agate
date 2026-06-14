@@ -144,6 +144,26 @@ class AgentStack(Stack):
             ),
         )
 
+        # The Analyze path runs generated code in the Code Interpreter — the agent's
+        # OWN execution role makes that data-plane call, so it needs invoke on this
+        # interpreter (Ask/Panel never touch it, which is why they worked without
+        # this grant). Scoped to the agate code interpreters in this account/region.
+        execution_role.add_to_policy(
+            iam.PolicyStatement(
+                sid="CodeInterpreterInvoke",
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "bedrock-agentcore:InvokeCodeInterpreter",
+                    "bedrock-agentcore:StartCodeInterpreterSession",
+                    "bedrock-agentcore:StopCodeInterpreterSession",
+                    "bedrock-agentcore:GetCodeInterpreterSession",
+                ],
+                resources=[
+                    f"arn:aws:bedrock-agentcore:{region}:{account}:code-interpreter-custom/{HANDLE}_code_interpreter-*",
+                ],
+            )
+        )
+
         # --- AgentCore Runtime --------------------------------------------
         authorizer = None
         if oidc_discovery_url:
@@ -191,11 +211,17 @@ class AgentStack(Stack):
             runtime.add_dependency(policy_resource)
             code_interpreter.add_dependency(policy_resource)
 
-        # A named endpoint the SPA's agentcore transport invokes.
+        # A named endpoint the SPA's agentcore transport invokes. Pin it to the
+        # Runtime's CURRENT version: pushing a new image bumps the Runtime version,
+        # and without this the `default` endpoint keeps serving the OLD version
+        # (symptom: a stale container, or HTTP 424 if the new image differs) until
+        # repointed by hand. Binding the endpoint to `attr_agent_runtime_version`
+        # makes every `cdk deploy` that changes the image also roll the endpoint.
         endpoint = agentcore.CfnRuntimeEndpoint(
             self,
             "RuntimeEndpoint",
             agent_runtime_id=runtime.attr_agent_runtime_id,
+            agent_runtime_version=runtime.attr_agent_runtime_version,
             name="default",
             description="agate agent Runtime default endpoint",
         )

@@ -14,6 +14,7 @@ panel), so no product/model name is hard-coded here.
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any
 
@@ -24,22 +25,41 @@ from agate.analyze.schema import parse_invoke_result
 # label to a concrete Bedrock model id at config time). The adapter treats `tier`
 # as the model id to invoke — neutral, no hard-coded product names.
 
+# Bedrock requestMetadata values must match [a-zA-Z0-9\s:_@$#=/+,.-]{1,256}.
+_META_RE = re.compile(r"[^a-zA-Z0-9\s:_@$#=/+,.-]")
+
+
+def _meta_value(v: object) -> str:
+    """Sanitise a value to Bedrock's requestMetadata grammar (<=256, allowed chars)."""
+    return _META_RE.sub("-", str(v))[:256]
+
 
 class BedrockBackend:
-    """Drives Bedrock Converse for review/adjudication/codegen/ask calls."""
+    """Drives Bedrock Converse for review/adjudication/codegen/ask calls.
 
-    def __init__(self, region: str):
+    `request_metadata` (optional) is attached to every Converse call so the Bedrock
+    invocation log carries it — that's how the authoritative-spend meter attributes
+    spend per tenant/user (#77). It's an attribution hint, not a security boundary:
+    the credential's ABAC tenant tag remains the real fence.
+    """
+
+    def __init__(self, region: str, request_metadata: dict[str, str] | None = None):
         self._rt = boto3.client("bedrock-runtime", region_name=region)
+        # Bedrock requestMetadata: keys/values are [a-zA-Z0-9_:./=+@ -]; sanitise.
+        self._meta = {k: _meta_value(v) for k, v in (request_metadata or {}).items() if v}
 
     def converse(
         self, tier: str, system: str, prompt: str, max_tokens: int
     ) -> tuple[str, dict[str, int], Any]:
-        resp = self._rt.converse(
-            modelId=tier,
-            system=[{"text": system}] if system else [],
-            messages=[{"role": "user", "content": [{"text": prompt}]}],
-            inferenceConfig={"maxTokens": max_tokens},
-        )
+        kwargs: dict[str, Any] = {
+            "modelId": tier,
+            "system": [{"text": system}] if system else [],
+            "messages": [{"role": "user", "content": [{"text": prompt}]}],
+            "inferenceConfig": {"maxTokens": max_tokens},
+        }
+        if self._meta:
+            kwargs["requestMetadata"] = self._meta
+        resp = self._rt.converse(**kwargs)
         text = "".join(block.get("text", "") for block in resp["output"]["message"]["content"])
         usage = {
             "inputTokens": resp["usage"]["inputTokens"],

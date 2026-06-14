@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Spend attribution (#77): Bedrock calls now pass `requestMetadata`
+  (`agate:tenant` + user/affiliation) so the invocation log carries the tenant the
+  authoritative-spend meter reads — previously every spend row keyed to `unknown`
+  because nothing set it. Wired in the agent backend (`BedrockBackend`, from the
+  verified token) and the Tier 0 web transport (`bedrock.ts`, from the session
+  scope), both sanitised to Bedrock's metadata grammar. It's an attribution hint,
+  not a security boundary — the credential's ABAC tenant tag remains the fence, and
+  the meter still treats a missing value as `unknown`.
+
 ### Changed
 - `agate-audit`: the CloudTrail management-plane Trail is now **opt-in**
   (`-c cloudtrail=true`, default off). Its create-time bucket-policy validation is

@@ -193,7 +193,11 @@ function main(): void {
   }
 
   const creds = new CredentialManager(config.brokerUrl, () => Promise.resolve(idpToken()));
-  const bedrock = new BedrockTransport(config.region, () => creds.get());
+  const bedrock = new BedrockTransport(config.region, () => creds.get(), () => {
+    // Attribution for the spend meter (#77): tenant/user from the session scope.
+    const s = creds.scope;
+    return s ? { "agate:tenant": s.tenant, "agate:affiliation": s.affiliation } : undefined;
+  });
   const agent = config.agentRuntimeArn
     ? new AgentCoreTransport({ region: config.region, runtimeArn: config.agentRuntimeArn }, () => creds.get())
     : null;

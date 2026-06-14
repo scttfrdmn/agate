@@ -53,6 +53,24 @@ def _verified_tier(payload: dict) -> str:
         return DEFAULT_TIER
 
 
+def _spend_metadata(payload: dict) -> dict[str, str]:
+    """The tenant/user attribution to attach to Bedrock calls (#77).
+
+    Derived from the VERIFIED token — same path as the tier. Surfaces in the Bedrock
+    invocation log's requestMetadata, where the authoritative-spend meter reads
+    `agate:tenant` to attribute spend per tenant/user. Empty on an unverifiable token
+    (meter then keys 'unknown'); it's an attribution hint, never a security boundary.
+    """
+    cfg = config_from_env()
+    try:
+        claims = verify_token(payload.get("idp_token", ""), **cfg)
+        tags = claims_to_tags(claims)
+    except (TokenError, ClaimsError):
+        return {}
+    user = str(claims.get("sub") or "unknown")
+    return {"agate:tenant": tags.tenant, "agate:user": user}
+
+
 def _resolve_models(payload: dict, models: list[str]) -> dict:
     """Fill missing roster/generator/router model ids with concrete, entitled ones.
 
@@ -101,7 +119,9 @@ def run_invocation(payload: dict) -> list[dict]:
     events: list[dict] = []
     emit = events.append
 
-    backend = BedrockBackend(REGION)
+    # Attach tenant/user attribution so the Bedrock invocation log can be metered
+    # per tenant (#77); derived from the verified token, sanitised in the backend.
+    backend = BedrockBackend(REGION, request_metadata=_spend_metadata(payload))
     # Authoritative dollar metering (cost.CostMeter); a roster-supplied PriceBook
     # could be threaded in per invocation, but the hard-default rates keep the
     # receipt coherent out of the box.

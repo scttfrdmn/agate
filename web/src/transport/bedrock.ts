@@ -41,7 +41,22 @@ export class BedrockTransport implements Transport {
   constructor(
     private readonly region: string,
     private readonly creds: () => Promise<ScopedCredentials>,
+    // Optional per-call attribution attached as Bedrock requestMetadata, so the
+    // invocation log can be metered per tenant/user (#77). An attribution hint,
+    // not a security boundary — IAM still enforces the real model/tenant scope.
+    private readonly metadata?: () => Record<string, string> | undefined,
   ) {}
+
+  private requestMetadata(): Record<string, string> | undefined {
+    const m = this.metadata?.();
+    if (!m) return undefined;
+    // Bedrock requestMetadata values: [a-zA-Z0-9\s:_@$#=/+,.-], <=256.
+    const clean: Record<string, string> = {};
+    for (const [k, v] of Object.entries(m)) {
+      if (v) clean[k] = String(v).replace(/[^a-zA-Z0-9\s:_@$#=/+,.-]/g, "-").slice(0, 256);
+    }
+    return Object.keys(clean).length ? clean : undefined;
+  }
 
   private async client(): Promise<BedrockRuntimeClient> {
     // A fresh provider per call so each request signs with current (refreshed)
@@ -61,6 +76,7 @@ export class BedrockTransport implements Transport {
       messages,
       system: system.length ? system : undefined,
       inferenceConfig: req.maxTokens ? { maxTokens: req.maxTokens } : undefined,
+      requestMetadata: this.requestMetadata(),
     });
 
     const response = await client.send(command);

@@ -58,6 +58,21 @@ LAMBDA_ASSET_EXCLUDES: list[str] = [
 # project's pyproject (PyJWT[crypto] for agate.jwt_verify / lti.handler).
 _PIP_REQUIREMENTS: list[str] = ["pyjwt[crypto]>=2.8"]
 
+# The local bundler runs pip on the DEV host (often macOS/arm64), but the asset
+# runs on the Lambda runtime (Linux/x86_64). pyjwt[crypto] pulls `cryptography`,
+# which ships native wheels — a host-platform wheel fails on Lambda with
+# "invalid ELF header". Force pip to fetch wheels for the Lambda target instead.
+# (Pure-Python deps like PyJWT match the `any` wheel and are unaffected.)
+_LAMBDA_PIP_PLATFORM_ARGS: list[str] = [
+    "--platform",
+    "manylinux2014_x86_64",
+    "--implementation",
+    "cp",
+    "--python-version",
+    "3.13",
+    "--only-binary=:all:",
+]
+
 
 @jsii.implements(cdk.ILocalBundling)
 class _LocalPipBundler:
@@ -74,7 +89,15 @@ class _LocalPipBundler:
             return False
         try:
             subprocess.run(
-                [pip, "install", *_PIP_REQUIREMENTS, "-t", output_dir, "--quiet"],
+                [
+                    pip,
+                    "install",
+                    *_PIP_REQUIREMENTS,
+                    *_LAMBDA_PIP_PLATFORM_ARGS,
+                    "-t",
+                    output_dir,
+                    "--quiet",
+                ],
                 check=True,
             )
             for pkg in self._packages:

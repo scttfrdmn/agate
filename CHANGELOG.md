@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **SPA design system + accessibility baseline** (Phase 9 Track 0, #62). Extracted a
+  dark, dense visual language into `web/src/styles/agate.css` (CSS custom-property
+  tokens, self-hosted **Atkinson Hyperlegible** via `@fontsource`, a CSS-grid
+  header/main/sidebar shell with a running-cost meter). The existing Ask/Panel/Analyze
+  UI is retrofitted into it and made **accessible by construction** so later tracks
+  inherit it: a skip link, semantic landmarks (`header`/`main`/`aside`), labelled
+  controls, an `aria-live` answer region with `aria-busy` during a run, `role="alert"`
+  errors, `role="group"`/labelled model panes, a labelled Analyze code cell, a
+  `:focus-visible` ring, and `prefers-reduced-motion` support. Pure front-end, no infra.
 - **Agent path (Panel/Analyze) is live end-to-end.** The reference agent container
   is built (linux/arm64, as AgentCore requires) and pushed to ECR, and `agate-agent`
   deploys the AgentCore Runtime + Code Interpreter against it. `agate-identity` now

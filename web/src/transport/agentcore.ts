@@ -29,6 +29,9 @@ export interface AgentInvocation {
   // tier/tenant (SEC-4b) — never trust a payload tier field. Required for a real run.
   idp_token?: string;
   mode?: "SYNTHESIS" | "DEBATE" | "ANALYSIS";
+  // A registered reasoning pattern key (agate.patterns). When set, the agent
+  // compiles it against the caller's entitled models instead of using `mode`.
+  pattern?: string;
   evidence?: string;
   roster?: Array<Record<string, unknown>>;
   adjudicator?: Record<string, unknown>;

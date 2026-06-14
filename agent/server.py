@@ -20,6 +20,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from agate.agent_dispatch import InvocationError, dispatch
 from agate.entitlements import DEFAULT_TIER, models_for_tier
 from agate.jwt_verify import TokenError, config_from_env, verify_token
+from agate.patterns import PatternError, compile_pattern
+from agate.patterns import get as pattern_get
 from agate.tags import ClaimsError, claims_to_tags
 from cost import CostMeter
 
@@ -109,6 +111,27 @@ def run_invocation(payload: dict) -> list[dict]:
     tier = _verified_tier(payload)
     entitled = models_for_tier(tier)
     allowed_models = set(entitled)
+    # A reasoning PATTERN (Phase 9 Track 2): when the payload names a registered
+    # pattern, compile it against the caller's ENTITLED models into a dispatch payload
+    # (roster + per-role prompts + adjudicator). This composes the existing primitives
+    # — dispatch runs it unchanged. An unknown pattern key surfaces as an error event.
+    if payload.get("pattern"):
+        try:
+            pat = pattern_get(payload["pattern"])
+            payload = {
+                **compile_pattern(
+                    pat,
+                    question=(payload.get("question") or "").strip(),
+                    entitled_models=entitled,
+                    evidence=payload.get("evidence", ""),
+                ),
+                # carry the verified token through for any downstream checks
+                "idp_token": payload.get("idp_token", ""),
+            }
+        except PatternError as exc:
+            emit({"type": "answer", "title": "error", "text": f"pattern: {exc}"})
+            emit(meter.receipt().to_event())
+            return events
     # Materialise concrete entitled model ids for any config the caller omitted, so
     # a bare {question, idp_token, mode} from the SPA runs without an invalid modelId.
     payload = _resolve_models(payload, entitled)

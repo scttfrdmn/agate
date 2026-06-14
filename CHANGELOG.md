@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Composable reasoning patterns — live** (Phase 9 Track 2, #64). The "do better"
+  axis: reasoning constructs are now institution-composed declarative configs over
+  the existing Panel/Analyze primitives, not hard-coded modes — the thing neither
+  NebulaONE (chat + prebuilt agents) nor Amazon Quick (task-agents) offers.
+  - `agate/patterns.py` (pure): a `Pattern` names *roles* (label + system prompt +
+    a model PREFERENCE — cheapest/balanced/best, never a concrete model id) over a
+    mode. `compile_pattern` materialises it against the verified caller's ENTITLED
+    models into an ordinary dispatch payload, so `agate.agent_dispatch` runs it
+    unchanged and the entitlement check still holds. A reviewed registry (no DSL, no
+    end-user builder — the deliberate Phase-9 scope). Two reference patterns:
+    `lit-review` (claims/methods/gaps → cited synthesis) and `red-team`
+    (steel-man for/against → verdict).
+  - The panel orchestrator now honours a **per-role `system`** prompt (the recipe),
+    falling back to the shared review prompt — so each pane reasons in its own role.
+  - The agent server runs a `{pattern: key}` payload (compile → dispatch); the SPA
+    offers the patterns in the mode picker under "Reasoning patterns". Unit-tested
+    + verified live (`red-team` returned for/against panes + reconciliation, using
+    the caller's entitled models).
 - **Per-tenant + per-course RAG — live** (Phase 9 Track 3, #65). The data plane
   (`agate-data`) is deployed and proven against real S3 Vectors: upload to
   `{tenant}/...` → ingest Lambda → Titan embeddings (1024-dim) → per-tenant S3

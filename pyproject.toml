@@ -1,5 +1,5 @@
 [project]
-name = "aws-genai-gateway"
+name = "agate"
 version = "0.1.0"
 description = "AWS-native GenAI gateway for higher education (agate) — CDK app, identity broker, and shared pure logic."
 readme = "README.md"

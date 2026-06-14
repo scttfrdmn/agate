@@ -1,4 +1,4 @@
-"""agate — shared pure logic for the aws-genai-gateway.
+"""agate — shared pure logic for the agate.
 
 This package holds the two load-bearing, AWS-free pieces (design §3.1):
 the claims -> session-tag translation and the tier -> model entitlement table.

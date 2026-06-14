@@ -1,11 +1,11 @@
-# aws-genai-gateway — Security Justification for Browser-Direct Model Access
+# agate — Security Justification for Browser-Direct Model Access
 ## A memo for the CISO / security architecture review
 
 > **Audience:** Chief Information Security Officer, security architects, FERPA/privacy
 > officer. **Purpose:** justify the Tier 0 architecture — a static client that calls
 > Amazon Bedrock and Amazon S3 Vectors directly using short-lived, scoped credentials
 > — and preempt the objections a security review will (correctly) raise.
-> Project / repo / package: **`aws-genai-gateway`** (provisional, "for now"). Short handle / CLI: **`agate`**.
+> Project / repo / package: **`agate`** (provisional, "for now"). Short handle / CLI: **`agate`**.
 
 ---
 
@@ -248,6 +248,6 @@ least-privilege guarantees hold under a hostile-client assumption.
 
 ---
 
-*Companion document: `aws-genai-gateway-design.md` (full architecture and implementation plan).
+*Companion document: `agate-design.md` (full architecture and implementation plan).
 The credential-vending broker and the ABAC tag scheme are specified there in §3.1 and
 §13; they are the components this memo recommends for independent security review.*

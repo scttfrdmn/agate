@@ -1,4 +1,4 @@
-// Command agate is the admin CLI for aws-genai-gateway.
+// Command agate is the admin CLI for agate.
 //
 // Commands are small and verb-first, coreutils-style. The cloud-mutating commands
 // (deploy, ingest) build and PRINT a plan by default and run it only with an
@@ -11,8 +11,8 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/scttfrdmn/aws-genai-gateway/cli/internal/commands"
-	"github.com/scttfrdmn/aws-genai-gateway/cli/internal/config"
+	"github.com/scttfrdmn/agate/cli/internal/commands"
+	"github.com/scttfrdmn/agate/cli/internal/config"
 )
 
 // Version is the agate release (SemVer). Override at build time with:
@@ -239,7 +239,7 @@ func fail(err error) int {
 }
 
 func usage(cmds []command) {
-	fmt.Fprintf(os.Stderr, "agate — admin CLI for aws-genai-gateway (%s)\n\n", Version)
+	fmt.Fprintf(os.Stderr, "agate — admin CLI for agate (%s)\n\n", Version)
 	fmt.Fprintln(os.Stderr, "usage: agate <command> [args]")
 	fmt.Fprintln(os.Stderr, "\ncommands:")
 	for _, c := range cmds {

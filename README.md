@@ -1,16 +1,17 @@
-# aws-genai-gateway (`agate`)
+# agate
 
 An open-source, **AWS-native GenAI gateway for higher education** with **zero standing cost**.
 A person federates their campus identity, receives short-lived credentials scoped to exactly
 the models and documents they're entitled to, and the browser talks to Amazon Bedrock and
 S3 Vectors directly — with both the talking and the documents fenced by the *same* boundary.
 
-- **Architecture (source of truth):** [`docs/aws-genai-gateway-design.md`](docs/aws-genai-gateway-design.md)
-- **Security rationale (CISO memo):** [`docs/aws-genai-gateway-security-ciso.md`](docs/aws-genai-gateway-security-ciso.md)
+- **Architecture (source of truth):** [`docs/agate-design.md`](docs/agate-design.md)
+- **Security rationale (CISO memo):** [`docs/agate-security-ciso.md`](docs/agate-security-ciso.md)
 - **Coding contract:** [`CLAUDE.md`](CLAUDE.md)
 
-> Names are provisional ("for now"): project/repo/package `aws-genai-gateway`; CLI binary and
-> short handle `agate`; session-tag namespace `agate:`; docs bucket prefix `agate-docs`.
+> Project, repo, package, and CLI binary are all **`agate`** (named for agate, a banded form
+> of bedrock). Session-tag namespace `agate:`; docs bucket prefix `agate-docs`. The name is
+> still provisional ("for now").
 
 ## The governing principle: NO CLOCKS
 

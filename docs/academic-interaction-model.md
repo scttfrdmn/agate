@@ -1,6 +1,6 @@
 # §10.2 — Academic Interaction Model
 
-> **Status:** Design specification. Slots into `docs/aws-genai-gateway-design.md`
+> **Status:** Design specification. Slots into `docs/agate-design.md`
 > immediately after §10.1 (visual / low-code authoring).
 >
 > **How to use this document (for Claude Code):** Treat this as the authoritative

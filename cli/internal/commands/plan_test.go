@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scttfrdmn/aws-genai-gateway/cli/internal/config"
+	"github.com/scttfrdmn/agate/cli/internal/config"
 )
 
 func cfg(tenants ...string) *config.Config {

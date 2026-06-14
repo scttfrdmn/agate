@@ -1,3 +1,3 @@
-module github.com/scttfrdmn/aws-genai-gateway/cli
+module github.com/scttfrdmn/agate/cli
 
 go 1.22

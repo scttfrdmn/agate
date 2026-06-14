@@ -6,6 +6,7 @@ the models and documents they're entitled to, and the browser talks to Amazon Be
 S3 Vectors directly — with both the talking and the documents fenced by the *same* boundary.
 
 - **Architecture (source of truth):** [`docs/agate-design.md`](docs/agate-design.md)
+- **Agent platform vision (where it goes):** [`docs/agate-agents-vision.md`](docs/agate-agents-vision.md)
 - **Security rationale (CISO memo):** [`docs/agate-security-ciso.md`](docs/agate-security-ciso.md)
 - **Coding contract:** [`CLAUDE.md`](CLAUDE.md)
 

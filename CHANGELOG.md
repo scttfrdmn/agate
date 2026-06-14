@@ -109,6 +109,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     tenant boundary remains IAM-enforced for vectors as before.
 
 ### Fixed
+- **CloudTrail trail now deploys reliably; re-enabled by default (#75).** The
+  `agate-audit` forensic trail intermittently failed to create with "Incorrect S3
+  bucket policy" — the L2 `cloudtrail.Trail` construct mutates the bucket policy
+  *after* the bucket exists, so CloudTrail's create-time validation could race a
+  transiently-incomplete policy (an explicit `DependsOn` didn't help, since it
+  depended on a policy the construct was still editing). Fixed by (1) authoring the
+  complete CloudTrail bucket policy ourselves as one settled resource — both
+  `AWSCloudTrailAclCheck` + `AWSCloudTrailWrite`, scoped to the trail via
+  `aws:SourceArn` (deterministic ARN, no cycle) — and (2) switching to the L1
+  `CfnTrail`, which does **not** touch the bucket policy, with a `DependsOn` on that
+  policy. Verified live (trail `CREATE_COMPLETE`, `IsLogging=true`, no delivery
+  error), so it is **on by default** again; opt out with `-c cloudtrail=false` for a
+  spend-only deploy. The forensic trail stays independent of the spend path.
 - **Per-model pricing — every model was metered at the cheapest (oss) rate (#88).**
   `_DEFAULT_MODEL_RATES` was keyed only by logical tier (`oss`/`mid`/`frontier`), but
   the meter and choke point pass the concrete Bedrock model id

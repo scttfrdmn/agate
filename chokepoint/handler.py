@@ -25,14 +25,16 @@ from __future__ import annotations
 import json
 import math
 import os
+from decimal import Decimal
 from typing import Any
 
 import boto3
 from agate.jwt_verify import TokenError, config_from_env, verify_token
+from agate.rag import ancestors
 from agate.tags import ClaimsError, claims_to_tags
-from cost import evaluate_precall
+from cost import estimate_call_cost, evaluate_cascade
 from cost.pricing import default_pricebook
-from meter import read_spend_item
+from meter import read_scope_spend_item, read_spend_item, scope_pk
 
 SPEND_TABLE = os.environ.get("AGATE_SPEND_TABLE", "")
 BUDGET_TABLE = os.environ.get("AGATE_BUDGET_TABLE", "")
@@ -76,6 +78,35 @@ def read_spend(tenant: str, user: str, period: str) -> float:
     if not SPEND_TABLE:
         return 0.0
     return read_spend_item(_ddb.Table(SPEND_TABLE), tenant, user, period)
+
+
+def lookup_scope_budget(tenant: str, node: str, period: str) -> float | None:
+    """Budget for one scope node (#81 cascade), from the budget table by `scope_pk`.
+    None when unconfigured -> that node imposes no cap (evaluate_cascade skips it)."""
+    if not BUDGET_TABLE:
+        return None
+    item = _ddb.Table(BUDGET_TABLE).get_item(Key={"pk": scope_pk(tenant, node, period)}).get("Item")
+    return float(item["budget_usd"]) if item and "budget_usd" in item else None
+
+
+def read_scope_spend(tenant: str, node: str, period: str) -> float:
+    """Running spend at one scope node — written by THIS choke point on allow (below).
+    The async log meter does not write scope rows, so these are the only writers."""
+    if not SPEND_TABLE:
+        return 0.0
+    return read_scope_spend_item(_ddb.Table(SPEND_TABLE), tenant, node, period)
+
+
+def _increment_scope_spend(tenant: str, node: str, period: str, cost: float) -> None:
+    """Atomically add `cost` USD to a scope-node spend row (created on first write).
+    Mirrors meter.handler._increment exactly (Decimal ADD) so the format can't drift."""
+    if not SPEND_TABLE:
+        return
+    _ddb.Table(SPEND_TABLE).update_item(
+        Key={"pk": scope_pk(tenant, node, period)},
+        UpdateExpression="ADD spend_usd :a",
+        ExpressionAttributeValues={":a": Decimal(str(round(cost, 6)))},
+    )
 
 
 def assume_user_role(tags, user: str) -> Any:
@@ -142,21 +173,37 @@ def process(req: dict, *, period: str | None = None) -> dict:
 
     max_tokens = int(req.get("max_tokens", DEFAULT_MAX_TOKENS))
     input_tokens = estimate_input_tokens(messages)  # server-side only
-    budget = lookup_budget(tenant, user, period)  # server-side, keyed by verified id
+    pricebook = default_pricebook()
 
-    spend = read_spend(tenant, user, period)
-    gate = evaluate_precall(
+    # Budget CASCADE (#81): the call must fit under the user/tenant budget AND under
+    # every ancestor scope node's budget. The scope comes from the VERIFIED token
+    # (tags.scope, #80) — never a request field. ancestors("") == [] so an unconfined
+    # session keeps exactly today's user/tenant-only gate. A node with no budget row
+    # imposes no cap (evaluate_cascade skips it). scope rows here are the running
+    # totals THIS choke point maintains (the async log meter keys only tenant/user).
+    scope_nodes = ancestors(tags.scope)
+    nodes: list[tuple[str, float, float | None]] = [
+        ("user", read_spend(tenant, user, period), lookup_budget(tenant, user, period)),
+    ]
+    for node in scope_nodes:
+        nodes.append(
+            (
+                f"scope:{node}",
+                read_scope_spend(tenant, node, period),
+                lookup_scope_budget(tenant, node, period),
+            )
+        )
+
+    gate = evaluate_cascade(
         model_id=model_id,
         input_tokens=input_tokens,
         max_tokens=max_tokens,
-        spend=spend,
-        budget=budget,
-        pricebook=default_pricebook(),
+        nodes=nodes,
+        pricebook=pricebook,
     )
     if gate.decision == "reject":
         raise ChokepointError(
-            f"pre-call budget check failed: {gate.reason} "
-            f"(projected ${gate.projected_total} vs budget ${budget})"
+            f"pre-call budget check failed at {gate.breaching_node}: {gate.reason}"
         )
 
     # Allowed: invoke Converse with the role narrowed by the VERIFIED tags.
@@ -168,12 +215,18 @@ def process(req: dict, *, period: str | None = None) -> dict:
     )
     text = "".join(b.get("text", "") for b in resp["output"]["message"]["content"])
     usage = resp.get("usage", {})
+    # Record ACTUAL cost against each ancestor scope node (running totals for the
+    # cascade). Only scope rows — user/tenant rows stay owned by the async log meter,
+    # so there's no double count. Best-effort: a metering write must not fail the
+    # already-served call.
+    in_tok = int(usage.get("inputTokens", 0))
+    out_tok = int(usage.get("outputTokens", 0))
+    actual_cost = estimate_call_cost(model_id, in_tok, out_tok, pricebook=pricebook)
+    for node in scope_nodes:
+        _increment_scope_spend(tenant, node, period, actual_cost)
     return {
         "text": text,
-        "usage": {
-            "inputTokens": usage.get("inputTokens", 0),
-            "outputTokens": usage.get("outputTokens", 0),
-        },
+        "usage": {"inputTokens": in_tok, "outputTokens": out_tok},
         "estimated_cost": gate.estimated_cost,
     }
 

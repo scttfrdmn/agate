@@ -36,6 +36,11 @@ class _Wired:
         self.spend = 0.0
         self.budget: float | None = 100.0
         self.assumed_tags = None  # records the SessionTags assume_user_role got
+        # #81 cascade: per-scope-node budgets/spend keyed by node label, and a log
+        # of (node, cost) writes the choke point made on allow.
+        self.scope_budgets: dict[str, float | None] = {}
+        self.scope_spend: dict[str, float] = {}
+        self.scope_writes: list[tuple[str, float]] = []
 
     @property
     def calls(self) -> int:
@@ -54,6 +59,17 @@ def wired(monkeypatch):
     monkeypatch.setattr(cp, "assume_user_role", fake_assume)
     monkeypatch.setattr(cp, "read_spend", lambda tenant, user, period: w.spend)
     monkeypatch.setattr(cp, "lookup_budget", lambda tenant, user, period: w.budget)
+    monkeypatch.setattr(
+        cp, "read_scope_spend", lambda tenant, node, period: w.scope_spend.get(node, 0.0)
+    )
+    monkeypatch.setattr(
+        cp, "lookup_scope_budget", lambda tenant, node, period: w.scope_budgets.get(node)
+    )
+    monkeypatch.setattr(
+        cp,
+        "_increment_scope_spend",
+        lambda tenant, node, period, cost: w.scope_writes.append((node, cost)),
+    )
     monkeypatch.setattr(cp, "AUTHENTICATED_ROLE_ARN", "arn:aws:iam::123:role/agate-authenticated")
 
     # Simulate a VERIFIED token: decode the JSON the test passes as `idp_token`.
@@ -186,3 +202,53 @@ def test_handler_200_on_allow(wired):
     resp = cp.handler({"body": json.dumps(_req())}, None)
     assert resp["statusCode"] == 200
     assert "answer" in resp["body"]
+
+
+# --- #81 budget cascade (Tier-1 hierarchical scope) --------------------------
+
+
+def test_no_scope_token_unchanged_no_scope_io(wired):
+    # Regression guard: a token with no data_scope behaves exactly as before — no
+    # scope budget reads and no scope spend writes.
+    wired.spend, wired.budget = 1.0, 100.0
+    out = cp.process(_req(), period="2026-06")
+    assert out["text"] == "answer" and wired.calls == 1
+    assert wired.scope_writes == []  # nothing written to scope rows
+
+
+def test_scoped_session_within_all_budgets_allows_and_records_scope_spend(wired):
+    wired.spend, wired.budget = 0.0, 100.0
+    wired.scope_budgets = {"arts-sci": 100.0, "arts-sci/chemistry": 100.0}
+    out = cp.process(_req(token=_token(data_scope="arts-sci/chemistry")), period="2026-06")
+    assert out["text"] == "answer" and wired.calls == 1
+    # write-on-allow: EXACTLY the two ancestor scope rows, with the actual-usage cost,
+    # and NOT a user/tenant row (those stay with the async meter — no double count).
+    written_nodes = [n for n, _ in wired.scope_writes]
+    assert written_nodes == ["arts-sci", "arts-sci/chemistry"]
+    assert all(cost > 0 for _, cost in wired.scope_writes)
+
+
+def test_ancestor_budget_breach_rejects_and_names_node(wired):
+    wired.spend, wired.budget = 0.0, 100.0
+    # The DEPT node is exhausted; the request must be rejected naming it, no call.
+    wired.scope_budgets = {"arts-sci": 100.0, "arts-sci/chemistry": 0.0}
+    with pytest.raises(cp.ChokepointError, match="scope:arts-sci/chemistry"):
+        cp.process(_req(token=_token(data_scope="arts-sci/chemistry")), period="2026-06")
+    assert wired.calls == 0
+    assert wired.scope_writes == []  # nothing invoked, nothing recorded
+
+
+def test_scope_node_without_budget_is_skipped(wired):
+    wired.spend, wired.budget = 0.0, 100.0
+    # No budget rows for any scope node -> no cap there; user budget passes -> allow.
+    out = cp.process(_req(token=_token(data_scope="arts-sci/chemistry")), period="2026-06")
+    assert out["text"] == "answer" and wired.calls == 1
+
+
+def test_body_supplied_data_scope_is_ignored(wired):
+    # SEC-1: scope comes from the TOKEN (tags.scope), not the request body. A body
+    # data_scope must not create scope checks/writes for an unscoped token.
+    wired.spend, wired.budget = 1.0, 100.0
+    out = cp.process(_req(data_scope="law/evil"), period="2026-06")  # body field
+    assert out["text"] == "answer"
+    assert wired.scope_writes == []  # token had no scope -> no scope activity

@@ -109,3 +109,54 @@ def test_handler_rejects_unverifiable_token_when_unconfigured(stub_sts):
     resp = broker.handler(event, None)
     assert resp["statusCode"] == 403
     assert "credentials" not in resp["body"]
+
+
+# --- source-IP allowlist (pure) ---------------------------------------------
+
+
+def test_ip_allowed_empty_allowlist_allows_all():
+    assert broker.ip_allowed("203.0.113.5", "") is True
+    assert broker.ip_allowed("", "") is True  # no fence configured
+
+
+def test_ip_allowed_exact_and_cidr():
+    assert broker.ip_allowed("203.0.113.5", "203.0.113.5") is True
+    assert broker.ip_allowed("203.0.113.5", "203.0.113.0/24") is True
+    assert broker.ip_allowed("198.51.100.7", "203.0.113.0/24") is False
+
+
+def test_ip_allowed_multi_entry_and_whitespace():
+    allow = "198.51.100.0/24, 203.0.113.5"
+    assert broker.ip_allowed("203.0.113.5", allow) is True
+    assert broker.ip_allowed("198.51.100.99", allow) is True
+    assert broker.ip_allowed("192.0.2.1", allow) is False
+
+
+def test_ip_allowed_fails_closed_on_blank_ip_and_bad_entry():
+    # An allowlist is set but the source IP is missing → deny.
+    assert broker.ip_allowed("", "203.0.113.0/24") is False
+    # A malformed allowlist entry must not silently widen access.
+    assert broker.ip_allowed("203.0.113.5", "not-a-cidr") is False
+
+
+def test_handler_denies_off_allowlist_source_ip(stub_sts, verified_token, monkeypatch):
+    monkeypatch.setattr(broker, "IP_ALLOWLIST", "203.0.113.0/24")
+    token = json.dumps({"sub": "u1", "affiliation": "student", "tenant": "chem"})
+    event = {
+        "body": json.dumps({"idp_token": token}),
+        "requestContext": {"http": {"sourceIp": "192.0.2.99"}},
+    }
+    resp = broker.handler(event, None)
+    assert resp["statusCode"] == 403
+    assert "credentials" not in resp["body"]
+
+
+def test_handler_allows_on_allowlist_source_ip(stub_sts, verified_token, monkeypatch):
+    monkeypatch.setattr(broker, "IP_ALLOWLIST", "203.0.113.0/24")
+    token = json.dumps({"sub": "u1", "affiliation": "student", "tenant": "chem"})
+    event = {
+        "body": json.dumps({"idp_token": token}),
+        "requestContext": {"http": {"sourceIp": "203.0.113.42"}},
+    }
+    resp = broker.handler(event, None)
+    assert resp["statusCode"] == 200

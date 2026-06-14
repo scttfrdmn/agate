@@ -23,6 +23,12 @@ from aws_cdk import (
     Stack,
 )
 from aws_cdk import (
+    aws_apigatewayv2 as apigwv2,
+)
+from aws_cdk import (
+    aws_apigatewayv2_integrations as apigwv2_integrations,
+)
+from aws_cdk import (
     aws_cognito_identitypool as idpool,
 )
 from aws_cdk import (
@@ -168,6 +174,10 @@ class IdentityStack(Stack):
             ("AGATE_OIDC_ISSUER", "oidc_issuer"),
             ("AGATE_OIDC_JWKS_URL", "oidc_jwks_url"),
             ("AGATE_OIDC_AUDIENCE", "oidc_audience"),
+            # Optional source-IP fence on the broker. Comma-separated CIDRs/IPs via
+            # `-c allow_ip=1.2.3.4` (or 1.2.3.4/32, a.b.c.0/24). Empty = open. The
+            # HTTP API has no resource policy, so the broker enforces this itself.
+            ("AGATE_IP_ALLOWLIST", "allow_ip"),
         ):
             value = self.node.try_get_context(ctx_key)
             if value:
@@ -189,20 +199,35 @@ class IdentityStack(Stack):
             description="agate claims -> scoped-STS credential broker (per-request, zero idle)",
         )
 
-        # --- Broker HTTP endpoint (Function URL) ---------------------------
+        # --- Broker HTTP endpoint (API Gateway HTTP API) -------------------
         # The browser SPA POSTs {idp_token} here to exchange its IdP token for
-        # scoped STS creds. AuthType NONE is correct: the broker authenticates the
-        # caller from the JWT itself (verified RS256/JWKS, SEC-4) — there is no AWS
+        # scoped STS creds. No API-level auth: the broker authenticates the caller
+        # from the JWT itself (verified RS256/JWKS, SEC-4) — there is no AWS
         # principal to IAM-auth, and the endpoint vends nothing without a valid
-        # token. A Function URL is per-request (NO CLOCKS) — no ALB/API-GW idle fee.
-        broker_url = broker.add_function_url(
-            auth_type=lambda_.FunctionUrlAuthType.NONE,
-            cors=lambda_.FunctionUrlCorsOptions(
-                allowed_origins=["*"],  # demo: any origin; pin to the SiteUrl for prod
-                allowed_methods=[lambda_.HttpMethod.POST],
-                allowed_headers=["content-type"],
+        # token. An HTTP API is per-request (NO CLOCKS) — no idle fee, no ALB.
+        #
+        # NB: we deliberately do NOT use a Lambda Function URL here. Public
+        # (AuthType NONE) Function URLs are blocked by an account/org guardrail
+        # (Lambda Block Public Access) in this environment — they return a 403
+        # "Forbidden" at the edge before the handler runs. An HTTP API integration
+        # invokes the broker via IAM (the service principal), so it is unaffected.
+        http_api = apigwv2.HttpApi(
+            self,
+            "BrokerApi",
+            api_name=f"{HANDLE}-broker",
+            cors_preflight=apigwv2.CorsPreflightOptions(
+                allow_origins=["*"],  # demo: any origin; pin to the SiteUrl for prod
+                allow_methods=[apigwv2.CorsHttpMethod.POST],
+                allow_headers=["content-type"],
             ),
         )
+        http_api.add_routes(
+            path="/",
+            methods=[apigwv2.HttpMethod.POST],
+            integration=apigwv2_integrations.HttpLambdaIntegration("BrokerIntegration", broker),
+        )
+        # HttpApi.url has a trailing slash; the SPA POSTs to this exact URL.
+        broker_endpoint = http_api.url or ""
 
         # The broker is allowed to assume the authenticated role AND tag the session.
         broker.add_to_role_policy(
@@ -246,7 +271,7 @@ class IdentityStack(Stack):
         cdk.CfnOutput(self, "IdentityPoolId", value=pool.identity_pool_id)
         cdk.CfnOutput(self, "AuthenticatedRoleArn", value=authenticated_role.role_arn)
         cdk.CfnOutput(self, "BrokerFunctionName", value=broker.function_name)
-        cdk.CfnOutput(self, "BrokerUrl", value=broker_url.url)
+        cdk.CfnOutput(self, "BrokerUrl", value=broker_endpoint)
         cdk.CfnOutput(
             self,
             "FederationStatus",

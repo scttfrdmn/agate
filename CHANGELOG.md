@@ -18,14 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   registers the SPA origin as the client's callback/logout URL (`-c site_url=…`,
   localhost included for `vite dev`) and outputs `HostedUiDomain`. Pure token/URL
   logic is unit-tested.
-- `agate-identity` now exposes the broker over a **Lambda Function URL** (CORS,
-  `AuthType NONE` — the broker authenticates from the verified JWT, not an AWS
+- `agate-identity` now exposes the broker over an **API Gateway HTTP API** (CORS,
+  no API-level auth — the broker authenticates from the verified JWT, not an AWS
   principal), output as `BrokerUrl`, so the browser SPA can reach it. Per-request,
   no idle endpoint fee (NO CLOCKS). The broker's OIDC verification config
-  (`AGATE_OIDC_ISSUER`/`_JWKS_URL`/`_AUDIENCE`) is now read from CDK context
+  (`AGATE_OIDC_ISSUER`/`_JWKS_URL`/`_AUDIENCE`) is read from CDK context
   (`-c oidc_issuer=… -c oidc_jwks_url=… -c oidc_audience=…`) instead of a
   post-deploy CLI patch — the same keys take a campus IdP or the demo pool's
   outputs, so the demo is reproducible from `cdk deploy` alone.
+- Optional **source-IP fence** on the broker: set `-c allow_ip=1.2.3.4` (or a CIDR,
+  or a comma-separated list) and the broker denies any request whose API-Gateway
+  source IP is outside the allowlist (`AGATE_IP_ALLOWLIST`). HTTP APIs have no
+  resource policy, so the broker enforces it in-handler; it fails closed on a blank
+  source IP or a malformed allowlist. Empty = open (JWT auth only). Unit-tested.
 
 ### Changed
 - `agate-demo-idp` SPA client now enables username/password auth flows
@@ -34,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than applied by hand post-deploy.
 
 ### Fixed
+- Broker endpoint moved from a Lambda **Function URL** to an **API Gateway HTTP
+  API**. Public (`AuthType NONE`) Function URLs are blocked at the edge by an
+  account/org guardrail (Lambda Block Public Access) in some environments — they
+  return a 403 "Forbidden" before the handler runs, even with a correct public
+  resource policy. An HTTP API invokes the broker via the service principal (IAM),
+  so it is unaffected, and it's the more idiomatic browser-facing front door. Same
+  per-request / no-idle-cost posture.
 - Lambda asset bundling: the Docker-free local bundler now fetches **Linux/x86_64**
   wheels for the Lambda runtime instead of host-platform wheels. `pyjwt[crypto]`
   pulls `cryptography` (a native extension); on a macOS/arm64 dev box the local

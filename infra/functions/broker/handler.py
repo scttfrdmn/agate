@@ -23,6 +23,7 @@ It FAILS CLOSED — any validation or translation error vends NO credentials.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 
@@ -33,8 +34,41 @@ from agate.tags import ClaimsError, claims_to_tags
 # Resolved at deploy time (set as Lambda env vars by the identity stack).
 AUTHENTICATED_ROLE_ARN = os.environ.get("AGATE_AUTHENTICATED_ROLE_ARN", "")
 SESSION_DURATION_SECONDS = int(os.environ.get("AGATE_SESSION_DURATION_SECONDS", "900"))  # 15 min
+# Optional source-IP allowlist (comma-separated CIDRs/IPs). Empty = allow all.
+# HTTP APIs (API Gateway v2) have no resource policy, so we fence the source IP
+# here in the handler instead. Fails closed: a malformed allowlist denies all.
+IP_ALLOWLIST = os.environ.get("AGATE_IP_ALLOWLIST", "").strip()
 
 _sts = boto3.client("sts")
+
+
+def _source_ip(event: dict) -> str:
+    """The caller's IP from an API Gateway v2 (HTTP API) proxy event."""
+    return str(((event.get("requestContext") or {}).get("http") or {}).get("sourceIp") or "")
+
+
+def ip_allowed(source_ip: str, allowlist: str) -> bool:
+    """True if source_ip is within any CIDR/IP in the allowlist. Empty allowlist =
+    allow all (no restriction configured). Fails closed on a malformed entry or a
+    missing/blank source IP when an allowlist IS set."""
+    if not allowlist:
+        return True
+    if not source_ip:
+        return False
+    try:
+        addr = ipaddress.ip_address(source_ip)
+    except ValueError:
+        return False
+    for entry in (e.strip() for e in allowlist.split(",")):
+        if not entry:
+            continue
+        try:
+            if addr in ipaddress.ip_network(entry, strict=False):
+                return True
+        except ValueError:
+            # A bad allowlist entry must not silently widen access.
+            return False
+    return False
 
 
 class BrokerError(Exception):
@@ -107,8 +141,13 @@ def _safe_session_name(subject: str) -> str:
 
 
 def handler(event: dict, context: object) -> dict:
-    """Lambda entry point (Function URL / API Gateway proxy event)."""
+    """Lambda entry point (API Gateway v2 HTTP API proxy event)."""
     try:
+        # Optional network fence before any work (the HTTP API itself has no
+        # resource policy). Returns the same terse 403 as an entitlement failure.
+        if not ip_allowed(_source_ip(event), IP_ALLOWLIST):
+            return _resp(403, {"error": "not_entitled"})
+
         body = event.get("body") or "{}"
         if event.get("isBase64Encoded"):
             import base64

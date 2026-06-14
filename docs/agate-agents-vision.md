@@ -33,6 +33,12 @@ from "chatbot that answers" to "agent that acts."
 **The wedge:** *the only AI platform where you can hand an agent real authority over
 regulated, multi-tenant data and prove it cannot overreach.*
 
+**And it does this without forking the ecosystem.** agate adopts the open agent stack
+wholesale — MCP, Skills, A2A, AG-UI, A2UI, AP2, x402 (§8.6) — and contributes the one
+layer those standards deliberately leave open: a **scoped credential under every
+interaction**. The standards give interop; agate makes them safe in a regulated,
+multi-tenant setting. Restated: *the open agent stack, governed.*
+
 ---
 
 ## 1. The Agent Spec — an agent is a declarative artifact that compiles to a scoped identity
@@ -291,6 +297,74 @@ only as an untrusted *drafter*, never as the source of authority.
 
 ---
 
+## 8.6 Standing on open standards — agate as the *governance layer* for the open agent stack
+
+**[vision]** agate must not invent a proprietary agent stack. The industry is
+converging on open protocols for exactly the pieces the spec (§1) currently hand-waves
+— *how agents talk, how capabilities package, how agents render UI.* agate's job is not
+to replace them but to **put a scoped-credential boundary under each one.** Standards
+give interoperability; agate gives the bounded authority that makes them safe in a
+regulated, multi-tenant setting. That is the whole differentiator restated: *the open
+agent stack, governed.*
+
+Each standard answers a question the spec leaves open, and each gets the same
+treatment — **the credential, not the protocol, is the authority:**
+
+| Standard | What it is | What it answers for agate | agate's governing move |
+|----------|-----------|---------------------------|------------------------|
+| **MCP** | tool/resource connectivity | "what can an agent *touch*" (§5) | every tool call inherits the caller's bounded credential; third-party servers run under a spec-declared scoped egress identity |
+| **Skills** | portable, model-agnostic capability packages (instructions + resources) | "what an agent *knows how to do*" — the reusable unit behind the spec's `reasoning`/capability slot | a Skill runs **under the agent's bounded credential**; *which* skills an agent may load is a spec field, hence IAM-governed. `agate.patterns` is already a proto-skill registry — generalize it to load/compose Skills |
+| **A2A** (Agent-to-Agent) | wire protocol for agents invoking agents | "how the §4 agent graph nodes actually talk" | the agent card advertises capability, but **authority is the narrowed assumed-role, never the card's claims**; every A2A hop is monotonic-narrowing + metered (§4) |
+| **AG-UI** | streaming agent state/events to a UI | "how a session/room renders live + interoperably" (§3, §7) | replaces agate's bespoke event protocol; the event stream is still scope-tagged and attributed, so a live UI shows only what the credential authorized |
+| **A2UI** | agent-generated *interactive* UI — live panels, not just text | "the next iteration of the chatbot" — Panel/Analyze output becomes a **live dashboard**, not a transcript | rendered components are bounded by the same scope; an agent can only surface data/actions its credential permits, so a "live panel" can't become an exfiltration or privileged-action surface |
+| **AP2** (Agent Payments Protocol) | mandate/intent-based authorization for agent *purchases* | "how an agent is permitted to *spend money* on the user's behalf" | the budget cascade (#81) **is** the spending mandate — a spec's `budget` becomes the signed, scoped authorization an AP2 mandate carries; an agent can't transact beyond its compiled ceiling |
+| **x402** | HTTP 402 revival — per-request payments over the wire (pay-per-call APIs/tools/data) | "how an agent pays for a metered tool/data call inline" | a 402-priced call is just another metered action: it's pre-checked against remaining budget (the chokepoint pattern), debited up the cascade, and attributed per-hop — no agent runs up an unbounded bill |
+
+**Two principles hold across all of them:**
+
+1. **Adopt the standard for interop; own the boundary for safety.** agate speaks MCP /
+   A2A / AG-UI / A2UI so an agate agent interoperates with the wider ecosystem (and
+   external agents/tools can participate *within* a scope) — but every cross-boundary
+   interaction is mediated by a narrowed credential. A protocol message is a *request*;
+   authority is always the assumed role. This is the §10 invariant applied to wire
+   formats: a capability advertised over A2A, a tool offered over MCP, or a panel
+   action emitted over A2UI is inert until it resolves to scoped IAM.
+
+2. **Standards are spec fields, so they're governed by authoring (§8.5).** "May this
+   agent load this Skill / call this A2A peer / connect this MCP server / render this
+   panel action" are all checkboxes in the visual builder, all compiled to IAM, all
+   clamped to what the author holds. The open stack inherits agate's "unsafe is
+   unrepresentable" property for free.
+
+The flagship payoff is **A2UI live panels** for the "beyond just another chatbot" goal:
+a research session that streams a *live, interactive* panel — a dataset profile that
+updates as a job runs, a budget gauge, a citation graph you can click — instead of a
+wall of text. Built on the standard, governed by the credential, metered per the
+cascade.
+
+**Payments (AP2 / x402) are where agate's existing work pays off unusually well.** The
+unsolved problem in agent payments is *bounded autonomy*: how do you let an agent spend
+without it spending too much, on the wrong thing, or on someone else's dime? agate
+already answers this for model tokens — authoritative server-side metering (#79),
+pre-call budget checks (the Tier-1 chokepoint), and a hierarchical budget cascade
+(#81). Generalize "spend" from tokens to *any* priced action and:
+
+- a spec's `budget` becomes a **signed spending mandate** (the thing AP2 wants),
+  scoped to exactly that agent and debited up the school → dept → lab cascade;
+- an **x402-priced tool/data call is pre-authorized against remaining budget** before
+  it fires (the chokepoint pattern, unchanged) and attributed per-hop in the agent
+  graph (§4), so a runaway sub-agent can't drain the family ceiling;
+- delegation still only narrows (§2): a child agent's spending authority is a subset of
+  its parent's, so "my research agent may buy datasets up to $50/mo" cannot become "and
+  so can every sub-agent it spawns, each up to $50."
+
+This turns agate from "governs what an agent can *read and run*" into "governs what an
+agent can *read, run, and pay for*" — with the same single boundary. For a regulated,
+multi-tenant institution, *bounded agent spend* is at least as load-bearing as bounded
+data access, and agate is already most of the way there.
+
+---
+
 ## 9. Build order (each step rests on the prior; each is a generalization, not a rewrite)
 
 1. **Agent-spec compiler** *(the keystone — everything hangs off it).* `spec →
@@ -304,7 +378,12 @@ only as an untrusted *drafter*, never as the source of authority.
 5. **MCP tool catalog** (§5), starting with read-only LMS/library, then the HPC
    scheduler as the flagship "agent that acts."
 6. **Triggers** (§6), then **collaborative rooms** (§7).
-7. **Authoring surfaces** (§8.5), layered on once the compiler is solid: template
+7. **Open-standard adoption** (§8.6), threaded through steps 4–6 rather than bolted on:
+   MCP for tools, Skills as the capability unit, A2A as the agent-graph wire, AG-UI /
+   A2UI for live panels, AP2 / x402 for agent payments. Each is adopted for interop and
+   wrapped in a narrowed credential — the protocol is the request, the credential is the
+   authority.
+8. **Authoring surfaces** (§8.5), layered on once the compiler is solid: template
    gallery → visual builder → natural-language drafting → graph editor. Built *last*
    on purpose — they are front-ends to a compiler that must already be unbreakable, so
    the GUI can only ever express what the compiler already bounds. The "effective
@@ -331,7 +410,14 @@ ship:
    privileged than the principal it acts for.
 3. **Memory and sessions are ABAC-namespaced.** Persistence is just another fenced
    resource; it never becomes a cross-tenant/cross-principal leak.
-4. **Everything is attributed and metered, server-side.** The call graph is the audit
-   graph; budgets cascade; nothing is client-claimed (#79).
-5. **NO CLOCKS.** Standing agents are still per-event; "always available" must not mean
+4. **Everything is attributed and metered, server-side — including money.** The call
+   graph is the audit graph; budgets cascade; nothing is client-claimed (#79). When an
+   agent *pays* (AP2 / x402, §8.6), the budget cascade is the spending mandate: every
+   priced action is pre-authorized against remaining budget and debited up the tree, so
+   bounded spend has the same guarantee as bounded access.
+5. **Open standards in, narrowed credential under.** agate speaks the open agent stack
+   (MCP, Skills, A2A, AG-UI, A2UI, AP2, x402) for interop, but a protocol message is
+   only ever a *request* — authority resolves to scoped IAM (§8.6). agate adds the
+   governance layer the standards deliberately leave open; it never forks them.
+6. **NO CLOCKS.** Standing agents are still per-event; "always available" must not mean
    "always billing."

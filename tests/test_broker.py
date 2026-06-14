@@ -57,6 +57,9 @@ def test_vends_scoped_creds_with_four_tags(stub_sts):
     assert sent["agate:tier"] == "frontier"
     assert set(stub_sts.last_call["TransitiveTagKeys"]) == set(sent.keys())
     assert result["scope"]["tier"] == "frontier"
+    # #79: the RoleSessionName encodes the tenant (`<tenant>@<subject>`) so the meter
+    # can attribute spend unforgeably from the ARN, not from client requestMetadata.
+    assert stub_sts.last_call["RoleSessionName"] == "kempner@u123"
 
 
 def test_fails_closed_on_missing_tenant(stub_sts):

@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import aws_cdk as cdk  # noqa: E402
 
+from infra.stacks.admin import AdminStack  # noqa: E402
 from infra.stacks.agent import AgentStack  # noqa: E402
 from infra.stacks.audit import AuditStack  # noqa: E402
 from infra.stacks.chokepoint import ChokepointStack  # noqa: E402
@@ -42,6 +43,8 @@ AgentStack(app, "agate-agent", env=env)
 AuditStack(app, "agate-audit", env=env)
 GovernanceStack(app, "agate-governance", env=env)
 WebStack(app, "agate-web", env=env)
+# Governed-access console API (Phase 9 Track 1) — admin-gated spend analytics.
+AdminStack(app, "agate-admin", env=env)
 # Optional Tier 1 — only deploy when an institution requires exact pre-call caps,
 # centralized inspection, or non-Bedrock routing (design §2, §12 Phase 6).
 ChokepointStack(app, "agate-chokepoint", env=env)

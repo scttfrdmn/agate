@@ -52,16 +52,24 @@ def require_admin(token: str) -> None:
 
 def _scan_spend(table) -> list[dict]:
     """Scan all spend rows (paginated). The table is per-deployment and small
-    (one row per tenant/user/period); a scan is appropriate here."""
+    (one row per tenant/user/period); a scan is appropriate here.
+
+    The spend table is owned by `agate-audit`. If that stack isn't deployed yet the
+    table won't exist — that's a legitimate "no usage recorded" state, not an error,
+    so we degrade to empty analytics rather than 500.
+    """
     items: list[dict] = []
     kwargs: dict = {}
-    while True:
-        resp = table.scan(**kwargs)
-        items.extend(resp.get("Items", []))
-        lek = resp.get("LastEvaluatedKey")
-        if not lek:
-            break
-        kwargs["ExclusiveStartKey"] = lek
+    try:
+        while True:
+            resp = table.scan(**kwargs)
+            items.extend(resp.get("Items", []))
+            lek = resp.get("LastEvaluatedKey")
+            if not lek:
+                break
+            kwargs["ExclusiveStartKey"] = lek
+    except _ddb.meta.client.exceptions.ResourceNotFoundException:
+        return []
     return items
 
 

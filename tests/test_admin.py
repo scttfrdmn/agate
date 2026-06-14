@@ -122,3 +122,23 @@ def test_role_absent_is_forbidden(admin_token):
     # No role claim -> claims_to_tags defaults to member -> 403 (fail-closed).
     resp = admin_handler.handler(_event({"sub": "u", "tenant": "chem"}), None)
     assert resp["statusCode"] == 403
+
+
+def test_missing_spend_table_degrades_to_empty(admin_token, monkeypatch):
+    # agate-audit not deployed -> table scan raises ResourceNotFoundException ->
+    # admin returns empty analytics (200), not a 500.
+    class _MissingTable:
+        def scan(self, **_kw):
+            raise admin_handler._ddb.meta.client.exceptions.ResourceNotFoundException(
+                {"Error": {"Code": "ResourceNotFoundException", "Message": "missing"}},
+                "Scan",
+            )
+
+    monkeypatch.setattr(admin_handler._ddb, "Table", lambda _n: _MissingTable(), raising=False)
+    resp = admin_handler.handler(
+        _event({"sub": "u", "tenant": "chem", "role": "admin"}, period="2026-06"), None
+    )
+    assert resp["statusCode"] == 200
+    body = json.loads(resp["body"])
+    assert body["grand_total_usd"] == 0
+    assert body["tenants"] == []

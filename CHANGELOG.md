@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Governed-access console — live** (Phase 9 Track 1, #63 — second slice). The
+  admin spend-analytics dashboard end-to-end:
+  - `infra/stacks/admin.py` (`agate-admin`): the admin Lambda behind its own API
+    Gateway HTTP API, with a read-only grant on the spend table (by ARN, so no hard
+    cross-stack dependency on `agate-audit`). OIDC config from the same context keys
+    as the broker. Per-request, no clock.
+  - The admin Lambda degrades to **empty analytics** (200) when the spend table
+    isn't deployed yet, rather than erroring — the console is useful before audit.
+  - `web/src/admin/view.ts`: the dashboard view (total spend, per-tenant table with
+    scoped headers, top spenders) in the design system; an **Admin · Usage** entry
+    in the pop-out nav (shown when `VITE_ADMIN_URL` is set; the API's 403 is the real
+    gate). `agate-demo-idp` gained a `custom:role` attribute + pre-token mapping so a
+    demo admin user issues an `agate:role=admin` token. Unit-tested.
 - **Governed-access foundations** (Phase 9 Track 1, #63 — first slice). The
   differentiator vs NebulaONE ("usage limits per user") and Amazon Quick (no
   per-capita entitlement): admin is gated at the *credential* boundary, not the app.

@@ -15,6 +15,8 @@ export interface AppConfig {
   // falls back to a manually pasted `#idp_token=` in the hash.
   cognitoDomain: string;
   cognitoClientId: string;
+  // Governed-access console API (agate-admin). Empty = admin view hidden.
+  adminUrl: string;
 }
 
 const env = import.meta.env;
@@ -29,4 +31,5 @@ export const config: AppConfig = {
   agentRuntimeArn: env.VITE_AGENT_RUNTIME_ARN ?? "",
   cognitoDomain: env.VITE_COGNITO_DOMAIN ?? "",
   cognitoClientId: env.VITE_COGNITO_CLIENT_ID ?? "",
+  adminUrl: env.VITE_ADMIN_URL ?? "",
 };

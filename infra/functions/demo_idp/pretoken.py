@@ -13,8 +13,9 @@ issue (per-request, no clock).
 
 from __future__ import annotations
 
-# eduPerson-style claims the gateway's claims_to_tags understands.
-_CLAIMS = ("affiliation", "tenant", "courses", "grant")
+# eduPerson-style claims the gateway's claims_to_tags understands. `role` carries
+# the operator role (admin) for the governed-access console (Phase 9 Track 1).
+_CLAIMS = ("affiliation", "tenant", "courses", "grant", "role")
 
 
 def handler(event: dict, context: object) -> dict:

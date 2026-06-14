@@ -43,11 +43,12 @@ class ModelRate:
 #     isn't individually listed (a session's tier is known to the caller, which
 #     passes it as `fallback_tier`).
 #
-# RATE VALUES are best-effort published Bedrock list prices as of 2026-06; they are
-# NOT fetched live and NOT authoritative — verify against the Bedrock console and
-# update as AWS prices change. A deploy-time Price List fetcher (separate issue)
-# will replace these with real numbers. Config overrides (PriceBook.model_rates)
-# always win over this table.
+# RATE VALUES were verified against the AWS Price List API (us-east-1, 2026-06) by
+# cost.pricelist — they match published Bedrock list prices for the cross-region
+# (`_Global`) inference-profile tier. They remain a hard-default FALLBACK only: a
+# deploy-time fetch (cost.pricelist.build_pricebook_rates, #90) bakes the live
+# numbers into PriceBook.model_rates, which always wins over this table. Re-verify
+# when AWS prices change; #90's fetcher is the authoritative path.
 _DEFAULT_MODEL_RATES: dict[str, ModelRate] = {
     # --- logical tiers (fallback rung) ---
     "oss": ModelRate(input_per_mtok=0.10, output_per_mtok=0.40),
@@ -58,8 +59,8 @@ _DEFAULT_MODEL_RATES: dict[str, ModelRate] = {
     # oss tier (open-weight, on-demand FMs)
     "openai.gpt-oss-20b-1:0": ModelRate(input_per_mtok=0.07, output_per_mtok=0.30),
     "openai.gpt-oss-120b-1:0": ModelRate(input_per_mtok=0.15, output_per_mtok=0.60),
-    "google.gemma-3-12b-it": ModelRate(input_per_mtok=0.10, output_per_mtok=0.40),
-    "google.gemma-3-4b-it": ModelRate(input_per_mtok=0.05, output_per_mtok=0.20),
+    "google.gemma-3-12b-it": ModelRate(input_per_mtok=0.09, output_per_mtok=0.29),
+    "google.gemma-3-4b-it": ModelRate(input_per_mtok=0.04, output_per_mtok=0.08),
     # mid tier (Claude Haiku, inference profiles)
     "us.anthropic.claude-3-5-haiku-20241022-v1:0": ModelRate(
         input_per_mtok=0.80, output_per_mtok=4.00
@@ -124,6 +125,44 @@ class PriceBook:
         )
 
 
+def load_baked_rates(path: str) -> dict[str, ModelRate]:
+    """Load the deploy-time baked-rates JSON (written by `cost.pricelist`, #90) into
+    {model id: ModelRate}. A plain FILE READ — no AWS, no clock. Returns {} if the
+    path is empty/missing (the meter falls back to the hard defaults below)."""
+    import json
+    import os
+
+    if not path or not os.path.exists(path):
+        return {}
+    with open(path, encoding="utf-8") as fh:
+        data = json.loads(fh.read())
+    return {
+        mid: ModelRate(
+            input_per_mtok=float(r["input_per_mtok"]),
+            output_per_mtok=float(r.get("output_per_mtok", 0.0)),
+        )
+        for mid, r in data.items()
+    }
+
+
+# Conventional baked-rates location: a file next to this module, shipped inside the
+# `cost` package (which bundles into every Lambda). The deploy step writes it with
+#   uv run python -m cost.pricelist --out cost/model_rates.json
+# so the meter/chokepoint pick up authoritative rates with NO stack edits and NO env
+# var. `AGATE_MODEL_RATES_PATH` overrides this for non-standard locations.
+def _baked_rates_path() -> str:
+    import os
+
+    env = os.environ.get("AGATE_MODEL_RATES_PATH", "")
+    if env:
+        return env
+    return os.path.join(os.path.dirname(__file__), "model_rates.json")
+
+
 def default_pricebook() -> PriceBook:
-    """A PriceBook backed entirely by hard defaults (no config, no live fetch)."""
-    return PriceBook()
+    """A PriceBook for the request path. If a deploy-time baked-rates file exists
+    (cost.pricelist, #90 — `cost/model_rates.json` or `AGATE_MODEL_RATES_PATH`),
+    those AUTHORITATIVE rates load as config overrides; otherwise it is backed
+    entirely by the hard defaults above (themselves now live-verified). Either way:
+    pure dict lookups, never a live Price List call on the hot path (NO CLOCKS)."""
+    return PriceBook(model_rates=load_baked_rates(_baked_rates_path()))

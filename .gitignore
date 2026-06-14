@@ -41,6 +41,11 @@ cli/bin/
 *.test
 *.out
 
+# --- Deploy artifacts ---
+# Baked per-model rates written at deploy time by `python -m cost.pricelist`
+# (#90). Generated, not source — regenerated before each deploy.
+cost/model_rates.json
+
 # --- Editor / OS ---
 .DS_Store
 .idea/

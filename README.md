@@ -95,6 +95,16 @@ The eight stacks are independent; deploy only what a given demo needs. The Tier 
 (`agate-identity`) is $0-idle and the safest first deploy; the data/agent/web stacks add
 storage + a container.
 
+**0. Refresh per-model pricing (optional, recommended).** Bake authoritative Bedrock
+list rates into the cost engine before deploying the metering stacks. Read-only against
+AWS (`pricing:GetProducts`, us-east-1); without it the engine uses live-verified hard
+defaults, so this is a refresh, not a prerequisite.
+```bash
+uv run python -m cost.pricelist --out cost/model_rates.json   # generated artifact, gitignored
+```
+The meter/chokepoint Lambdas load `cost/model_rates.json` automatically (it ships inside
+the bundled `cost` package) — no env var, no runtime Price List call (NO CLOCKS).
+
 **1. Identity (the crux — Tier 0).**
 ```bash
 npx cdk deploy agate-identity            # Cognito Identity Pool, broker Lambda, ABAC role

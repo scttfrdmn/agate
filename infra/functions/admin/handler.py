@@ -36,9 +36,10 @@ class AdminError(Exception):
 def require_admin(token: str) -> None:
     """Verify the token and require the verified `agate:role` to be admin.
 
-    Raises AdminError on any failure — unverifiable token, malformed claims, or a
-    non-admin role. Admin is never inferred from a request field; it must be the
-    role derived from the verified token (same path the broker uses).
+    Returns the verified SessionTags (so the caller can read `tenant`/`admin_scope`
+    to narrow what's shown). Raises AdminError on any failure — unverifiable token,
+    malformed claims, or a non-admin role. Admin is never inferred from a request
+    field; it is the role derived from the verified token (same path the broker uses).
     """
     cfg = config_from_env()
     try:
@@ -48,6 +49,7 @@ def require_admin(token: str) -> None:
         raise AdminError(f"not authorized: {exc}") from exc
     if tags.role != ROLE_ADMIN:
         raise AdminError("not authorized: admin role required")
+    return tags
 
 
 def _scan_spend(table) -> list[dict]:
@@ -85,11 +87,16 @@ def handler(event: dict, context: object) -> dict:
             body = base64.b64decode(body).decode("utf-8")
         payload = json.loads(body) if isinstance(body, str) else body
 
-        require_admin(payload.get("idp_token", ""))
+        tags = require_admin(payload.get("idp_token", ""))
 
+        # A SCOPED admin (admin_scope set) governs their own tenant only; a
+        # tenant-wide/global admin (no admin_scope) sees every tenant. (#70 RBAC,
+        # app-level — subtree-granular spend awaits scope-keyed spend rows in the
+        # budget-cascade phase.)
+        only_tenant = tags.tenant if tags.admin_scope else None
         period = payload.get("period")  # optional YYYY-MM filter
         items = _scan_spend(_ddb.Table(SPEND_TABLE))
-        return _resp(200, to_console_payload(items, period=period))
+        return _resp(200, to_console_payload(items, period=period, only_tenant=only_tenant))
     except AdminError as exc:
         return _resp(403, {"error": "forbidden", "detail": str(exc)})
     except Exception:  # noqa: BLE001 — last-resort fail-closed

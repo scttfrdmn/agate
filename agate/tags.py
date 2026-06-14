@@ -70,6 +70,13 @@ class SessionTags:
     courses: tuple[str, ...]
     tier: Tier
     role: Role = ROLE_MEMBER
+    # Admin governance scope (#70 RBAC): the subtree node(s) a SCOPED admin governs,
+    # e.g. ("arts-sci/chemistry",) for a chair. Empty for a non-admin, and for a
+    # tenant-wide admin (whose reach is the whole tenant). This is APP-LEVEL only —
+    # it is NOT emitted as an STS tag and does NOT touch IAM/tenant isolation; the
+    # admin console uses it to narrow analytics to the admin's subtree. (Promoting
+    # scope to an IAM principal tag for data access is a later, review-gated phase.)
+    admin_scope: tuple[str, ...] = ()
 
     def to_sts_tags(self) -> list[dict[str, str]]:
         """STS AssumeRole `Tags` form: [{"Key": "agate:affiliation", "Value": ...}, ...].
@@ -102,6 +109,36 @@ def _normalise_role(raw: object) -> Role:
         values = [str(raw)]
     is_admin = any(v.strip().lower() in _ADMIN_CLAIM_VALUES for v in values)
     return ROLE_ADMIN if is_admin else ROLE_MEMBER
+
+
+# Scope-path segment chars (a node like "arts-sci/chemistry"); `/` separates levels.
+_SCOPE_RE = re.compile(r"[^a-zA-Z0-9._/-]")
+
+
+def _normalise_admin_scope(raw: object, *, role: Role) -> tuple[str, ...]:
+    """The subtree node(s) a SCOPED admin governs, from an `admin_scope` claim.
+
+    Only meaningful for an admin; a non-admin always gets () regardless of the claim
+    (so a forged admin_scope on a member is inert). An admin with NO admin_scope is a
+    TENANT-WIDE admin (also (), interpreted by the console as the whole tenant).
+    Values are sanitised to the scope-path grammar; empties dropped.
+    """
+    if role != ROLE_ADMIN or raw is None:
+        return ()
+    if isinstance(raw, str):
+        items = re.split(r"[;,]\s*", raw)
+    elif isinstance(raw, (list, tuple)):
+        items = [str(v) for v in raw]
+    else:
+        items = [str(raw)]
+    cleaned = []
+    seen: set[str] = set()
+    for item in items:
+        node = _SCOPE_RE.sub("", item.strip()).strip("/")
+        if node and node not in seen:
+            seen.add(node)
+            cleaned.append(node)
+    return tuple(cleaned)
 
 
 def _normalise_affiliation(raw: object) -> Affiliation:
@@ -217,11 +254,17 @@ def claims_to_tags(claims: dict[str, object]) -> SessionTags:
     courses = _normalise_courses(get("courses", "enrolledcourses", "course_ids"))
     grant = _truthy(get("grant", "granttagged", "grant_tagged"))
     role = _normalise_role(get("role", "agate_role", "isadmin"))
+    admin_scope = _normalise_admin_scope(get("admin_scope", "scope", "governs"), role=role)
 
     tier = derive_tier(affiliation, grant=grant)
 
     return SessionTags(
-        affiliation=affiliation, tenant=tenant, courses=courses, tier=tier, role=role
+        affiliation=affiliation,
+        tenant=tenant,
+        courses=courses,
+        tier=tier,
+        role=role,
+        admin_scope=admin_scope,
     )
 
 

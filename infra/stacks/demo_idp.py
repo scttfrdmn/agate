@@ -65,6 +65,7 @@ class DemoIdpStack(Stack):
                 "courses": _attr(),
                 "grant": _attr(),
                 "role": _attr(),  # operator role (admin) for the console
+                "admin_scope": _attr(),  # subtree a scoped admin governs (#70 RBAC)
             },
             lambda_triggers=cognito.UserPoolTriggers(pre_token_generation=pretoken_fn),
             removal_policy=cdk.RemovalPolicy.DESTROY,  # throwaway demo pool

@@ -110,10 +110,19 @@ def top_users(
     return [(k, round(v, 6)) for k, v in ranked[:limit]]
 
 
-def to_console_payload(items: list[dict], *, period: str | None = None) -> dict:
+def to_console_payload(
+    items: list[dict], *, period: str | None = None, only_tenant: str | None = None
+) -> dict:
     """The full analytics payload the admin SPA renders: per-tenant rollups + the
-    top-spenders list + a grand total. Built from raw table items in one call."""
+    top-spenders list + a grand total. Built from raw table items in one call.
+
+    `only_tenant` restricts the whole payload to one tenant — used for a SCOPED admin
+    (a dean/chair governs their own tenant, not the whole institution). A tenant-wide
+    /global admin passes None and sees every tenant.
+    """
     rows = rows_from_items(items)
+    if only_tenant is not None:
+        rows = [r for r in rows if r.tenant == only_tenant]
     tenants = rollup_by_tenant(rows, period=period)
     return {
         "period": period,
@@ -132,5 +141,6 @@ def to_console_payload(items: list[dict], *, period: str | None = None) -> dict:
             }
             for t in tenants
         ],
+        # rows is already tenant-filtered above, so top_users respects the scope too.
         "top_users": [{"id": k, "spend_usd": v} for k, v in top_users(rows, period=period)],
     }

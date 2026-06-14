@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Hierarchical scope — admin RBAC slice** (#70, phase 3, app-level). A *scoped*
+  admin (a dean/chair) now sees only their own tenant's analytics in the console,
+  while a tenant-wide admin sees all. `claims_to_tags` derives `admin_scope` (the
+  subtree node[s] a scoped admin governs) from an `admin_scope`/`scope` claim —
+  **fail-closed**: a non-admin never gets a scope (a forged claim on a member is
+  inert), and an admin with no scope is tenant-wide. The console API restricts the
+  payload to the admin's tenant when scoped. The demo pool gained a `custom:admin_scope`
+  attribute + pre-token mapping.
+  - **Security boundary held:** `admin_scope` is APP-LEVEL only — it is NOT emitted
+    as an STS session tag and does NOT touch `data_scope_policy` / IAM, so tenant
+    isolation is byte-for-byte unchanged (asserted in tests). Promoting scope to an
+    IAM principal tag for *data* access, and subtree-granular spend (budget cascade),
+    remain the separate, review-gated phases of #70.
 - **Hierarchical scope — retrieval slice** (#70, phase 2). RAG now supports a
   `school/department/course` (teaching) or `school/department/lab-or-project`
   (research) scope tree, giving **subtree visibility**: a dean sees their whole

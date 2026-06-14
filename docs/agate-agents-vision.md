@@ -419,6 +419,12 @@ data access, and agate is already most of the way there.
 
 ## 9. Build order (each step rests on the prior; each is a generalization, not a rewrite)
 
+> **Tracked in GitHub** as three phases: **Phase 10** (foundation — spec compiler +
+> bounded delegation, tracking #101), **Phase 11** (capabilities — memory, sessions,
+> graphs, tools, triggers, tracking #102), **Phase 12** (surfaces & ecosystem — rooms,
+> authoring, standards, payments, tracking #103). The numbered steps below map onto
+> those milestones in order.
+
 1. **Agent-spec compiler** *(the keystone — everything hangs off it).* `spec →
    {SessionTags template, tool-scoped IAM, Runtime config, budget rows, triggers}`.
    Direct generalization of `policy.generate` + `agate.patterns.compile_pattern`.

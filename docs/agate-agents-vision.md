@@ -238,6 +238,59 @@ need behind every stalled enterprise-agent pilot.
 
 ---
 
+## 8.5 Authoring surfaces — graphical, beginner-first, **without weakening the model**
+
+**[vision]** The agent spec (§1) and its permissions are YAML today, which suits
+experts. The progression is to make authoring **graphical and beginner-first** — and
+the load-bearing insight is that *this does not soften the security model, it can be
+the safest surface of all.*
+
+**Why a GUI is safe — even safer — here.** Every authoring path, no matter how simple,
+funnels through the **same agent-spec compiler** (§1), which emits provable IAM, and
+obeys the same invariants (§10). A beginner clicking buttons is *exactly as bounded* as
+an expert writing YAML, because the boundary was never in the authoring surface — it is
+in the compiler plus the narrowing rule (§2). The GUI is a front-end to a compiler that
+cannot emit an over-broad credential.
+
+Three reasons the graphical surface is genuinely **better**, not a dumbed-down version:
+
+1. **The permission model already has a graphical shape.** Scope is a tree (school →
+   dept → course/lab) → a tree picker. Tier is ordered → a labeled choice ("standard /
+   advanced / frontier"). Budget is a number → a dollar field with a live remaining-cap
+   readout. Tools are a checklist of plain-language *capabilities* ("read course
+   materials", "draft feedback — instructor approves before it goes live"). You never
+   show IAM JSON; you show **intent**.
+2. **Unsafe choices are unrepresentable, not rejected.** Because delegation only
+   narrows (§2), the scope picker can only render nodes the author actually holds — a
+   student literally *cannot click* `physics/phys-202` because it isn't in their tree.
+   "You can't escalate" stops being a validation error and becomes **the absence of the
+   button**. The safest UX is the one where the bad path does not exist.
+3. **agate can render the *effective* boundary, not just the stated one.** The classic
+   IAM tragedy is that nobody knows what a policy actually grants. Because agate
+   *generates* the credential, it can show, in plain language, "here is everything this
+   agent can touch / do / spend" — computed from the compiled spec, the same way the
+   `iam:SimulateCustomPolicy` proofs work today, surfaced for humans.
+
+**The authoring ladder (all rungs round-trip to one spec):**
+
+| Rung | Surface | Who | How bounded |
+|------|---------|-----|-------------|
+| **Template gallery** | pick "TA feedback agent", fill 2 blanks | absolute beginner | institution pre-bounded the template |
+| **Visual builder** | tree-scope + capability checklist + "when X → do Y" rules | most authors | pickers only offer what the author holds |
+| **Natural language** | "summarize new papers in my lab every Monday" | anyone | LLM *drafts* the spec; compiler clamps + confirms |
+| **YAML / graph editor** | the raw spec + agent-graph (§4) | experts | the spec itself |
+
+**The natural-language rung is the ultimate beginner surface — and stays safe by the
+same principle.** An LLM turns a sentence into a *draft* spec; the compiler renders the
+bounded plan ("this agent will read X, may draft Y, can spend ≤ $Z, runs Mondays") for
+human confirmation. Even a hallucinated over-broad scope is **clamped to what the author
+actually holds** before anything compiles. *The LLM proposes; the compiler disposes* —
+authority never originates from the model's suggestion, only from the author's real
+entitlement. This is the one place an LLM touches the permission path, and it touches it
+only as an untrusted *drafter*, never as the source of authority.
+
+---
+
 ## 9. Build order (each step rests on the prior; each is a generalization, not a rewrite)
 
 1. **Agent-spec compiler** *(the keystone — everything hangs off it).* `spec →
@@ -251,6 +304,12 @@ need behind every stalled enterprise-agent pilot.
 5. **MCP tool catalog** (§5), starting with read-only LMS/library, then the HPC
    scheduler as the flagship "agent that acts."
 6. **Triggers** (§6), then **collaborative rooms** (§7).
+7. **Authoring surfaces** (§8.5), layered on once the compiler is solid: template
+   gallery → visual builder → natural-language drafting → graph editor. Built *last*
+   on purpose — they are front-ends to a compiler that must already be unbreakable, so
+   the GUI can only ever express what the compiler already bounds. The "effective
+   boundary" view reuses the `iam:SimulateCustomPolicy` proof machinery, surfaced for
+   humans.
 
 Each step ships behind the same gates as the foundation: plan-mode for anything
 security-critical, generated IAM over inline, a live `iam:SimulateCustomPolicy` proof
@@ -265,6 +324,9 @@ ship:
 
 1. **Authority is the credential.** No capability is enforced only in app code or a
    prompt; everything reduces to scoped IAM the way docs (#80) and vectors (#84) do.
+   This is *why* a graphical or natural-language authoring surface (§8.5) is safe: the
+   boundary lives in the compiler, not the UI, so an LLM or a beginner can only ever
+   *propose* — authority still originates from the author's real entitlement.
 2. **Delegation only narrows.** A spawned/triggered/collaborating agent is never more
    privileged than the principal it acts for.
 3. **Memory and sessions are ABAC-namespaced.** Persistence is just another fenced

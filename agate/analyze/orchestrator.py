@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from agg.analyze.schema import ExecResult, extract_code, result_to_events
-from agg.contracts import Backend, CostMeter, Emit
+from agate.analyze.schema import ExecResult, extract_code, result_to_events
+from agate.contracts import Backend, CostMeter, Emit
 
 __all__ = ["Backend", "CodeRunner", "CostMeter", "run_analyze"]
 

@@ -1,7 +1,7 @@
 [project]
 name = "aws-genai-gateway"
 version = "0.1.0"
-description = "AWS-native GenAI gateway for higher education (agg) — CDK app, identity broker, and shared pure logic."
+description = "AWS-native GenAI gateway for higher education (agate) — CDK app, identity broker, and shared pure logic."
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 license = { text = "Apache-2.0" }
@@ -37,7 +37,7 @@ testpaths = ["tests"]
 # Coverage on by default over our own source. The 60% floor is a hard gate
 # (CLAUDE.md); the suite currently sits well above it. CDK stacks under
 # infra/stacks/ are exercised by `cdk synth`, not unit tests, so they are omitted.
-addopts = "--cov=agg --cov=policy --cov=lti --cov=ingest --cov=cost --cov=agent --cov=meter --cov=chokepoint --cov=infra/functions --cov-fail-under=60"
+addopts = "--cov=agate --cov=policy --cov=lti --cov=ingest --cov=cost --cov=agent --cov=meter --cov=chokepoint --cov=infra/functions --cov-fail-under=60"
 markers = [
     "aws: live, read-only AWS calls (IAM policy simulation). Skipped without creds.",
 ]
@@ -52,7 +52,7 @@ exclude_lines = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["agg", "infra", "tests"]
+src = ["agate", "infra", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]

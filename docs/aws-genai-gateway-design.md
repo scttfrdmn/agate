@@ -1,9 +1,9 @@
 # aws-genai-gateway
-**AWS-Native GenAI Gateway for Higher Education**  ·  CLI: `agg`
+**AWS-Native GenAI Gateway for Higher Education**  ·  CLI: `agate`
 ## Design & Implementation Plan (for Claude Code)
 
 > **Name (provisional).** Project / repo / package: **`aws-genai-gateway`**. CLI binary and short
-> handle used throughout: **`agg`** (session-tag namespace `agg:`, bucket prefix `agg-docs`). Chosen
+> handle used throughout: **`agate`** (session-tag namespace `agate:`, bucket prefix `agate-docs`). Chosen
 > "for now" — still swappable via a global rename; nothing in the design depends on it.
 
 ---
@@ -108,11 +108,11 @@ pre-call enforcement, centralized inspection, or non-Bedrock routing.
 
 ### 2.5 Model access — the sovereignty ladder
 
-Model breadth is a **Bedrock-native property, not something `agg` assembles.** Any model the
+Model breadth is a **Bedrock-native property, not something `agate` assembles.** Any model the
 institution can reach answers the **same Converse API**, so the chat path, CostMeter,
 Guardrails, KB, and agent plumbing are identical regardless of where a model is hosted. What
 changes from rung to rung is only the **cost profile** — and exactly one rung reintroduces a
-clock, which `agg` *names and meters* rather than hides.
+clock, which `agate` *names and meters* rather than hides.
 
 | Rung | What | Hosting | Clock? |
 |---|---|---|---|
@@ -122,14 +122,14 @@ clock, which `agg` *names and meters* rather than hides.
 
 **Climb only as far as the requirement forces.** Rung 0 covers nearly everything; the one
 true gap is Google **Gemini** (Vertex-only — Gemma covers the open-weight line instead).
-Rung 1 is the "we have a fine-tune" path and costs **zero new `agg` surface**: drop weights in
+Rung 1 is the "we have a fine-tune" path and costs **zero new `agate` surface**: drop weights in
 S3, register, invoke through the identical API, with native Guardrails / KB / Agents support.
 Rung 2 is the only place **NO CLOCKS is suspended — by the institution's explicit choice** —
 and it is where the meter earns its keep: the moment a session targets a Rung-2 endpoint, the
 **CostMeter receipt flags it as a standing endpoint** ("$X/hr whether idle or not"), so the
 clock is *visible at point of use* instead of buried in a bill. This is also the natural seam
 for an external control plane (e.g. Ephemeron) to manage those endpoints — VRAM-aware
-placement, scale-to-zero orchestration — turning "`agg` → SageMaker" into "`agg` → control
+placement, scale-to-zero orchestration — turning "`agate` → SageMaker" into "`agate` → control
 plane → SageMaker" later without changing the call path.
 
 > CISO caveat: treat **Grok** (xAI/SpaceXAI) as Rung-0-available-on-request at most — the
@@ -193,7 +193,7 @@ If these two are right, the rest is plumbing.
 
 Data does **not** connect through a pile of connectors. It connects through **identity**.
 
-- Documents live in S3, partitioned by tenant: `s3://agg-docs/{tenant}/...`
+- Documents live in S3, partitioned by tenant: `s3://agate-docs/{tenant}/...`
   (tenant = college, department, or course).
 - Each tenant gets its **own S3 Vectors index**, with its **own customer-managed key**.
   S3 Vectors supports per-index CMK and tag-based ABAC — use both for isolation.
@@ -237,7 +237,7 @@ inside Canvas, Anthology/Blackboard, Moodle, and Brightspace alike.
   platform registration) in DynamoDB on-demand. No clock.
 - **NRPS** (Names and Role Provisioning Services) → rosters/roles → the enrolled-course
   session tags used for retrieval scope.
-- **Deep Linking** → embed `agg` activities in a course.
+- **Deep Linking** → embed `agate` activities in a course.
 - **SIS (Banner/PeopleSoft) is deliberately OUT OF SCOPE.** An AI assistant needs
   roster + role context, which LTI already carries. Deep SIS integration is the thorny
   thing you don't need.
@@ -308,7 +308,7 @@ as the optional Tier 2 batteries.
 
 ## 8. Governance — FERPA / HIPAA control mapping
 
-| Control | Requirement | How `agg` satisfies it |
+| Control | Requirement | How `agate` satisfies it |
 |---|---|---|
 | Data residency | Education records stay in institutional control | Everything in the institution's own AWS account; Bedrock inference stays in-account/in-region |
 | No third-party retention | Records not used to train external models | Bedrock-hosted models (incl. OpenAI GPT-5.x, Anthropic, Llama, Mistral, gpt-oss) — no provider-side retention; **on-demand only** |
@@ -355,7 +355,7 @@ hourly** — that's a clock, so require a named justification before adding one.
 
 ## 10. Match & exceed nebulaONE
 
-| nebulaONE claim | `agg` match | `agg` exceeds by |
+| nebulaONE claim | `agate` match | `agate` exceeds by |
 |---|---|---|
 | "All the top models" | Bedrock hosts OpenAI GPT-5.x, Anthropic, Llama, Mistral, DeepSeek, gpt-oss | Models run **in-boundary** (IAM/VPC/region), not as external API calls |
 | "In your tenant" | Institution's own AWS account | True data sovereignty incl. OpenAI models in-account; Azure can't claim the in-boundary OpenAI story post-Bedrock |
@@ -374,7 +374,7 @@ Visual builders split into two shapes, and only one fits the posture.
 - **Default — Amazon Bedrock Flows.** AWS-native, **serverless** visual builder: link models,
   prompts, agents, knowledge bases, Guardrails, and AWS services on a canvas; run with no
   infrastructure to deploy, billed purely per **node transition** (~$0.035/1k, no idle floor).
-  It stays **in the institution's account** and reuses `agg`'s models / KB / Guardrails. This
+  It stays **in the institution's account** and reuses `agate`'s models / KB / Guardrails. This
   matches nebulaONE's low-code-agent pitch with **no server and no clock**.
 - **Optional — Langflow as a *design-time* tool.** For teams that want a richer canvas, use
   Langflow to author **visually**, then **export to LangChain / LangGraph Python and deploy
@@ -383,8 +383,8 @@ Visual builders split into two shapes, and only one fits the posture.
   hosted runtime — the runtime stays serverless (AgentCore), so no standing box is introduced.
   It also gives a clean "graduate from canvas to code" path when a flow outgrows the GUI.
 - **Off the critical path — Flowise / Dify / n8n.** These are **persistent servers** (a 24/7
-  container = a clock *and* an ops/patch burden), so they are not `agg` components. An
-  institution may run one itself and point it at `agg`'s Bedrock access, but that clock is
+  container = a clock *and* an ops/patch burden), so they are not `agate` components. An
+  institution may run one itself and point it at `agate`'s Bedrock access, but that clock is
   theirs to own, by name.
 
 Same rule as the whole design: a visual layer is welcome only if it doesn't reintroduce a
@@ -422,7 +422,7 @@ aws-genai-gateway/
 ├── ingest/               # embed-on-upload Lambda (alt. to Bedrock KB)
 ├── cost/                 # CostMeter + pricing.py (lifted from aws-agencore-demo)
 ├── meter/                # invocation-log → `spend` table (authoritative); live-estimate path
-├── cli/                   # `agg` admin CLI (Go) — deploy helpers, tenant/budget mgmt, ingest
+├── cli/                   # `agate` admin CLI (Go) — deploy helpers, tenant/budget mgmt, ingest
 └── docs/
 ```
 
@@ -490,7 +490,7 @@ Build the hard, foundational thing first; everything else depends on its tag sch
   centralized guardrails/PII inspection, or non-Bedrock routing.
 
 **Phase 7 — CLI + packaging.**
-- `cli/`: `agg deploy`, `agg tenant add`, `agg budget set`, `agg ingest`.
+- `cli/`: `agate deploy`, `agate tenant add`, `agate budget set`, `agate ingest`.
 - One-command bootstrap; optional AWS Marketplace (free) listing for procurement parity.
 
 **Phase 8 — Agent path (AgentCore).**
@@ -512,21 +512,21 @@ Build the hard, foundational thing first; everything else depends on its tag sch
 ### 13.1 Session-tag scheme
 Tags set at credential-vend time from IdP claims:
 ```
-agg:affiliation   = student | faculty | staff | researcher
-agg:tenant        = <college/dept id>            # cost center + isolation key
-agg:courses       = <comma list of course ids>   # from LTI NRPS, drives retrieval scope
-agg:tier          = oss | mid | frontier         # derived from affiliation/grant
+agate:affiliation   = student | faculty | staff | researcher
+agate:tenant        = <college/dept id>            # cost center + isolation key
+agate:courses       = <comma list of course ids>   # from LTI NRPS, drives retrieval scope
+agate:tier          = oss | mid | frontier         # derived from affiliation/grant
 ```
 
 ### 13.2 Authenticated role — Bedrock scope (sketch)
 Allow `bedrock:InvokeModel*` / `bedrock:Converse*` **only** for model ARNs whose tier
-tag matches `agg:tier`. Deny by default. (Express the tier→model-ARN map as a managed
+tag matches `agate:tier`. Deny by default. (Express the tier→model-ARN map as a managed
 policy or via Cedar pre-authorization, not inline branches.)
 
 ### 13.3 Authenticated role — data scope (sketch)
-Allow `s3:GetObject` on `arn:aws:s3:::agg-docs/${aws:PrincipalTag/agg:tenant}/*` and the
-S3 Vectors query action only on the index tagged with the same `agg:tenant` /
-`agg:courses`. The principal tag is the isolation primitive.
+Allow `s3:GetObject` on `arn:aws:s3:::agate-docs/${aws:PrincipalTag/agate:tenant}/*` and the
+S3 Vectors query action only on the index tagged with the same `agate:tenant` /
+`agate:courses`. The principal tag is the isolation primitive.
 
 ### 13.4 Cedar policy sketch (chat scope + AgentCore Policy)
 ```
@@ -547,7 +547,7 @@ IAM scope above. For the agent path, the same policies are loaded into **AgentCo
 Policy**, which enforces them natively on every tool/action call.
 
 ### 13.5 LTI 1.3 endpoints
-`/lti/login` (OIDC init) · `/lti/launch` (id_token validation → mint agg session) ·
+`/lti/login` (OIDC init) · `/lti/launch` (id_token validation → mint agate session) ·
 `/.well-known/jwks.json` · `/lti/deeplink` (return). Registration + nonce in DynamoDB.
 
 ### 13.6 Cost meter + soft cap
@@ -564,16 +564,16 @@ only. Soft cap = broker reads authoritative spend at creds refresh.
 - **Runtime & the framework contract:** AgentCore Runtime is **framework-agnostic and
   model-agnostic** — it takes any local agent code (Strands, LangGraph, CrewAI, LlamaIndex,
   Autogen, OpenAI Agents SDK, Google ADK, or no framework) on any model, communicating over
-  **MCP / A2A**. So `agg` does **not** build framework support — it defines a thin *contract*: a
+  **MCP / A2A**. So `agate` does **not** build framework support — it defines a thin *contract*: a
   containerized agent that honors the AgentCore invocation protocol, and ships a **Strands
   reference agent** as the default. Institutions swap in their framework of choice without
   touching the surrounding boundary. The SPA invokes the agent via `agentcore.ts`. Set a short
   session idle timeout.
-- **Why this is free differentiation:** the `agg` value — identity-scoped creds, CostMeter
+- **Why this is free differentiation:** the `agate` value — identity-scoped creds, CostMeter
   metering, Cedar policy, Guardrails — sits at the AgentCore *boundary*, not inside the agent,
   so it is identical across every framework. You support all of them by owning none.
 - **Identity:** inbound auth validates the invoking user (Cognito → campus IdP);
-  outbound auth vends scoped creds for tools. The user's `agg:tenant`/`agg:courses` flow
+  outbound auth vends scoped creds for tools. The user's `agate:tenant`/`agate:courses` flow
   into the session so tools and retrieval stay user-scoped.
 - **Gateway:** register tenant-scoped tools (Lambda/MCP); the retrieval tool is the same
   scoped S3 Vectors query as the chat path. **Policy** (Cedar, §13.4) gates every
@@ -582,7 +582,7 @@ only. Soft cap = broker reads authoritative spend at creds refresh.
 - **Cost:** extend `CostMeter` with AgentCore active-vCPU/GB-seconds, Gateway invocations,
   Memory ops — itemized on the same receipt.
 - **Reuse:** `aws-agencore-demo` already implements this single-tenant (Gateway + Cedar +
-  Code Interpreter + the cost meter). agg wraps it with the claims→scope broker and tenancy.
+  Code Interpreter + the cost meter). agate wraps it with the claims→scope broker and tenancy.
 
 ---
 

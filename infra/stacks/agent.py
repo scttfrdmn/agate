@@ -1,7 +1,7 @@
 """Phase 8 — the agent path: AgentCore Runtime + Code Interpreter (design §13.7).
 
 Hosts the academic-interaction-model orchestration (Panel/Analyze/router — built and
-fakes-tested in `agg/panel`, `agg/analyze`, `agg/router`) on AgentCore Runtime, which
+fakes-tested in `agate/panel`, `agate/analyze`, `agate/router`) on AgentCore Runtime, which
 is serverless and **scales to zero** (NO CLOCKS). The reference agent is a
 framework-agnostic container that honours the AgentCore invocation protocol; its
 image is built and pushed out-of-band, so `container_uri` is deploy-time config.
@@ -22,8 +22,8 @@ S3 Vectors / Bedrock KB / AgentCore have L1 `Cfn*` only (migration tracked in #2
 from __future__ import annotations
 
 import aws_cdk as cdk
-from agg.entitlements import model_arns_for_tier
-from agg.names import HANDLE
+from agate.entitlements import model_arns_for_tier
+from agate.names import HANDLE
 from aws_cdk import (
     Stack,
 )
@@ -62,9 +62,9 @@ class AgentStack(Stack):
             "RuntimeExecutionRole",
             role_name=f"{HANDLE}-agent-runtime",
             assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
-            description="agg agent Runtime execution role — Bedrock invoke + tenant retrieval",
+            description="agate agent Runtime execution role — Bedrock invoke + tenant retrieval",
         )
-        # SEC-2: bound the role's Bedrock invoke to agg's entitled models only (the
+        # SEC-2: bound the role's Bedrock invoke to agate's entitled models only (the
         # full tier superset = frontier, cumulative). Per-SESSION tier enforcement is
         # done in the container against the verified JWT (model_arns_for_tier); this
         # IAM bound is the outer universe, not the per-user scope.
@@ -88,8 +88,8 @@ class AgentStack(Stack):
         # permissions: there is no code path that reads tenant data, and a single
         # shared role couldn't scope it per-tenant anyway. If a retrieval TOOL is
         # later added to the agent, it MUST derive the tenant from the verified token
-        # (agg.jwt_verify -> claims_to_tags) and scope the query to that tenant's
-        # `agg-{tenant}` index — and only then is a correspondingly-scoped grant added
+        # (agate.jwt_verify -> claims_to_tags) and scope the query to that tenant's
+        # `agate-{tenant}` index — and only then is a correspondingly-scoped grant added
         # here. Keeping the grant off until the code exists is least-privilege and
         # closes the latent cross-tenant read the review flagged.
 
@@ -99,7 +99,7 @@ class AgentStack(Stack):
             self,
             "CodeInterpreter",
             name=f"{HANDLE}_code_interpreter",
-            description="agg Analyze sandbox (Code Interpreter microVM)",
+            description="agate Analyze sandbox (Code Interpreter microVM)",
             execution_role_arn=execution_role.role_arn,
             network_configuration=agentcore.CfnCodeInterpreterCustom.CodeInterpreterNetworkConfigurationProperty(
                 network_mode="PUBLIC",
@@ -132,12 +132,12 @@ class AgentStack(Stack):
             authorizer_configuration=authorizer,
             environment_variables={
                 # The agent reads its region + the Code Interpreter id at runtime;
-                # both are non-secret. The orchestration (agg.analyze) invokes the
+                # both are non-secret. The orchestration (agate.analyze) invokes the
                 # Code Interpreter by this id.
-                "AGG_REGION": region,
-                "AGG_CODE_INTERPRETER_ID": code_interpreter.attr_code_interpreter_id,
+                "AGATE_REGION": region,
+                "AGATE_CODE_INTERPRETER_ID": code_interpreter.attr_code_interpreter_id,
             },
-            description="agg agent path — hosts Panel/Analyze/router orchestration",
+            description="agate agent path — hosts Panel/Analyze/router orchestration",
         )
         runtime.add_dependency(code_interpreter)
 
@@ -147,7 +147,7 @@ class AgentStack(Stack):
             "RuntimeEndpoint",
             agent_runtime_id=runtime.attr_agent_runtime_id,
             name="default",
-            description="agg agent Runtime default endpoint",
+            description="agate agent Runtime default endpoint",
         )
         endpoint.add_dependency(runtime)
 

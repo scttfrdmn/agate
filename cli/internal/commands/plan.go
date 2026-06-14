@@ -1,8 +1,8 @@
-// Package commands holds the pure command-construction logic for the agg CLI:
+// Package commands holds the pure command-construction logic for the agate CLI:
 // turning config + args into the exact external command (cdk / aws) that would
 // run. Building the plan is pure and tested; executing it is a thin, explicitly
 // confirmed step in the CLI layer. Nothing here runs a deploy or an upload —
-// agg never mutates cloud state without an explicit --confirm.
+// agate never mutates cloud state without an explicit --confirm.
 package commands
 
 import (
@@ -28,7 +28,7 @@ func (p Plan) String() string {
 // all four when none are named.
 func DeployPlan(c *config.Config, stacks []string) (Plan, error) {
 	if len(c.Tenants) == 0 {
-		return Plan{}, fmt.Errorf("no tenants configured; run `agg tenant add <id>` first")
+		return Plan{}, fmt.Errorf("no tenants configured; run `agate tenant add <id>` first")
 	}
 	if len(stacks) == 0 {
 		stacks = []string{"--all"}
@@ -58,7 +58,7 @@ func (t IngestTarget) S3URI() string {
 
 // IngestPlan builds the S3 upload destination for a local file into a tenant's
 // prefix. The tenant MUST be configured (so a typo can't silently create a new,
-// unscoped prefix). docsBucket is the deployed `agg-docs-<acct>-<region>` name.
+// unscoped prefix). docsBucket is the deployed `agate-docs-<acct>-<region>` name.
 func IngestPlan(c *config.Config, tenant, docsBucket, localPath string) (Plan, IngestTarget, error) {
 	if !c.HasTenant(tenant) {
 		return Plan{}, IngestTarget{}, fmt.Errorf("unknown tenant %q; add it first", tenant)
@@ -71,7 +71,7 @@ func IngestPlan(c *config.Config, tenant, docsBucket, localPath string) (Plan, I
 		return Plan{}, IngestTarget{}, fmt.Errorf("local path %q has no file name", localPath)
 	}
 	// Key lands under {tenant}/... so the ingest Lambda derives the tenant from the
-	// prefix (the FERPA-critical invariant in agg.rag.tenant_from_s3_key).
+	// prefix (the FERPA-critical invariant in agate.rag.tenant_from_s3_key).
 	target := IngestTarget{Bucket: docsBucket, Key: tenant + "/" + base}
 	argv := []string{"aws", "s3", "cp", localPath, target.S3URI(), "--region", c.Region}
 	summary := fmt.Sprintf("upload %s -> %s", localPath, target.S3URI())

@@ -4,21 +4,21 @@ What this stack stands up (all $0 idle — NO CLOCKS):
   * a Cognito **Identity Pool** federated to the campus IdP (SAML/OIDC). No User
     Pool — we hook into existing campus federation and avoid MAU cost (design §5).
   * the **authenticated IAM role**, deny-by-default, whose effective scope is the
-    generated model-access + data-scope policies keyed on `agg:` principal tags.
+    generated model-access + data-scope policies keyed on `agate:` principal tags.
   * a **permissions boundary** that hard-caps the role to Bedrock+S3+S3Vectors read
     surfaces, so no future policy edit can widen it past the ABAC intent.
   * the per-request **broker Lambda** that validates the IdP token, derives the four
-    `agg:` tags (incl. the computed `agg:tier`), and assumes the authenticated role
+    `agate:` tags (incl. the computed `agate:tier`), and assumes the authenticated role
     narrowed by them.
 
-The model->tier map is GENERATED from agg.entitlements (single source of truth),
+The model->tier map is GENERATED from agate.entitlements (single source of truth),
 never written inline here.
 """
 
 from __future__ import annotations
 
 import aws_cdk as cdk
-from agg.names import HANDLE, tag_key
+from agate.names import HANDLE, tag_key
 from aws_cdk import (
     Stack,
 )
@@ -124,7 +124,7 @@ class IdentityStack(Stack):
                     assume_role_action="sts:AssumeRoleWithWebIdentity",
                 ),
             ),
-            description="agg: authenticated session role, narrowed by agg: ABAC session tags",
+            description="agate: authenticated session role, narrowed by agate: ABAC session tags",
             max_session_duration=cdk.Duration.hours(1),
             permissions_boundary=boundary,
         )
@@ -153,22 +153,22 @@ class IdentityStack(Stack):
         )
 
         # --- Broker Lambda -------------------------------------------------
-        # Bundles infra/ + agg/ + policy/ source AND PyJWT, so claims_to_tags and the
-        # real token verifier (agg.jwt_verify) run in-Lambda (SEC-4).
+        # Bundles infra/ + agate/ + policy/ source AND PyJWT, so claims_to_tags and the
+        # real token verifier (agate.jwt_verify) run in-Lambda (SEC-4).
         broker = lambda_.Function(
             self,
             "Broker",
             function_name=f"{HANDLE}-broker",
             runtime=lambda_.Runtime.PYTHON_3_13,
             handler="infra.functions.broker.handler.handler",
-            code=pip_bundled_code("agg", "infra", "policy"),
+            code=pip_bundled_code("agate", "infra", "policy"),
             timeout=cdk.Duration.seconds(10),
             memory_size=256,
             environment={
-                "AGG_AUTHENTICATED_ROLE_ARN": authenticated_role.role_arn,
-                "AGG_SESSION_DURATION_SECONDS": "900",
+                "AGATE_AUTHENTICATED_ROLE_ARN": authenticated_role.role_arn,
+                "AGATE_SESSION_DURATION_SECONDS": "900",
             },
-            description="agg: claims -> scoped-STS credential broker (per-request, scales to zero)",
+            description="agate claims -> scoped-STS credential broker (per-request, zero idle)",
         )
 
         # The broker is allowed to assume the authenticated role AND tag the session.

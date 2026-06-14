@@ -6,8 +6,8 @@ import json
 import threading
 
 import pytest
-from agg.agent_dispatch import InvocationError, dispatch
-from agg.analyze.schema import ContentBlock, ExecResult
+from agate.agent_dispatch import InvocationError, dispatch
+from agate.analyze.schema import ContentBlock, ExecResult
 
 ROSTER = [
     {"tier": "frontier", "label": "frontier", "max_tokens": 256},

@@ -19,7 +19,7 @@ function el(tag: string, attrs: Record<string, string> = {}, text?: string): HTM
 export function renderPanel(state: RunState, target: HTMLElement): void {
   target.replaceChildren();
   const grid = el("div", {
-    class: "agg-panel",
+    class: "agate-panel",
     style: "display:grid;grid-auto-flow:column;gap:1rem;align-items:start",
   });
   for (const pane of state.panes) {
@@ -33,7 +33,7 @@ export function renderPanel(state: RunState, target: HTMLElement): void {
 
 function renderPane(pane: PaneState): HTMLElement {
   const col = el("section", {
-    class: "agg-pane",
+    class: "agate-pane",
     "data-pane": pane.label,
     style: "border:1px solid #ddd;padding:.75rem;min-width:18rem",
   });
@@ -45,7 +45,7 @@ function renderPane(pane: PaneState): HTMLElement {
       : "…thinking";
   head.appendChild(el("span", { style: "color:#666;font-size:.85em" }, status));
   col.appendChild(head);
-  col.appendChild(el("div", { class: "agg-pane-body", style: "white-space:pre-wrap;margin-top:.5rem" }, pane.text));
+  col.appendChild(el("div", { class: "agate-pane-body", style: "white-space:pre-wrap;margin-top:.5rem" }, pane.text));
   return col;
 }
 
@@ -59,7 +59,7 @@ const KIND_LABEL: Record<DivergenceClaim["kind"], string> = {
 
 export function renderDivergence(div: DivergencePayload): HTMLElement {
   const col = el("section", {
-    class: "agg-divergence",
+    class: "agate-divergence",
     style: "border:1px solid #bbb;background:#fafafa;padding:.75rem;min-width:20rem",
   });
   col.appendChild(el("strong", {}, "Reconciled"));
@@ -67,12 +67,12 @@ export function renderDivergence(div: DivergencePayload): HTMLElement {
 
   for (const claim of div.claims) {
     const card = el("details", {
-      class: `agg-claim agg-claim-${claim.kind}`,
+      class: `agate-claim agate-claim-${claim.kind}`,
       "data-verify": String(claim.verify),
       style: "margin:.5rem 0;border-left:3px solid #ccc;padding-left:.5rem",
     });
     const summary = el("summary", {});
-    summary.appendChild(el("span", { class: "agg-claim-kind" }, `${KIND_LABEL[claim.kind]}: `));
+    summary.appendChild(el("span", { class: "agate-claim-kind" }, `${KIND_LABEL[claim.kind]}: `));
     summary.appendChild(document.createTextNode(claim.text));
     if (claim.verify) summary.appendChild(el("span", { title: "verify independently" }, " ⚑"));
     card.appendChild(summary);
@@ -87,7 +87,7 @@ export function renderDivergence(div: DivergencePayload): HTMLElement {
 
     if (claim.evidence_refs?.length) {
       card.appendChild(
-        el("div", { class: "agg-claim-refs", style: "font-size:.8em;color:#777" },
+        el("div", { class: "agate-claim-refs", style: "font-size:.8em;color:#777" },
           `sources: ${claim.evidence_refs.join(", ")}`),
       );
     }
@@ -114,11 +114,11 @@ export function renderCells(
 }
 
 function renderCell(cell: AnalyzeCell, callbacks: CellCallbacks): HTMLElement {
-  const wrap = el("div", { class: "agg-cell", style: "border:1px solid #ddd;margin:.5rem 0" });
+  const wrap = el("div", { class: "agate-cell", style: "border:1px solid #ddd;margin:.5rem 0" });
 
   // Editable source.
   const editor = el("textarea", {
-    class: "agg-cell-source",
+    class: "agate-cell-source",
     rows: String(Math.max(3, cell.source.split("\n").length)),
     style: "width:100%;font-family:ui-monospace,monospace;border:0;padding:.5rem",
   }) as HTMLTextAreaElement;
@@ -127,7 +127,7 @@ function renderCell(cell: AnalyzeCell, callbacks: CellCallbacks): HTMLElement {
 
   // Re-run control.
   const bar = el("div", { style: "display:flex;justify-content:flex-end;padding:.25rem;background:#f6f6f6" });
-  const run = el("button", { class: "agg-cell-run" }, "Run") as HTMLButtonElement;
+  const run = el("button", { class: "agate-cell-run" }, "Run") as HTMLButtonElement;
   run.addEventListener("click", () => callbacks.onRun?.(editor.value));
   bar.appendChild(run);
   wrap.appendChild(bar);
@@ -135,7 +135,7 @@ function renderCell(cell: AnalyzeCell, callbacks: CellCallbacks): HTMLElement {
   // Output: inline chart if present.
   if (cell.chart) {
     const img = el("img", {
-      class: "agg-cell-chart",
+      class: "agate-cell-chart",
       alt: "analysis result",
       src: `data:${cell.chart.mime};base64,${cell.chart.data}`,
       style: "max-width:100%;display:block",

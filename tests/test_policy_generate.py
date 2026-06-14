@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agg.entitlements import TIER_MODELS, foundation_model_arn
+from agate.entitlements import TIER_MODELS, foundation_model_arn
 from policy.generate import data_scope_policy, model_access_policy
 
 
@@ -17,7 +17,7 @@ def test_model_policy_has_one_statement_per_tier_gated_on_tag():
     for tier_cap, tier in [("Oss", "oss"), ("Mid", "mid"), ("Frontier", "frontier")]:
         s = _stmt(doc, f"InvokeTier{tier_cap}")
         assert s["Effect"] == "Allow"
-        cond = s["Condition"]["StringEquals"]["aws:PrincipalTag/agg:tier"]
+        cond = s["Condition"]["StringEquals"]["aws:PrincipalTag/agate:tier"]
         assert cond == tier
 
 
@@ -41,7 +41,7 @@ def test_oss_statement_excludes_frontier_models():
 def test_data_scope_interpolates_tenant_tag_and_fails_closed():
     doc = data_scope_policy()
     read = _stmt(doc, "ReadOwnTenantDocs")
-    assert any("${aws:PrincipalTag/agg:tenant}" in r for r in read["Resource"])
+    assert any("${aws:PrincipalTag/agate:tenant}" in r for r in read["Resource"])
     deny = _stmt(doc, "DenyWhenNoTenantTag")
     assert deny["Effect"] == "Deny"
-    assert deny["Condition"]["Null"]["aws:PrincipalTag/agg:tenant"] == "true"
+    assert deny["Condition"]["Null"]["aws:PrincipalTag/agate:tenant"] == "true"

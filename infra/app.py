@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""agg CDK app entry point.
+"""agate CDK app entry point.
 
 One app, small focused stacks (design §11). Phase 0/1 ships only the identity
 stack — the load-bearing crux. Later phases add data/audit/lti/meter/web stacks.
@@ -11,7 +11,7 @@ import os
 import sys
 from pathlib import Path
 
-# Ensure the repo root is importable so `infra`, `agg`, and `policy` resolve
+# Ensure the repo root is importable so `infra`, `agate`, and `policy` resolve
 # whether `cdk` invokes us from the root or elsewhere.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -35,18 +35,18 @@ env = cdk.Environment(
     region=os.environ.get("CDK_DEFAULT_REGION", "us-east-1"),
 )
 
-IdentityStack(app, "agg-identity", env=env)
-DataStack(app, "agg-data", env=env)
-LtiStack(app, "agg-lti", env=env)
-AgentStack(app, "agg-agent", env=env)
-AuditStack(app, "agg-audit", env=env)
-GovernanceStack(app, "agg-governance", env=env)
-WebStack(app, "agg-web", env=env)
+IdentityStack(app, "agate-identity", env=env)
+DataStack(app, "agate-data", env=env)
+LtiStack(app, "agate-lti", env=env)
+AgentStack(app, "agate-agent", env=env)
+AuditStack(app, "agate-audit", env=env)
+GovernanceStack(app, "agate-governance", env=env)
+WebStack(app, "agate-web", env=env)
 # Optional Tier 1 — only deploy when an institution requires exact pre-call caps,
 # centralized inspection, or non-Bedrock routing (design §2, §12 Phase 6).
-ChokepointStack(app, "agg-chokepoint", env=env)
+ChokepointStack(app, "agate-chokepoint", env=env)
 # Demo-only OIDC IdP — a throwaway Cognito User Pool for showing the gateway
 # without a campus IdP. Production omits this and points the broker at the real IdP.
-DemoIdpStack(app, "agg-demo-idp", env=env)
+DemoIdpStack(app, "agate-demo-idp", env=env)
 
 app.synth()

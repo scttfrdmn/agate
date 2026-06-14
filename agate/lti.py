@@ -1,10 +1,10 @@
-"""Pure LTI 1.3 claim mapping — the bridge from an LMS launch to agg's tags.
+"""Pure LTI 1.3 claim mapping — the bridge from an LMS launch to agate's tags.
 
 Side-effect-free and AWS-free (design §6, §13.5). An LTI 1.3 launch carries the
-roster context agg needs: who the user is (roles) and which course they launched
+roster context agate needs: who the user is (roles) and which course they launched
 from (context + NRPS). This module turns a *validated* LTI id_token's claims into
 the plain claims dict that Phase 1's `claims_to_tags()` consumes — so LTI becomes
-one concrete source of `agg:affiliation` / `agg:courses`, with no second tag scheme.
+one concrete source of `agate:affiliation` / `agate:courses`, with no second tag scheme.
 
 Signature verification, nonce checks, and JWKS fetching are NOT here — they are the
 I/O edges in lti/handler.py. This module assumes the token is already authentic and
@@ -85,14 +85,14 @@ def course_from_context(claims: dict) -> str | None:
     return re.sub(r"[^a-zA-Z0-9._-]", "-", str(cid)).strip("-") or None
 
 
-def lti_claims_to_agg_claims(claims: dict, *, tenant: str | None = None) -> dict:
+def lti_claims_to_agate_claims(claims: dict, *, tenant: str | None = None) -> dict:
     """Translate a validated LTI id_token claim set into the dict that Phase 1's
     `claims_to_tags()` consumes.
 
     - affiliation  <- LTI roles
     - courses      <- LTI context id (the launched course); NRPS can add more later
     - tenant       <- the REGISTRATION tenant ONLY. The tenant is the data-isolation
-                      key (-> agg:tenant tag -> S3 prefix + vector index), so it is an
+                      key (-> agate:tenant tag -> S3 prefix + vector index), so it is an
                       institutional decision tied to the registered platform and is
                       NEVER derived from the id_token. The LTI context claim (course
                       label/id) is set by course creators, i.e. attacker-influenceable

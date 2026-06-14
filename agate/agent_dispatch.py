@@ -5,10 +5,10 @@ decoded invocation payload, it resolves the interaction mode (router or explicit
 override) and drives the matching orchestration — Ask, Panel (`run_panel`), or
 Analyze (`run_analyze`) — emitting the run event stream the SPA renders.
 
-Pure and AWS-free: it composes the already-tested `agg.router` / `agg.panel` /
-`agg.analyze` over injected `Backend` / `CodeRunner` / `CostMeter`. The container
+Pure and AWS-free: it composes the already-tested `agate.router` / `agate.panel` /
+`agate.analyze` over injected `Backend` / `CodeRunner` / `CostMeter`. The container
 (`agent/`) supplies Bedrock-backed implementations; tests supply fakes. Keeping
-dispatch here means it is covered by the same no-AWS unit suite as the rest of agg.
+dispatch here means it is covered by the same no-AWS unit suite as the rest of agate.
 """
 
 from __future__ import annotations
@@ -16,10 +16,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from agg.analyze import ANALYZE_SYSTEM, run_analyze
-from agg.panel import ADJUDICATE_SYSTEM, run_panel
-from agg.panel.prompts import REVIEW_SYSTEM
-from agg.router import run_router
+from agate.analyze import ANALYZE_SYSTEM, run_analyze
+from agate.panel import ADJUDICATE_SYSTEM, run_panel
+from agate.panel.prompts import REVIEW_SYSTEM
+from agate.router import run_router
 
 Emit = Callable[[dict[str, Any]], None]
 
@@ -64,7 +64,7 @@ def dispatch(
       code       (str)  — Analyze re-run: user-edited code (skips generation)
 
     `allowed_models` is the set of model ids the VERIFIED caller may invoke (derived
-    by the container from the inbound JWT's agg:tier via model_arns_for_tier-style
+    by the container from the inbound JWT's agate:tier via model_arns_for_tier-style
     expansion). When provided, every model id the payload names must be in it, or we
     raise InvocationError BEFORE any model call — this is the agent-path equivalent
     of Tier 0's IAM model-access policy (SEC-2). When None (e.g. unit tests that

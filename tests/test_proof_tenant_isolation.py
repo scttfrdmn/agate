@@ -3,7 +3,7 @@
 The FERPA-critical claim (security memo §6): a CHEM-101-scoped session can query
 ONLY its own tenant's index. This takes the SAME generated data-scope policy the
 Phase 1 identity stack attaches and runs it through IAM's simulator with an
-`agg:tenant` principal tag and a target index carrying its own `agg:tenant`
+`agate:tenant` principal tag and a target index carrying its own `agate:tenant`
 resource tag, asserting:
 
   * same-tenant index  -> QueryVectors ALLOWED
@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from agg.names import tag_key
+from agate.names import tag_key
 from policy.generate import data_scope_policy
 
 REGION = "us-east-1"
@@ -44,7 +44,7 @@ def _simulate_query(iam_client, *, session_tenant: str, index_tenant: str) -> st
     policy_json = json.dumps(data_scope_policy())
     # A representative S3 Vectors index ARN (the resource the policy guards).
     index_arn = (
-        f"arn:aws:s3vectors:{REGION}:111122223333:bucket/agg-vectors/index/agg-{index_tenant}"
+        f"arn:aws:s3vectors:{REGION}:111122223333:bucket/agate-vectors/index/agate-{index_tenant}"
     )
     resp = iam_client.simulate_custom_policy(
         PolicyInputList=[policy_json],

@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Renamed the short handle `agg` → `agate`** (the mineral, a banded form of
+  bedrock — ties to Amazon Bedrock). This sweeps the CLI binary, the `agate:` ABAC
+  session-tag namespace (`agate:tenant`/`tier`/…), all `agate-*` AWS resource and
+  CDK stack names (`agate-identity`, `agate-data`, …), the `AGATE_*` Lambda env
+  vars, and the `agate/` Python package. The distribution/package slug
+  `aws-genai-gateway`, the Go module path, and the `docs/aws-genai-gateway-*`
+  filenames are unchanged. Names remain provisional. **Operational note:** because
+  resource and stack names changed, an existing `agg-*` deployment is not upgraded
+  in place — destroy the old stacks and deploy the `agate-*` ones (nothing was live).
+
 ### Added
-- Demo readiness — `infra/stacks/demo_idp.py` (`agg-demo-idp`): an optional,
+- Demo readiness — `infra/stacks/demo_idp.py` (`agate-demo-idp`): an optional,
   throwaway Cognito User Pool that issues real RS256 JWTs so the gateway can be
   demoed without a campus IdP. A pre-token-generation Lambda
   (`infra/functions/demo_idp/pretoken.py`) maps the demo user's

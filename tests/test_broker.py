@@ -2,7 +2,7 @@
 
 Proves the broker's two non-negotiable behaviours: it fails CLOSED on un-scopable
 claims (vends no creds), and on good claims it assumes the role passing exactly the
-four derived `agg:` tags (including the computed tier).
+four derived `agate:` tags (including the computed tier).
 """
 
 from __future__ import annotations
@@ -40,7 +40,8 @@ class _FakeSts:
 def stub_sts(monkeypatch):
     fake = _FakeSts()
     monkeypatch.setattr(broker, "_sts", fake)
-    monkeypatch.setattr(broker, "AUTHENTICATED_ROLE_ARN", "arn:aws:iam::123:role/agg-authenticated")
+    role_arn = "arn:aws:iam::123:role/agate-authenticated"
+    monkeypatch.setattr(broker, "AUTHENTICATED_ROLE_ARN", role_arn)
     return fake
 
 
@@ -51,9 +52,9 @@ def test_vends_scoped_creds_with_four_tags(stub_sts):
     assert result["credentials"]["accessKeyId"] == "ASIAFAKE"
     # Derived tier made it into the STS Tags (the whole reason the broker exists).
     sent = {t["Key"]: t["Value"] for t in stub_sts.last_call["Tags"]}
-    assert sent["agg:affiliation"] == "researcher"
-    assert sent["agg:tenant"] == "kempner"
-    assert sent["agg:tier"] == "frontier"
+    assert sent["agate:affiliation"] == "researcher"
+    assert sent["agate:tenant"] == "kempner"
+    assert sent["agate:tier"] == "frontier"
     assert set(stub_sts.last_call["TransitiveTagKeys"]) == set(sent.keys())
     assert result["scope"]["tier"] == "frontier"
 

@@ -5,13 +5,13 @@ Project management does not live here — it lives in GitHub (see *Project manag
 
 ## What this is
 
-`agg` (repo / package `aws-genai-gateway`) is an open-source, AWS-native GenAI gateway for higher
+`agate` (repo / package `aws-genai-gateway`) is an open-source, AWS-native GenAI gateway for higher
 education. The **architecture spec is `docs/aws-genai-gateway-design.md`** — treat it as the source
 of truth; this file is the coding contract on top of it. Security rationale is
 `docs/aws-genai-gateway-security-ciso.md`.
 
 > **Names (provisional, "for now").** Repo / package: `aws-genai-gateway`. CLI binary + short handle:
-> `agg`. Both are still swappable via a global rename — keep them in one or two obvious config/constant
+> `agate`. Both are still swappable via a global rename — keep them in one or two obvious config/constant
 > spots; don't scatter literals.
 
 ## Golden rules (do not violate)

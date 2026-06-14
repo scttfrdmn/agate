@@ -17,7 +17,7 @@ import type { ConverseChunk, ConverseRequest, Transport } from "./index";
 
 export interface AgentCoreConfig {
   region: string;
-  // The deployed Runtime ARN (agg-agent stack output).
+  // The deployed Runtime ARN (agate-agent stack output).
   runtimeArn: string;
   qualifier?: string; // endpoint qualifier, defaults to the "default" endpoint
 }

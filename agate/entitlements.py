@@ -1,7 +1,7 @@
 """Tier -> entitled-model map and affiliation -> tier derivation.
 
 THE SINGLE SOURCE OF TRUTH for "which models may a session invoke" (design §13.2).
-Both the broker Lambda (to derive `agg:tier`) and the generated IAM model-access
+Both the broker Lambda (to derive `agate:tier`) and the generated IAM model-access
 policy (to scope `bedrock:Converse*`) read from this table. Do NOT express the
 tier->model map as inline branches anywhere else — generate it from here.
 

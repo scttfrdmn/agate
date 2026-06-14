@@ -1,4 +1,4 @@
-// Pure visual-citation resolution (§10.2.7, §10.2.9). Mirrors agg/multimodal.py
+// Pure visual-citation resolution (§10.2.7, §10.2.9). Mirrors agate/multimodal.py
 // (citation_event / corpus_deeplink) on the SPA side. No SDK — unit-testable.
 
 import type { CitationEvent, CitationModality } from "../events/protocol";

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from agg.artifact import RunArtifact, build_artifact, receipt_to_csv, to_json
+from agate.artifact import RunArtifact, build_artifact, receipt_to_csv, to_json
 from pydantic import ValidationError
 
 CREATED = "2026-06-11T12:00:00Z"

@@ -1,5 +1,5 @@
 // "Save run" — serialise a run event stream into a reproducible, citable record
-// (§10.2.8). Mirrors agg/artifact.py's RunArtifact shape so a browser-saved
+// (§10.2.8). Mirrors agate/artifact.py's RunArtifact shape so a browser-saved
 // artifact and a server-saved one are interchangeable. Pure — no DOM, no network;
 // unit-testable. The browser POSTs the JSON to be stored, then the run shows an
 // `artifact` event with the returned URL.

@@ -1,6 +1,6 @@
 // Tier 0 adapter — browser-direct Bedrock ConverseStream, SigV4-signed with the
 // short-lived scoped credentials from the broker (design §2). The credentials are
-// the user's own, narrowed by agg: session tags; this adapter holds NO long-lived
+// the user's own, narrowed by agate: session tags; this adapter holds NO long-lived
 // secret and contains NO authorization logic — IAM enforces the model scope.
 
 import {

@@ -60,17 +60,17 @@ def stubs(monkeypatch):
     monkeypatch.setattr(ingest, "_s3", s3)
     monkeypatch.setattr(ingest, "_bedrock", bedrock)
     monkeypatch.setattr(ingest, "_vectors", vectors)
-    monkeypatch.setattr(ingest, "VECTOR_BUCKET", "agg-vectors-test")
+    monkeypatch.setattr(ingest, "VECTOR_BUCKET", "agate-vectors-test")
     return s3, bedrock, vectors
 
 
 def test_ingest_writes_to_tenant_index_only(stubs):
     _, bedrock, vectors = stubs
-    n = ingest.ingest_object("agg-docs-test", "chem/syllabus.txt")
+    n = ingest.ingest_object("agate-docs-test", "chem/syllabus.txt")
     assert n == 1
     assert len(vectors.put_calls) == 1
     call = vectors.put_calls[0]
-    assert call["index"] == "agg-chem"  # tenant-derived, not defaulted
+    assert call["index"] == "agate-chem"  # tenant-derived, not defaulted
     v = call["vectors"][0]
     assert v["data"]["float32"] == [0.1, 0.2, 0.3]
     assert v["metadata"]["tenant"] == "chem"
@@ -81,7 +81,7 @@ def test_ingest_writes_to_tenant_index_only(stubs):
 def test_handler_skips_object_without_tenant_prefix(stubs):
     _, _, vectors = stubs
     event = {
-        "Records": [{"s3": {"bucket": {"name": "agg-docs-test"}, "object": {"key": "bare.txt"}}}]
+        "Records": [{"s3": {"bucket": {"name": "agate-docs-test"}, "object": {"key": "bare.txt"}}}]
     }
     out = ingest.handler(event, None)
     assert out["processed"][0]["status"] == "skipped"
@@ -95,7 +95,7 @@ def test_handler_url_decodes_key(stubs):
         "Records": [
             {
                 "s3": {
-                    "bucket": {"name": "agg-docs-test"},
+                    "bucket": {"name": "agate-docs-test"},
                     "object": {"key": "chem/week+1.txt"},
                 }
             }
@@ -103,7 +103,7 @@ def test_handler_url_decodes_key(stubs):
     }
     out = ingest.handler(event, None)
     assert out["processed"][0]["status"] == "ok"
-    assert vectors.put_calls[0]["index"] == "agg-chem"
+    assert vectors.put_calls[0]["index"] == "agate-chem"
 
 
 def test_handler_isolates_per_object_failures(stubs):

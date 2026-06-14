@@ -1,8 +1,8 @@
-// Command agg is the admin CLI for aws-genai-gateway.
+// Command agate is the admin CLI for aws-genai-gateway.
 //
 // Commands are small and verb-first, coreutils-style. The cloud-mutating commands
 // (deploy, ingest) build and PRINT a plan by default and run it only with an
-// explicit --confirm — agg never changes cloud state implicitly.
+// explicit --confirm — agate never changes cloud state implicitly.
 package main
 
 import (
@@ -15,7 +15,7 @@ import (
 	"github.com/scttfrdmn/aws-genai-gateway/cli/internal/config"
 )
 
-// Version is the agg release (SemVer). Override at build time with:
+// Version is the agate release (SemVer). Override at build time with:
 //
 //	go build -ldflags "-X main.Version=0.1.0"
 var Version = "0.1.0"
@@ -32,7 +32,7 @@ type command struct {
 
 func commandSet() []command {
 	return []command{
-		{"version", "print the agg version", cmdVersion},
+		{"version", "print the agate version", cmdVersion},
 		{"tenant", "manage tenants (add/list)", cmdTenant},
 		{"budget", "set/show a tenant's budget", cmdBudget},
 		{"deploy", "plan/deploy the CDK stacks", cmdDeploy},
@@ -56,7 +56,7 @@ func dispatch(args []string) int {
 			return c.run(rest)
 		}
 	}
-	fmt.Fprintf(os.Stderr, "agg: unknown command %q\n", name)
+	fmt.Fprintf(os.Stderr, "agate: unknown command %q\n", name)
 	usage(cmds)
 	return 2
 }
@@ -65,7 +65,7 @@ func cmdVersion(args []string) int {
 	if err := flag.NewFlagSet("version", flag.ContinueOnError).Parse(args); err != nil {
 		return 2
 	}
-	fmt.Printf("agg %s\n", Version)
+	fmt.Printf("agate %s\n", Version)
 	return 0
 }
 
@@ -79,7 +79,7 @@ func cmdTenant(args []string) int {
 	}
 	rest := fs.Args()
 	if len(rest) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: agg tenant <add|list> [id]")
+		fmt.Fprintln(os.Stderr, "usage: agate tenant <add|list> [id]")
 		return 2
 	}
 	c, err := config.Load(*path)
@@ -99,7 +99,7 @@ func cmdTenant(args []string) int {
 		return 0
 	case "add":
 		if len(rest) < 2 {
-			fmt.Fprintln(os.Stderr, "usage: agg tenant add <id>")
+			fmt.Fprintln(os.Stderr, "usage: agate tenant add <id>")
 			return 2
 		}
 		added, err := c.AddTenant(rest[1])
@@ -116,7 +116,7 @@ func cmdTenant(args []string) int {
 		fmt.Printf("added tenant %q\n", rest[1])
 		return 0
 	default:
-		fmt.Fprintf(os.Stderr, "agg tenant: unknown subcommand %q\n", rest[0])
+		fmt.Fprintf(os.Stderr, "agate tenant: unknown subcommand %q\n", rest[0])
 		return 2
 	}
 }
@@ -125,11 +125,11 @@ func cmdTenant(args []string) int {
 
 func cmdBudget(args []string) int {
 	// Pull the leading positionals (`set <tenant>`) before flag parsing so the
-	// natural `agg budget set chem --usd 250` ordering works (Go's flag package
+	// natural `agate budget set chem --usd 250` ordering works (Go's flag package
 	// otherwise stops at the first positional).
 	sub, tenant, flags, ok := splitBudgetArgs(args)
 	if !ok {
-		fmt.Fprintln(os.Stderr, "usage: agg budget set <tenant> --usd <amount> [--period <label>]")
+		fmt.Fprintln(os.Stderr, "usage: agate budget set <tenant> --usd <amount> [--period <label>]")
 		return 2
 	}
 	fs := flag.NewFlagSet("budget", flag.ContinueOnError)
@@ -140,11 +140,11 @@ func cmdBudget(args []string) int {
 		return 2
 	}
 	if sub != "set" {
-		fmt.Fprintln(os.Stderr, "usage: agg budget set <tenant> --usd <amount> [--period <label>]")
+		fmt.Fprintln(os.Stderr, "usage: agate budget set <tenant> --usd <amount> [--period <label>]")
 		return 2
 	}
 	if *usd < 0 {
-		fmt.Fprintln(os.Stderr, "agg budget set: --usd is required and must be >= 0")
+		fmt.Fprintln(os.Stderr, "agate budget set: --usd is required and must be >= 0")
 		return 2
 	}
 	c, err := config.Load(*path)
@@ -196,13 +196,13 @@ func cmdIngest(args []string) int {
 	fs := flag.NewFlagSet("ingest", flag.ContinueOnError)
 	path := fs.String("config", config.DefaultPath, "config file")
 	tenant := fs.String("tenant", "", "destination tenant")
-	bucket := fs.String("bucket", "", "docs bucket (agg-docs-<acct>-<region>)")
+	bucket := fs.String("bucket", "", "docs bucket (agate-docs-<acct>-<region>)")
 	confirm := fs.Bool("confirm", false, "actually upload (default: plan only)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if *tenant == "" || len(fs.Args()) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: agg ingest --tenant <id> [--bucket <name>] <file> [--confirm]")
+		fmt.Fprintln(os.Stderr, "usage: agate ingest --tenant <id> [--bucket <name>] <file> [--confirm]")
 		return 2
 	}
 	c, err := config.Load(*path)
@@ -234,13 +234,13 @@ func runOrPlan(plan commands.Plan, confirm bool) int {
 }
 
 func fail(err error) int {
-	fmt.Fprintf(os.Stderr, "agg: %v\n", err)
+	fmt.Fprintf(os.Stderr, "agate: %v\n", err)
 	return 1
 }
 
 func usage(cmds []command) {
-	fmt.Fprintf(os.Stderr, "agg — admin CLI for aws-genai-gateway (%s)\n\n", Version)
-	fmt.Fprintln(os.Stderr, "usage: agg <command> [args]")
+	fmt.Fprintf(os.Stderr, "agate — admin CLI for aws-genai-gateway (%s)\n\n", Version)
+	fmt.Fprintln(os.Stderr, "usage: agate <command> [args]")
 	fmt.Fprintln(os.Stderr, "\ncommands:")
 	for _, c := range cmds {
 		fmt.Fprintf(os.Stderr, "  %-9s %s\n", c.name, c.short)

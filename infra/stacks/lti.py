@@ -6,7 +6,7 @@ on-demand tables (no clock):
   * state         — short-lived OIDC state+nonce, single-use, with a TTL attribute
 
 The Lambda needs PyJWT+cryptography at runtime, which are not in the Lambda base
-image, so the asset bundles `lti/requirements.txt` alongside the `agg/` + `lti/`
+image, so the asset bundles `lti/requirements.txt` alongside the `agate/` + `lti/`
 source. Bundling runs locally (uv/pip) so `cdk synth` needs no Docker; if local
 bundling is unavailable CDK falls back to the official build image.
 
@@ -16,7 +16,7 @@ NO CLOCKS: HTTP API + Lambda are per-request; DynamoDB is on-demand (PAY_PER_REQ
 from __future__ import annotations
 
 import aws_cdk as cdk
-from agg.names import HANDLE
+from agate.names import HANDLE
 from aws_cdk import (
     Stack,
 )
@@ -37,8 +37,8 @@ from infra.assets import pip_bundled_code
 
 
 def _lti_code() -> lambda_.Code:
-    # Bundles PyJWT + the agg/ and lti/ source (shared bundler in infra.assets).
-    return pip_bundled_code("agg", "lti")
+    # Bundles PyJWT + the agate/ and lti/ source (shared bundler in infra.assets).
+    return pip_bundled_code("agate", "lti")
 
 
 class LtiStack(Stack):
@@ -77,11 +77,11 @@ class LtiStack(Stack):
             timeout=cdk.Duration.seconds(15),
             memory_size=256,
             environment={
-                "AGG_LTI_REGISTRATIONS_TABLE": registrations.table_name,
-                "AGG_LTI_STATE_TABLE": state.table_name,
+                "AGATE_LTI_REGISTRATIONS_TABLE": registrations.table_name,
+                "AGATE_LTI_STATE_TABLE": state.table_name,
                 # TOOL_BASE_URL is set after the API exists (below).
             },
-            description="agg: LTI 1.3 tool provider (login/launch/jwks/deeplink)",
+            description="agate: LTI 1.3 tool provider (login/launch/jwks/deeplink)",
         )
         registrations.grant_read_data(fn)
         state.grant_read_write_data(fn)
@@ -90,7 +90,7 @@ class LtiStack(Stack):
             self,
             "LtiApi",
             api_name=f"{HANDLE}-lti",
-            description="agg LTI 1.3 endpoints",
+            description="agate LTI 1.3 endpoints",
         )
         integration = apigw_integrations.HttpLambdaIntegration("LtiIntegration", fn)
 
@@ -104,7 +104,7 @@ class LtiStack(Stack):
             http_api.add_routes(path=path, methods=methods, integration=integration)
 
         # The tool's own base URL (used to build redirect_uri + launch redirect).
-        fn.add_environment("AGG_TOOL_BASE_URL", http_api.api_endpoint)
+        fn.add_environment("AGATE_TOOL_BASE_URL", http_api.api_endpoint)
 
         # --- Outputs -------------------------------------------------------
         cdk.CfnOutput(self, "LtiApiEndpoint", value=http_api.api_endpoint)

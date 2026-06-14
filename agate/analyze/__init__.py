@@ -11,15 +11,15 @@ Pure-Python and AWS-free in core: `run_analyze` orchestrates over injected
 supplies real implementations; tests supply fakes.
 """
 
-from agg.analyze.orchestrator import (
+from agate.analyze.orchestrator import (
     Backend,
     CodeRunner,
     CostMeter,
     ExecResult,
     run_analyze,
 )
-from agg.analyze.prompts import ANALYZE_SYSTEM
-from agg.analyze.schema import (
+from agate.analyze.prompts import ANALYZE_SYSTEM
+from agate.analyze.schema import (
     ContentBlock,
     extract_code,
     parse_invoke_result,

@@ -3,7 +3,7 @@
 For the agent path these policies are loaded into **AgentCore Policy**, which
 enforces them natively on every tool/action call; for the chat path Cedar is the
 readable mirror of the IAM scope (design §5: "this mapping lives in Cedar … not in
-code branches"). Both are generated from the SAME `agg.entitlements` table that
+code branches"). Both are generated from the SAME `agate.entitlements` table that
 drives the IAM model-access policy, so the auditable layer and the enforced layer
 cannot drift.
 
@@ -13,7 +13,7 @@ output into a `CfnPolicy`.
 
 from __future__ import annotations
 
-from agg.entitlements import TIERS, models_for_tier
+from agate.entitlements import TIERS, models_for_tier
 
 # Cedar entity/action names (§13.4). Kept as constants so the schema and policies
 # agree and a rename stays in one place.
@@ -35,7 +35,7 @@ def model_invoke_policies() -> str:
     entitlement table (cumulative, lower tiers included).
     """
     blocks = [
-        _comment("Generated from agg.entitlements — model access mirrors the IAM scope."),
+        _comment("Generated from agate.entitlements — model access mirrors the IAM scope."),
     ]
     for tier in TIERS:
         models = ", ".join(f'"{m}"' for m in models_for_tier(tier))

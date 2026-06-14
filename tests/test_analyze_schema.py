@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agg.analyze.schema import (
+from agate.analyze.schema import (
     ContentBlock,
     ExecResult,
     extract_code,

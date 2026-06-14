@@ -16,12 +16,12 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from agg.lti import CLAIM_CONTEXT, CLAIM_ROLES  # noqa: E402
+from agate.lti import CLAIM_CONTEXT, CLAIM_ROLES  # noqa: E402
 
 from lti import handler as lti  # noqa: E402
 
 ISSUER = "https://lms.example.edu"
-CLIENT_ID = "agg-client-1"
+CLIENT_ID = "agate-client-1"
 INSTRUCTOR = "http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor"
 LEARNER = "http://purl.imsglobal.org/vocab/lis/v2/membership#Learner"
 
@@ -86,11 +86,11 @@ def wired(monkeypatch, keypair):
         return store.pop(state, None)
 
     monkeypatch.setattr(lti, "_consume_state", _consume)
-    monkeypatch.setattr(lti, "TOOL_BASE_URL", "https://agg.example.edu")
+    monkeypatch.setattr(lti, "TOOL_BASE_URL", "https://agate.example.edu")
     return private_key, store
 
 
-def test_valid_launch_mints_agg_claims(wired):
+def test_valid_launch_mints_agate_claims(wired):
     private_key, store = wired
     # Seed a state/nonce as login() would.
     store["st8"] = {"state": "st8", "nonce": "n0", "issuer": ISSUER, "client_id": CLIENT_ID}
@@ -99,7 +99,7 @@ def test_valid_launch_mints_agg_claims(wired):
     resp = lti.launch({"id_token": token, "state": "st8"})
     assert resp["statusCode"] == 302
     loc = resp["headers"]["location"]
-    assert "agg_claims" in loc
+    assert "agate_claims" in loc
     assert "harvard-chem" in loc  # tenant from registration
     # state consumed (single use)
     assert "st8" not in store
@@ -165,7 +165,7 @@ def test_launch_missing_fields_fails_closed(wired):
 
 
 def test_jwks_endpoint_returns_empty_set_by_default(wired, monkeypatch):
-    monkeypatch.delenv("AGG_TOOL_JWKS", raising=False)
+    monkeypatch.delenv("AGATE_TOOL_JWKS", raising=False)
     resp = lti.jwks()
     assert resp["statusCode"] == 200
     assert '"keys": []' in resp["body"] or '"keys":[]' in resp["body"]

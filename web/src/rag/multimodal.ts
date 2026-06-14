@@ -14,14 +14,14 @@ import type { ScopedCredentials } from "../auth";
 import { toSdkCredentials as sdkCreds } from "../auth/sdkCreds";
 import { elementFromMetadata, type VisualElement } from "./citation";
 
-// Must match the gate-verified contract (agg/multimodal.py, issue #17).
+// Must match the gate-verified contract (agate/multimodal.py, issue #17).
 export const MM_EMBED_MODEL_ID = "amazon.nova-2-multimodal-embeddings-v1:0";
 export const MM_EMBED_DIMENSION = 3072;
 
 export interface MultimodalConfig {
   region: string;
   vectorBucketName: string;
-  // The tenant's MULTIMODAL index, e.g. `agg-chem-mm` (the 3072-dim index).
+  // The tenant's MULTIMODAL index, e.g. `agate-chem-mm` (the 3072-dim index).
   indexName: string;
   topK?: number;
 }

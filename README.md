@@ -1,4 +1,4 @@
-# aws-genai-gateway (`agg`)
+# aws-genai-gateway (`agate`)
 
 An open-source, **AWS-native GenAI gateway for higher education** with **zero standing cost**.
 A person federates their campus identity, receives short-lived credentials scoped to exactly
@@ -10,7 +10,7 @@ S3 Vectors directly — with both the talking and the documents fenced by the *s
 - **Coding contract:** [`CLAUDE.md`](CLAUDE.md)
 
 > Names are provisional ("for now"): project/repo/package `aws-genai-gateway`; CLI binary and
-> short handle `agg`; session-tag namespace `agg:`; docs bucket prefix `agg-docs`.
+> short handle `agate`; session-tag namespace `agate:`; docs bucket prefix `agate-docs`.
 
 ## The governing principle: NO CLOCKS
 
@@ -26,7 +26,7 @@ Everything else is assembly. The engineering care lives in:
 1. **The claims → scoped-STS broker** — translate the campus IdP's existing claims
    (eduPerson affiliation, enrolled courses) into AWS session tags, and vend a temporary
    credential = the authenticated role *narrowed by those tags*.
-2. **The ABAC tag scheme** — one `agg:` tag scheme that simultaneously governs which Bedrock
+2. **The ABAC tag scheme** — one `agate:` tag scheme that simultaneously governs which Bedrock
    models a session may invoke and which S3 prefixes / S3 Vectors indexes it may read.
 
 ## Repository layout
@@ -36,7 +36,7 @@ infra/    AWS CDK v2 (aws-cdk-lib, Python 3.13). One app, small focused stacks.
           stacks/identity.py is the load-bearing Phase 1 stack.
           lambda/broker/      per-request credential-vending broker (scales to zero).
 web/      Static SPA (Vite + TypeScript). Three swappable transport adapters.
-cli/      `agg` admin CLI (Go).
+cli/      `agate` admin CLI (Go).
 policy/   IAM/Cedar tag scheme + role/trust templates.
 cost/     CostMeter + pricing (pure, testable without AWS).      [later phase]
 meter/    invocation-log -> spend table (authoritative).         [later phase]
@@ -55,7 +55,7 @@ tests/    pure-logic unit tests (no AWS).
 | Python | **3.12 / 3.13** | CDK app *and* every Lambda runtime. Never 3.9 (EOL). |
 | `uv` | latest | Python env + dependency management. |
 | Node.js | 20+ | Required even though IaC is Python — the `aws-cdk` CLI is npm and the Python bindings call a Node jsii runtime. |
-| Go | 1.22+ | The `agg` CLI in `cli/`. |
+| Go | 1.22+ | The `agate` CLI in `cli/`. |
 
 ## Quickstart (dev)
 
@@ -91,58 +91,58 @@ Pin the region to where Bedrock + S3 Vectors are available for your institution.
 ## Deploying a demo
 
 The eight stacks are independent; deploy only what a given demo needs. The Tier 0 path
-(`agg-identity`) is $0-idle and the safest first deploy; the data/agent/web stacks add
+(`agate-identity`) is $0-idle and the safest first deploy; the data/agent/web stacks add
 storage + a container.
 
 **1. Identity (the crux — Tier 0).**
 ```bash
-npx cdk deploy agg-identity            # Cognito Identity Pool, broker Lambda, ABAC role
+npx cdk deploy agate-identity            # Cognito Identity Pool, broker Lambda, ABAC role
 ```
 Real login needs OIDC config on the broker (it verifies the IdP token — no placeholder):
-set `AGG_OIDC_JWKS_URL`, `AGG_OIDC_ISSUER`, `AGG_OIDC_AUDIENCE` for your campus IdP (or a
+set `AGATE_OIDC_JWKS_URL`, `AGATE_OIDC_ISSUER`, `AGATE_OIDC_AUDIENCE` for your campus IdP (or a
 demo Cognito User Pool / any OIDC provider). Without them the broker fails closed.
 
 **1a. Demo IdP (only if you have no campus IdP to point at).**
 ```bash
-npx cdk deploy agg-demo-idp            # throwaway Cognito User Pool that issues real RS256 JWTs
+npx cdk deploy agate-demo-idp            # throwaway Cognito User Pool that issues real RS256 JWTs
 ```
 The stack outputs `OidcIssuer`, `OidcJwksUrl`, and `OidcAudience` — set those as
-`AGG_OIDC_ISSUER` / `AGG_OIDC_JWKS_URL` / `AGG_OIDC_AUDIENCE` on the broker (and the agent's
+`AGATE_OIDC_ISSUER` / `AGATE_OIDC_JWKS_URL` / `AGATE_OIDC_AUDIENCE` on the broker (and the agent's
 `cognito_discovery_url` / `cognito_audience`). Create a demo user and set their
 `custom:affiliation` / `custom:tenant` / `custom:courses` attributes — a pre-token Lambda maps
-those onto the `agg` claims, so the demo token scopes exactly like a campus token. Production
+those onto the `agate` claims, so the demo token scopes exactly like a campus token. Production
 skips this stack entirely.
 
 **2. Data + a demo corpus (Ask/RAG).**
 ```bash
-npx cdk deploy agg-data -c tenants=demo
-agg tenant add demo                    # the CLI tracks tenants/budgets
-agg ingest --tenant demo --bucket agg-docs-<acct>-<region> ./sample.pdf --confirm
+npx cdk deploy agate-data -c tenants=demo
+agate tenant add demo                    # the CLI tracks tenants/budgets
+agate ingest --tenant demo --bucket agate-docs-<acct>-<region> ./sample.pdf --confirm
 ```
 
 **3. Agent path (Panel/Analyze).** Build + push the reference container, then deploy:
 ```bash
-docker build -t agg-agent ./agent && \
-  docker tag agg-agent <ecr-repo>:latest && docker push <ecr-repo>:latest
-npx cdk deploy agg-agent -c agent_container_uri=<ecr-repo>:latest \
+docker build -t agate-agent ./agent && \
+  docker tag agate-agent <ecr-repo>:latest && docker push <ecr-repo>:latest
+npx cdk deploy agate-agent -c agent_container_uri=<ecr-repo>:latest \
   -c cognito_discovery_url=<oidc-discovery-url> -c cognito_audience=<app-id>
-npx cdk deploy agg-governance          # Guardrails + Cedar policies (optional but recommended)
+npx cdk deploy agate-governance          # Guardrails + Cedar policies (optional but recommended)
 ```
 
 **4. Web (the SPA).** Build with the deployed endpoints, then host:
 ```bash
 cd web && VITE_BROKER_URL=<broker-url> VITE_AWS_REGION=<region> \
-  VITE_VECTOR_BUCKET=agg-vectors-<acct>-<region> \
+  VITE_VECTOR_BUCKET=agate-vectors-<acct>-<region> \
   VITE_AGENT_RUNTIME_ARN=<runtime-arn> npm run build && cd ..
-npx cdk deploy agg-web                 # publishes web/dist to S3 + CloudFront
+npx cdk deploy agate-web                 # publishes web/dist to S3 + CloudFront
 ```
-The `agg-web` output `SiteUrl` is the demo URL.
+The `agate-web` output `SiteUrl` is the demo URL.
 
-**5. Optional Tier 1** (`agg-chokepoint`) and **audit** (`agg-audit`) only if the demo needs
+**5. Optional Tier 1** (`agate-chokepoint`) and **audit** (`agate-audit`) only if the demo needs
 exact pre-call caps or the spend/forensic trail.
 
-**Teardown:** `npx cdk destroy agg-web agg-agent agg-data agg-identity` (RETAIN'd buckets/KMS
-in `agg-data`/`agg-audit` are kept deliberately — delete them by hand when done).
+**Teardown:** `npx cdk destroy agate-web agate-agent agate-data agate-identity` (RETAIN'd buckets/KMS
+in `agate-data`/`agate-audit` are kept deliberately — delete them by hand when done).
 
 > **Demo honesty note.** Until a campus IdP is wired, login is whatever OIDC provider you point
 > the broker/agent at. The auth path is *real* (RS256/JWKS verified server-side) — there is no

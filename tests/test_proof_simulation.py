@@ -2,7 +2,7 @@
 
 This is the acceptance test for the load-bearing crux. It takes the SAME generated
 model-access policy the CDK stack attaches, hands it to IAM's policy simulator with
-an `agg:tier` principal-tag context, and asserts:
+an `agate:tier` principal-tag context, and asserts:
 
   * an entitled model ARN -> `Converse` ALLOWED
   * a non-entitled (higher-tier) model ARN -> `Converse` DENIED
@@ -20,8 +20,8 @@ from __future__ import annotations
 import json
 
 import pytest
-from agg.entitlements import TIER_MODELS, foundation_model_arn
-from agg.names import tag_key
+from agate.entitlements import TIER_MODELS, foundation_model_arn
+from agate.names import tag_key
 from policy.generate import model_access_policy
 
 REGION = "us-east-1"

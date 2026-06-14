@@ -23,8 +23,8 @@ export const EMBED_DIMENSION = 1024;
 export interface RetrieverConfig {
   region: string;
   vectorBucketName: string;
-  // The tenant's index name, e.g. `agg-chem`. Derived from the session scope; the
-  // credential can only read the index its agg:tenant tag matches.
+  // The tenant's index name, e.g. `agate-chem`. Derived from the session scope; the
+  // credential can only read the index its agate:tenant tag matches.
   indexName: string;
   topK?: number;
 }

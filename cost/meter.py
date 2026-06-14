@@ -7,7 +7,7 @@ same engine costs LLM calls, embeddings, retrieval (per-1k queries), and compute
 doubles as per-user/per-tenant chargeback.
 
 Thread-safe so a parallel Panel fan-out can meter concurrently. Satisfies the
-`CostMeter` protocol the orchestration (agg.panel / agg.analyze / agg.router) calls:
+`CostMeter` protocol the orchestration (agate.panel / agate.analyze / agate.router) calls:
 `total`, `add_llm`, `add_compute`. Adds `add_embedding` / `add_retrieval` for the
 ingest and RAG paths.
 """

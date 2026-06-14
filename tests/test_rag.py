@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from agg.rag import (
+from agate.rag import (
     ChunkRecord,
     TenantKeyError,
     build_chunk_records,
@@ -36,7 +36,7 @@ def test_tenant_from_s3_key_fails_closed(key):
 
 
 def test_index_name_per_tenant():
-    assert index_name_for_tenant("chem") == "agg-chem"
+    assert index_name_for_tenant("chem") == "agate-chem"
 
 
 # --- chunking ---------------------------------------------------------------

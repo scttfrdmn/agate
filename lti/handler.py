@@ -3,7 +3,7 @@
 One Lambda behind an HTTP API, routing the four LTI 1.3 endpoints:
 
   GET/POST /lti/login              OIDC third-party login init -> redirect to platform
-  POST     /lti/launch            id_token (JWT) validation -> mint an agg session
+  POST     /lti/launch            id_token (JWT) validation -> mint an agate session
   GET      /.well-known/jwks.json tool's public keys (for platform -> tool signing)
   POST     /lti/deeplink          deep-linking response back to the platform
 
@@ -11,7 +11,7 @@ Security (the LTI crux): the launch id_token is an RS256 JWT signed by the
 platform. We MUST verify its signature against the platform's published JWKS, and
 check `iss`, `aud` (our client_id), `exp`/`nbf`, the `nonce` (issued by us, used
 once), and the echoed `state`. Only then do we trust its claims and translate them
-(pure agg.lti) into an agg session. Every check FAILS CLOSED.
+(pure agate.lti) into an agate session. Every check FAILS CLOSED.
 
 Platform registration (issuer, client_id, auth/JWKS endpoints) and the one-time
 nonce/state live in DynamoDB on-demand — no clock.
@@ -27,19 +27,19 @@ from urllib.parse import urlencode
 
 import boto3
 import jwt
-from agg.lti import (
+from agate.lti import (
     LtiClaimError,
-    lti_claims_to_agg_claims,
+    lti_claims_to_agate_claims,
     nonce_is_fresh,
     state_matches,
 )
 from jwt import PyJWKClient
 
-REGISTRATIONS_TABLE = os.environ.get("AGG_LTI_REGISTRATIONS_TABLE", "")
-STATE_TABLE = os.environ.get("AGG_LTI_STATE_TABLE", "")
-TOOL_BASE_URL = os.environ.get("AGG_TOOL_BASE_URL", "")
+REGISTRATIONS_TABLE = os.environ.get("AGATE_LTI_REGISTRATIONS_TABLE", "")
+STATE_TABLE = os.environ.get("AGATE_LTI_STATE_TABLE", "")
+TOOL_BASE_URL = os.environ.get("AGATE_TOOL_BASE_URL", "")
 # State/nonce TTL — short; a launch follows login init within seconds.
-STATE_TTL_SECONDS = int(os.environ.get("AGG_LTI_STATE_TTL_SECONDS", "600"))
+STATE_TTL_SECONDS = int(os.environ.get("AGATE_LTI_STATE_TTL_SECONDS", "600"))
 
 _ddb = boto3.resource("dynamodb")
 
@@ -119,7 +119,7 @@ def login(params: dict) -> dict:
 
 
 def launch(form: dict) -> dict:
-    """Validate the platform's id_token and mint an agg session claim set."""
+    """Validate the platform's id_token and mint an agate session claim set."""
     id_token = form.get("id_token")
     returned_state = form.get("state")
     if not id_token or not returned_state:
@@ -146,22 +146,22 @@ def launch(form: dict) -> dict:
     # Tenant is an institutional decision tied to the registration, not the user.
     tenant = reg.get("tenant")
     try:
-        agg_claims = lti_claims_to_agg_claims(claims, tenant=tenant)
+        agate_claims = lti_claims_to_agate_claims(claims, tenant=tenant)
     except LtiClaimError as exc:
         raise LtiError(str(exc)) from exc
 
-    # Hand the agg claim set to the SPA, which exchanges it at the broker for
+    # Hand the agate claim set to the SPA, which exchanges it at the broker for
     # scoped STS creds. We do NOT mint AWS creds here — the broker is the single
     # credential-vending path (Phase 1). The launch returns the SPA with a
     # short-lived, signed handoff the broker will re-validate.
-    return _launch_response(agg_claims)
+    return _launch_response(agate_claims)
 
 
 def jwks() -> dict:
     """The tool's public JWKS. In production these come from a managed key
     (KMS/Secrets Manager); the key material is provisioned out-of-band, never
     committed. Phase 4 returns an empty set until keys are provisioned."""
-    keys = os.environ.get("AGG_TOOL_JWKS", "")
+    keys = os.environ.get("AGATE_TOOL_JWKS", "")
     body = keys if keys else json.dumps({"keys": []})
     return {"statusCode": 200, "headers": {"content-type": "application/json"}, "body": body}
 
@@ -173,7 +173,7 @@ def deeplink(form: dict) -> dict:
     return {
         "statusCode": 200,
         "headers": {"content-type": "text/html"},
-        "body": "<!doctype html><p>agg deep-linking not yet configured.</p>",
+        "body": "<!doctype html><p>agate deep-linking not yet configured.</p>",
     }
 
 
@@ -199,12 +199,12 @@ def _verify_id_token(id_token: str, reg: dict, *, audience: str, issuer: str) ->
         raise LtiError(f"id_token verification failed: {exc}") from exc
 
 
-def _launch_response(agg_claims: dict) -> dict:
+def _launch_response(agate_claims: dict) -> dict:
     """Redirect into the SPA carrying the validated claim set for broker exchange."""
     # Pass the claims as a URL fragment so they never hit a server log; the SPA
     # reads them and POSTs to the broker. (A signed, short-TTL handoff token is the
     # production hardening; the broker re-validates regardless.)
-    fragment = urlencode({"agg_claims": json.dumps(agg_claims)})
+    fragment = urlencode({"agate_claims": json.dumps(agate_claims)})
     return {
         "statusCode": 302,
         "headers": {"location": f"{TOOL_BASE_URL}/#{fragment}"},

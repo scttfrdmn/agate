@@ -11,8 +11,8 @@ import json
 import threading
 
 import pytest
-from agg.panel.orchestrator import run_panel
-from agg.panel.prompts import ADJUDICATE_SYSTEM, REVIEW_SYSTEM
+from agate.panel.orchestrator import run_panel
+from agate.panel.prompts import ADJUDICATE_SYSTEM, REVIEW_SYSTEM
 
 ROSTER = [
     {"tier": "frontier", "label": "frontier", "max_tokens": 512},

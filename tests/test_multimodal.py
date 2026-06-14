@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from agg.multimodal import (
+from agate.multimodal import (
     NOVA_MULTIMODAL_DIMENSION,
     VisualElement,
     citation_event,

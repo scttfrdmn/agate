@@ -8,9 +8,9 @@ Pydantic model before a `divergence` event is emitted; a malformed adjudication
 falls back to an unstructured `answer` rather than failing the run.
 """
 
-from agg.panel.orchestrator import Backend, CostMeter, run_panel
-from agg.panel.prompts import ADJUDICATE_SYSTEM
-from agg.panel.schema import Divergence, strip_fences
+from agate.panel.orchestrator import Backend, CostMeter, run_panel
+from agate.panel.prompts import ADJUDICATE_SYSTEM
+from agate.panel.schema import Divergence, strip_fences
 
 __all__ = [
     "ADJUDICATE_SYSTEM",

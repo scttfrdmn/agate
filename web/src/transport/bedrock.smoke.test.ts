@@ -1,12 +1,12 @@
 // Opt-in live smoke test for the Tier 0 path — mirrors the Python `-m aws` proof.
 //
-// Skipped unless AGG_LIVE_SMOKE=1. When enabled it needs real scoped credentials
+// Skipped unless AGATE_LIVE_SMOKE=1. When enabled it needs real scoped credentials
 // in the standard AWS env (AWS_ACCESS_KEY_ID / _SECRET_ACCESS_KEY / _SESSION_TOKEN
-// — e.g. exported from a broker-vended session) and AGG_SMOKE_MODEL_ID set to a
+// — e.g. exported from a broker-vended session) and AGATE_SMOKE_MODEL_ID set to a
 // model the session is entitled to. It runs a real ConverseStream and asserts we
 // receive streamed text. Run:
 //
-//   AGG_LIVE_SMOKE=1 AGG_SMOKE_MODEL_ID=openai.gpt-oss-20b-1:0 \
+//   AGATE_LIVE_SMOKE=1 AGATE_SMOKE_MODEL_ID=openai.gpt-oss-20b-1:0 \
 //     AWS_REGION=us-east-1 npx vitest run bedrock.smoke
 //
 // Pure unit tests stay offline; this is the only test that touches Bedrock.
@@ -17,13 +17,13 @@ import { describe, expect, it } from "vitest";
 import type { ScopedCredentials } from "../auth";
 import { BedrockTransport } from "./bedrock";
 
-const live = process.env.AGG_LIVE_SMOKE === "1";
+const live = process.env.AGATE_LIVE_SMOKE === "1";
 
 describe.skipIf(!live)("BedrockTransport live ConverseStream", () => {
   it("streams text from an entitled model", async () => {
     const region = process.env.AWS_REGION ?? "us-east-1";
-    const modelId = process.env.AGG_SMOKE_MODEL_ID;
-    expect(modelId, "set AGG_SMOKE_MODEL_ID").toBeTruthy();
+    const modelId = process.env.AGATE_SMOKE_MODEL_ID;
+    expect(modelId, "set AGATE_SMOKE_MODEL_ID").toBeTruthy();
 
     // Use whatever the standard AWS env provides (simulating broker-vended creds).
     const creds = async (): Promise<ScopedCredentials> => ({

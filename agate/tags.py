@@ -1,6 +1,6 @@
 """claims_to_tags — the part we own (design §3.1).
 
-Pure, side-effect-free translation of campus-IdP claims into the `agg:` ABAC
+Pure, side-effect-free translation of campus-IdP claims into the `agate:` ABAC
 session-tag set. This is the single most security-critical piece of logic in the
 system (security memo §10.1: "credential-vending mis-scope ... the single most
 important thing to review"), so it is deliberately:
@@ -19,8 +19,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from agg.entitlements import Affiliation, Tier, derive_tier
-from agg.names import tag_key
+from agate.entitlements import Affiliation, Tier, derive_tier
+from agate.names import tag_key
 
 # --- AWS session-tag constraints (STS AssumeRole) ---------------------------
 # Keys <=128 chars, values <=256 chars, up to 50 tags. Allowed chars:
@@ -52,7 +52,7 @@ class ClaimsError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class SessionTags:
-    """The four `agg:` tags, validated and ready to hand to STS."""
+    """The four `agate:` tags, validated and ready to hand to STS."""
 
     affiliation: Affiliation
     tenant: str
@@ -60,9 +60,9 @@ class SessionTags:
     tier: Tier
 
     def to_sts_tags(self) -> list[dict[str, str]]:
-        """STS AssumeRole `Tags` form: [{"Key": "agg:affiliation", "Value": ...}, ...].
+        """STS AssumeRole `Tags` form: [{"Key": "agate:affiliation", "Value": ...}, ...].
 
-        `agg:courses` is a comma-joined list (session-tag values are scalar
+        `agate:courses` is a comma-joined list (session-tag values are scalar
         strings); IAM policies match it with StringLike `*course*` conditions.
         """
         return [
@@ -105,7 +105,7 @@ def _normalise_affiliation(raw: object) -> Affiliation:
 
 
 def _tier_rank(tier: Tier) -> int:
-    from agg.entitlements import TIER_RANK
+    from agate.entitlements import TIER_RANK
 
     return TIER_RANK[tier]
 
@@ -167,7 +167,7 @@ def _truthy(raw: object) -> bool:
 
 
 def claims_to_tags(claims: dict[str, object]) -> SessionTags:
-    """Translate IdP claims into the validated `agg:` session-tag set.
+    """Translate IdP claims into the validated `agate:` session-tag set.
 
     Recognised claim keys (case-insensitive on common aliases):
       * affiliation  <- "affiliation" | "eduPersonAffiliation" | "eduperson_affiliation"

@@ -4,7 +4,7 @@ import { EventCollector, runStateFrom } from "./collector";
 import type { RunEvent } from "./protocol";
 
 // A scripted Panel run: two panes read the same evidence, then the adjudicator
-// emits a divergence + reconciled answer. Mirrors what run_panel (agg/panel) emits.
+// emits a divergence + reconciled answer. Mirrors what run_panel (agate/panel) emits.
 const PANEL_RUN: RunEvent[] = [
   { type: "route", mode: "DEBATE" },
   { type: "model", tier: "frontier", label: "frontier", state: "start", pane: "frontier" },

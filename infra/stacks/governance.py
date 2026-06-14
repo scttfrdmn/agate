@@ -4,7 +4,7 @@ Two machine-checkable governance layers, both per-use/no-clock:
   * a **Bedrock Guardrail** (content + sensitive-information filters) a CISO can read
     and that applies to model calls (Tier 0 per-role or Tier 1 centralized, §8).
   * an **AgentCore Policy** (Cedar) loaded with the policy set GENERATED from the
-    same `agg.entitlements` table as the IAM scope (`policy.cedar`) — so the
+    same `agate.entitlements` table as the IAM scope (`policy.cedar`) — so the
     human-auditable layer and the enforced layer cannot drift (design §5). The
     Policy is enforced natively on every agent tool/action call.
 
@@ -15,7 +15,7 @@ NO CLOCKS: Guardrails bill per-use; the Policy engine is config, not a running b
 from __future__ import annotations
 
 import aws_cdk as cdk
-from agg.names import HANDLE
+from agate.names import HANDLE
 from aws_cdk import (
     Stack,
 )
@@ -41,9 +41,9 @@ class GovernanceStack(Stack):
             self,
             "Guardrail",
             name=f"{HANDLE}-baseline",
-            description="agg baseline guardrail — content + PII filters (CISO-readable)",
-            blocked_input_messaging="This request was blocked by the agg guardrail.",
-            blocked_outputs_messaging="This response was blocked by the agg guardrail.",
+            description="agate baseline guardrail — content + PII filters (CISO-readable)",
+            blocked_input_messaging="This request was blocked by the agate guardrail.",
+            blocked_outputs_messaging="This response was blocked by the agate guardrail.",
             content_policy_config=bedrock.CfnGuardrail.ContentPolicyConfigProperty(
                 filters_config=[
                     bedrock.CfnGuardrail.ContentFilterConfigProperty(
@@ -75,7 +75,7 @@ class GovernanceStack(Stack):
             self,
             "PolicyEngine",
             name=f"{HANDLE}_policy_engine",
-            description="agg AgentCore policy engine — tool/action authz (Cedar)",
+            description="agate AgentCore policy engine — tool/action authz (Cedar)",
         )
         policy = agentcore.CfnPolicy(
             self,
@@ -87,7 +87,7 @@ class GovernanceStack(Stack):
                     statement=generate_policy_set(),
                 ),
             ),
-            description="Generated from agg.entitlements — mirrors the IAM model scope",
+            description="Generated from agate.entitlements — mirrors the IAM model scope",
         )
         policy.add_dependency(engine)
 

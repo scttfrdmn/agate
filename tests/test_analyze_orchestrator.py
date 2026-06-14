@@ -8,9 +8,9 @@ the error path surfacing a traceback.
 from __future__ import annotations
 
 import pytest
-from agg.analyze.orchestrator import run_analyze
-from agg.analyze.prompts import ANALYZE_SYSTEM
-from agg.analyze.schema import ContentBlock, ExecResult
+from agate.analyze.orchestrator import run_analyze
+from agate.analyze.prompts import ANALYZE_SYSTEM
+from agate.analyze.schema import ContentBlock, ExecResult
 
 GENERATOR = {"tier": "frontier", "label": "frontier", "max_tokens": 1024}
 

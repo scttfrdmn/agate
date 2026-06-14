@@ -22,7 +22,7 @@ attributable in Cost Explorer alongside the log-derived figure.
 from __future__ import annotations
 
 import aws_cdk as cdk
-from agg.names import HANDLE
+from agate.names import HANDLE
 from aws_cdk import (
     Stack,
 )
@@ -112,8 +112,8 @@ class AuditStack(Stack):
             code=lambda_.Code.from_asset(".", exclude=LAMBDA_ASSET_EXCLUDES),
             timeout=cdk.Duration.minutes(2),
             memory_size=256,
-            environment={"AGG_SPEND_TABLE": spend_table.table_name},
-            description="agg: authoritative spend — invocation logs -> spend table",
+            environment={"AGATE_SPEND_TABLE": spend_table.table_name},
+            description="agate: authoritative spend — invocation logs -> spend table",
         )
         log_bucket.grant_read(spend_fn)
         spend_table.grant_read_write_data(spend_fn)
@@ -178,7 +178,7 @@ class AuditStack(Stack):
         )
 
         # --- Cost-allocation tags (per-tenant chargeback attribution) -----
-        cdk.Tags.of(self).add("agg:component", "audit")
+        cdk.Tags.of(self).add("agate:component", "audit")
 
         # --- Outputs -------------------------------------------------------
         cdk.CfnOutput(self, "AuditBucketName", value=log_bucket.bucket_name)

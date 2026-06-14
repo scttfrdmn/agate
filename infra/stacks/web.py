@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import aws_cdk as cdk
-from agg.names import HANDLE
+from agate.names import HANDLE
 from aws_cdk import (
     Stack,
 )
@@ -72,7 +72,7 @@ class WebStack(Stack):
                     http_status=404, response_http_status=200, response_page_path="/index.html"
                 ),
             ],
-            comment="agg static SPA",
+            comment="agate static SPA",
         )
 
         # Publish the built SPA if present (pre-build synth still works without it).

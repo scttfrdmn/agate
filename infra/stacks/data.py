@@ -1,10 +1,10 @@
 """The data plane (design §4; §12 Phase 3 text RAG + §10.2.7 multimodal KB).
 
 Per-tenant document storage + vector retrieval, all storage-priced (NO CLOCKS):
-  * one `agg-docs-*` S3 bucket, partitioned by tenant prefix `s3://.../{tenant}/...`,
+  * one `agate-docs-*` S3 bucket, partitioned by tenant prefix `s3://.../{tenant}/...`,
     with a `_mm-artifacts/` sub-prefix for processed multimodal artifacts.
   * one S3 Vectors **vector bucket** + **two indexes per tenant** — a 1024-dim
-    text index and a 3072-dim multimodal index — each tagged with `agg:tenant` so
+    text index and a 3072-dim multimodal index — each tagged with `agate:tenant` so
     the Phase 1 ABAC data-scope policy isolates reads.
   * a **per-tenant KMS CMK** encrypting both of that tenant's indexes (security
     memo §6: per-index CMK).
@@ -23,7 +23,7 @@ Changing a model/dimension requires re-embedding that index.
 from __future__ import annotations
 
 import aws_cdk as cdk
-from agg.names import DOCS_BUCKET_PREFIX, HANDLE, tag_key
+from agate.names import DOCS_BUCKET_PREFIX, HANDLE, tag_key
 from aws_cdk import (
     Stack,
 )
@@ -108,7 +108,7 @@ class DataStack(Stack):
         def _index(tenant: str, key: kms.Key, *, suffix: str, dimension: int) -> s3vectors.CfnIndex:
             # One S3 Vectors index. The tenant tag is the ABAC isolation primitive
             # (Phase 1 §13.3): the data-scope policy permits QueryVectors only where
-            # the index's agg:tenant tag matches the session's principal tag.
+            # the index's agate:tenant tag matches the session's principal tag.
             cid = (
                 f"Index{_pascal(tenant)}{_pascal(suffix)}" if suffix else f"Index{_pascal(tenant)}"
             )
@@ -138,7 +138,7 @@ class DataStack(Stack):
                 f"Cmk{_pascal(tenant)}",
                 alias=f"alias/{HANDLE}-{tenant}",
                 enable_key_rotation=True,
-                description=f"agg per-tenant CMK for {tenant} vector indexes",
+                description=f"agate per-tenant CMK for {tenant} vector indexes",
                 removal_policy=cdk.RemovalPolicy.RETAIN,
             )
 
@@ -163,11 +163,11 @@ class DataStack(Stack):
             timeout=cdk.Duration.minutes(2),
             memory_size=512,
             environment={
-                "AGG_EMBED_MODEL_ID": EMBED_MODEL_ID,
-                "AGG_EMBED_DIMENSION": str(EMBED_DIMENSION),
-                "AGG_VECTOR_BUCKET": vector_bucket.vector_bucket_name,
+                "AGATE_EMBED_MODEL_ID": EMBED_MODEL_ID,
+                "AGATE_EMBED_DIMENSION": str(EMBED_DIMENSION),
+                "AGATE_VECTOR_BUCKET": vector_bucket.vector_bucket_name,
             },
-            description="agg: embed-on-upload ingest (S3 -> Bedrock embeddings -> S3 Vectors)",
+            description="agate: embed-on-upload ingest (S3 -> Bedrock embeddings -> S3 Vectors)",
         )
 
         docs_bucket.grant_read(ingest_fn)

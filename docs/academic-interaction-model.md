@@ -69,7 +69,7 @@ Retrieval-augmented, cited synthesis. Default, lowest-cost path.
   (`/corpus/<id>`), including deep links to a specific **figure or table** when the
   citation resolves to a visual element (see §10.2.7).
 - **Scope:** retrieval is confined to the caller's project corpus by the ABAC
-  session tag (`agg:tenant`, `agg:project`); there is no cross-project leakage
+  session tag (`agate:tenant`, `agate:project`); there is no cross-project leakage
   because the vector index itself is selected by tag.
 
 ---
@@ -121,7 +121,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from pydantic import ValidationError
 
-from agg.panel.schema import Divergence, strip_fences  # mirrors §10.2.5
+from agate.panel.schema import Divergence, strip_fences  # mirrors §10.2.5
 
 Emit = Callable[[dict], None]
 
@@ -430,8 +430,8 @@ resolve to a specific figure or table, and the Ask/Panel panes deep-link to it.
 Re-rankers and metadata filters apply across text and visual results.
 
 **Scope.** Each project's knowledge base, its vector index, and its multimodal
-storage prefix are selected by the same ABAC session tags (`agg:tenant`,
-`agg:project`) that govern model access — one tag scheme, both data scope and model
+storage prefix are selected by the same ABAC session tags (`agate:tenant`,
+`agate:project`) that govern model access — one tag scheme, both data scope and model
 scope. No new connector surface is introduced.
 
 **Academic payoff.**

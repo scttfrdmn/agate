@@ -55,10 +55,10 @@ def _rec(user, tenant, tokens_in, tokens_out, ts="2026-06-12T18:00:00Z", model="
     return {
         "timestamp": ts,
         "modelId": model,
-        "identity": {"arn": f"arn:aws:sts::123:assumed-role/agg-authenticated/{user}"},
+        "identity": {"arn": f"arn:aws:sts::123:assumed-role/agate-authenticated/{user}"},
         "input": {"inputTokenCount": tokens_in},
         "output": {"outputTokenCount": tokens_out},
-        "requestMetadata": {"agg:tenant": tenant},
+        "requestMetadata": {"agate:tenant": tenant},
     }
 
 
@@ -66,7 +66,7 @@ def _rec(user, tenant, tokens_in, tokens_out, ts="2026-06-12T18:00:00Z", model="
 def wired(monkeypatch):
     table = _FakeTable()
     monkeypatch.setattr(meter, "_ddb", _FakeDdb(table))
-    monkeypatch.setattr(meter, "SPEND_TABLE", "agg-spend")
+    monkeypatch.setattr(meter, "SPEND_TABLE", "agate-spend")
     return table
 
 

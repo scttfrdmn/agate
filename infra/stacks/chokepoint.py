@@ -18,7 +18,7 @@ context so this stack stays deployable on its own.
 from __future__ import annotations
 
 import aws_cdk as cdk
-from agg.names import HANDLE
+from agate.names import HANDLE
 from aws_cdk import (
     Stack,
 )
@@ -50,16 +50,16 @@ class ChokepointStack(Stack):
             function_name=f"{HANDLE}-chokepoint",
             runtime=lambda_.Runtime.PYTHON_3_13,
             handler="chokepoint.handler.handler",
-            code=pip_bundled_code("agg", "chokepoint", "cost", "meter"),
+            code=pip_bundled_code("agate", "chokepoint", "cost", "meter"),
             timeout=cdk.Duration.seconds(30),
             memory_size=256,
             environment={
-                "AGG_SPEND_TABLE": spend_table,
-                "AGG_BUDGET_TABLE": budget_table,
-                "AGG_AUTHENTICATED_ROLE_ARN": auth_role_arn,
-                "AGG_DEFAULT_MAX_TOKENS": "1024",
+                "AGATE_SPEND_TABLE": spend_table,
+                "AGATE_BUDGET_TABLE": budget_table,
+                "AGATE_AUTHENTICATED_ROLE_ARN": auth_role_arn,
+                "AGATE_DEFAULT_MAX_TOKENS": "1024",
             },
-            description="agg Tier 1 choke point — exact pre-call budget enforcement (optional)",
+            description="agate Tier 1 choke point — exact pre-call budget enforcement (optional)",
         )
 
         # Read authoritative spend + the server-side budget; assume the user's scoped role.

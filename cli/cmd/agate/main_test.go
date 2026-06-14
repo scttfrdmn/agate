@@ -28,7 +28,7 @@ func TestDispatchHelp(t *testing.T) {
 
 func TestTenantListOnMissingConfigIsEmptyOK(t *testing.T) {
 	// A missing config is treated as empty (not an error): `tenant list` exits 0.
-	if got := dispatch([]string{"tenant", "--config", t.TempDir() + "/.agg.json", "list"}); got != 0 {
+	if got := dispatch([]string{"tenant", "--config", t.TempDir() + "/.agate.json", "list"}); got != 0 {
 		t.Fatalf("tenant list exit = %d, want 0", got)
 	}
 }
@@ -41,7 +41,7 @@ func TestTenantUsageWithoutSubcommand(t *testing.T) {
 
 func TestDeployWithoutTenantsFails(t *testing.T) {
 	// Plan-only, but no tenants in a fresh config -> error exit 1 (never deploys).
-	if got := dispatch([]string{"deploy", "--config", t.TempDir() + "/.agg.json"}); got != 1 {
+	if got := dispatch([]string{"deploy", "--config", t.TempDir() + "/.agate.json"}); got != 1 {
 		t.Fatalf("deploy with no tenants exit = %d, want 1", got)
 	}
 }

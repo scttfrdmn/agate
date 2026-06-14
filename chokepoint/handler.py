@@ -28,16 +28,16 @@ import os
 from typing import Any
 
 import boto3
-from agg.jwt_verify import TokenError, config_from_env, verify_token
-from agg.tags import ClaimsError, claims_to_tags
+from agate.jwt_verify import TokenError, config_from_env, verify_token
+from agate.tags import ClaimsError, claims_to_tags
 from cost import evaluate_precall
 from cost.pricing import default_pricebook
 from meter import read_spend_item
 
-SPEND_TABLE = os.environ.get("AGG_SPEND_TABLE", "")
-BUDGET_TABLE = os.environ.get("AGG_BUDGET_TABLE", "")
-AUTHENTICATED_ROLE_ARN = os.environ.get("AGG_AUTHENTICATED_ROLE_ARN", "")
-DEFAULT_MAX_TOKENS = int(os.environ.get("AGG_DEFAULT_MAX_TOKENS", "1024"))
+SPEND_TABLE = os.environ.get("AGATE_SPEND_TABLE", "")
+BUDGET_TABLE = os.environ.get("AGATE_BUDGET_TABLE", "")
+AUTHENTICATED_ROLE_ARN = os.environ.get("AGATE_AUTHENTICATED_ROLE_ARN", "")
+DEFAULT_MAX_TOKENS = int(os.environ.get("AGATE_DEFAULT_MAX_TOKENS", "1024"))
 
 _ddb = boto3.resource("dynamodb")
 _sts = boto3.client("sts")
@@ -79,7 +79,7 @@ def read_spend(tenant: str, user: str, period: str) -> float:
 
 
 def assume_user_role(tags, user: str) -> Any:
-    """Assume the authenticated role narrowed by the VERIFIED agg: session tags
+    """Assume the authenticated role narrowed by the VERIFIED agate: session tags
     (the SessionTags object from claims_to_tags), returning a scoped Bedrock client.
 
     The tags are derived from the validated IdP token, not from request fields, so
@@ -87,7 +87,7 @@ def assume_user_role(tags, user: str) -> Any:
     point cannot widen access."""
     resp = _sts.assume_role(
         RoleArn=AUTHENTICATED_ROLE_ARN,
-        RoleSessionName=(user or "agg-user")[:64],
+        RoleSessionName=(user or "agate-user")[:64],
         Tags=tags.to_sts_tags(),
         TransitiveTagKeys=[t["Key"] for t in tags.to_sts_tags()],
         DurationSeconds=900,
@@ -124,7 +124,7 @@ def process(req: dict, *, period: str | None = None) -> dict:
     """Derive identity from the IdP token, gate on server-side budget, then (on
     allow) invoke the scoped Converse. Identity/budget are NEVER from the body
     (SEC-1) — the body carries only idp_token + model/messages/max_tokens."""
-    # Identity: validate the token and derive the agg: tags the SAME way the broker
+    # Identity: validate the token and derive the agate: tags the SAME way the broker
     # does. tenant/user/tier/courses come from here, never from request fields.
     claims = validate_idp_token(req.get("idp_token", ""))
     try:
@@ -132,7 +132,7 @@ def process(req: dict, *, period: str | None = None) -> dict:
     except ClaimsError as exc:
         raise ChokepointError(f"cannot scope session: {exc}") from exc
     tenant = tags.tenant
-    user = str(claims.get("sub") or claims.get("subject") or "agg-user")
+    user = str(claims.get("sub") or claims.get("subject") or "agate-user")
     period = period or _period_now()
 
     model_id = req.get("model")

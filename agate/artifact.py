@@ -8,7 +8,7 @@ everything needed to cite or re-run the work.
 
 Pure and AWS-free. The deployed agent serialises server-side and stores the JSON
 (then emits an `artifact` event with its URL); the browser's "save run" mirrors
-this with the same shape. The `Divergence` model is reused from agg.panel so the
+this with the same shape. The `Divergence` model is reused from agate.panel so the
 artifact's divergence field has one source of truth.
 """
 
@@ -18,7 +18,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agg.panel.schema import Divergence
+from agate.panel.schema import Divergence
 
 CitationModality = Literal["text", "image", "table", "audio", "video"]
 

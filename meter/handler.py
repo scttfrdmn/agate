@@ -27,7 +27,7 @@ from meter.parse import (
     spend_rollup_key,
 )
 
-SPEND_TABLE = os.environ.get("AGG_SPEND_TABLE", "")
+SPEND_TABLE = os.environ.get("AGATE_SPEND_TABLE", "")
 
 _s3 = boto3.client("s3")
 _ddb = boto3.resource("dynamodb")

@@ -1,7 +1,7 @@
 // Mode router — SPA side (§10.2.2). The default mode comes from the server-side
 // routing call (a `route` event); the user can force a mode and the override wins.
 // This module is the pure mapping + precedence the UI uses; it makes no model call
-// (the cheap routing call is server-side, agg/router.py).
+// (the cheap routing call is server-side, agate/router.py).
 
 import type { RouteMode } from "./events/protocol";
 
@@ -29,7 +29,7 @@ export function routeToUi(mode: RouteMode): UiMode {
 }
 
 // Precedence: an explicit user override wins over the routed default; an absent or
-// invalid override keeps the routed mode. Mirrors agg/router.resolve_mode.
+// invalid override keeps the routed mode. Mirrors agate/router.resolve_mode.
 export function resolveMode(routed: RouteMode, override?: UiMode | null): RouteMode {
   if (override && override in UI_TO_ROUTE) return UI_TO_ROUTE[override];
   return routed;

@@ -3,7 +3,7 @@
 // A *run* is an ordered stream of typed events that the SPA renders live and can
 // serialise into a reproducible artifact (§10.2.8). The contract is
 // transport-agnostic: the same event shapes serve a WebSocket to the browser, a
-// CLI runner, and a test collector. The Python orchestration (agg/panel) emits
+// CLI runner, and a test collector. The Python orchestration (agate/panel) emits
 // these; the SPA renders them; tests collect them.
 //
 // New in this model (additive, backward-compatible): the `pane` field on `model`,
@@ -16,7 +16,7 @@ export type RouteMode = "SYNTHESIS" | "DEBATE" | "ANALYSIS";
 
 export type CitationModality = "text" | "image" | "table" | "audio" | "video";
 
-// --- Adjudicator / divergence (mirrors agg/panel/schema.py and §10.2.5) ------
+// --- Adjudicator / divergence (mirrors agate/panel/schema.py and §10.2.5) ------
 
 export type Stance = "supports" | "disputes" | "partial" | "silent";
 export type ClaimKind = "agreement" | "disagreement" | "unsupported";

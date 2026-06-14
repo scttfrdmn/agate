@@ -5,8 +5,8 @@
 *.pem
 *.key
 aws-exports.json
-.agg.json
-!.agg.example.json
+.agate.json
+!.agate.example.json
 
 # --- Python / uv ---
 .venv/
@@ -36,7 +36,7 @@ web/dist/
 .vite/
 
 # --- Go ---
-cli/agg
+cli/agate
 cli/bin/
 *.test
 *.out

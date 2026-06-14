@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agg.entitlements import TIERS, models_for_tier
+from agate.entitlements import TIERS, models_for_tier
 from policy.cedar import (
     call_tool_policy,
     forbid_cross_tenant,

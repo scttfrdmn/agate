@@ -79,7 +79,7 @@ func TestLoadMissingFileReturnsDefault(t *testing.T) {
 }
 
 func TestSaveLoadRoundTrip(t *testing.T) {
-	path := filepath.Join(t.TempDir(), ".agg.json")
+	path := filepath.Join(t.TempDir(), ".agate.json")
 	c := New()
 	_, _ = c.AddTenant("chem")
 	_ = c.SetBudget("chem", 250, "2026-fall")

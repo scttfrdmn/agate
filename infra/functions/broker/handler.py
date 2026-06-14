@@ -4,8 +4,8 @@ Per-request, scales to zero (Lambda) — no clock. The flow:
 
   1. Receive the campus-IdP token (OIDC id_token / SAML assertion) from the SPA.
   2. Validate it against the IdP's published keys (JWKS for OIDC).
-  3. Run the PURE `claims_to_tags()` to derive the four `agg:` session tags,
-     INCLUDING the derived `agg:tier` (which Cognito principal-tag mapping cannot
+  3. Run the PURE `claims_to_tags()` to derive the four `agate:` session tags,
+     INCLUDING the derived `agate:tier` (which Cognito principal-tag mapping cannot
      compute on its own — this is why the broker exists).
   4. Call `sts:AssumeRole` on the authenticated role, passing the computed tags
      as session `Tags`. The returned credentials are the role *narrowed by those
@@ -27,12 +27,12 @@ import json
 import os
 
 import boto3
-from agg.jwt_verify import TokenError, config_from_env, verify_token
-from agg.tags import ClaimsError, claims_to_tags
+from agate.jwt_verify import TokenError, config_from_env, verify_token
+from agate.tags import ClaimsError, claims_to_tags
 
 # Resolved at deploy time (set as Lambda env vars by the identity stack).
-AUTHENTICATED_ROLE_ARN = os.environ.get("AGG_AUTHENTICATED_ROLE_ARN", "")
-SESSION_DURATION_SECONDS = int(os.environ.get("AGG_SESSION_DURATION_SECONDS", "900"))  # 15 min
+AUTHENTICATED_ROLE_ARN = os.environ.get("AGATE_AUTHENTICATED_ROLE_ARN", "")
+SESSION_DURATION_SECONDS = int(os.environ.get("AGATE_SESSION_DURATION_SECONDS", "900"))  # 15 min
 
 _sts = boto3.client("sts")
 
@@ -44,7 +44,7 @@ class BrokerError(Exception):
 def validate_idp_token(token: str) -> dict[str, object]:
     """Verify the campus-IdP token (real RS256/JWKS) and return its claims.
 
-    Uses the shared `agg.jwt_verify` — signature against the IdP JWKS, plus
+    Uses the shared `agate.jwt_verify` — signature against the IdP JWKS, plus
     iss/aud/exp/sub. The OIDC config (JWKS URL / issuer / audience) comes from env
     set at deploy time. If the verifier is unconfigured or the token fails any
     check, this raises BrokerError and the broker vends NO credentials (fail closed).
@@ -102,8 +102,8 @@ def _safe_session_name(subject: str) -> str:
     """STS RoleSessionName: <=64 chars, [\\w+=,.@-]."""
     import re
 
-    name = re.sub(r"[^\w+=,.@-]", "-", subject or "agg-user")
-    return name[:64] or "agg-user"
+    name = re.sub(r"[^\w+=,.@-]", "-", subject or "agate-user")
+    return name[:64] or "agate-user"
 
 
 def handler(event: dict, context: object) -> dict:
@@ -118,7 +118,7 @@ def handler(event: dict, context: object) -> dict:
 
         token = payload.get("idp_token", "")
         claims = validate_idp_token(token)
-        subject = str(claims.get("sub") or claims.get("subject") or "agg-user")
+        subject = str(claims.get("sub") or claims.get("subject") or "agate-user")
         result = vend_credentials(claims, subject=subject)
         return _resp(200, result)
     except BrokerError as exc:

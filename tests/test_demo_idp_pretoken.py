@@ -49,7 +49,7 @@ def test_empty_attributes_yield_empty_overrides():
 
 def test_mapped_claims_feed_claims_to_tags():
     # End-to-end: the mapped claims are exactly what claims_to_tags consumes.
-    from agg.tags import claims_to_tags
+    from agate.tags import claims_to_tags
 
     ev = pretoken.handler(
         _event(

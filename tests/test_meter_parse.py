@@ -13,10 +13,10 @@ def record(**over):
     rec = {
         "timestamp": "2026-06-12T18:00:00Z",
         "modelId": "oss",
-        "identity": {"arn": "arn:aws:sts::123:assumed-role/agg-authenticated/student-7"},
+        "identity": {"arn": "arn:aws:sts::123:assumed-role/agate-authenticated/student-7"},
         "input": {"inputTokenCount": 1000},
         "output": {"outputTokenCount": 500},
-        "requestMetadata": {"agg:tenant": "chem"},
+        "requestMetadata": {"agate:tenant": "chem"},
     }
     rec.update(over)
     return rec

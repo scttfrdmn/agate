@@ -7,8 +7,8 @@ This module turns one record into a `SpendRecord` — the dollars (via the share
 
 Pure and AWS-free. The tenant/user come from the caller's assumed-role session: the
 broker sets RoleSessionName to the federated subject and the session carries the
-`agg:tenant` tag, both of which appear in the record's `identity.arn`
-(`.../agg-authenticated/<RoleSessionName>`). The period is derived from the
+`agate:tenant` tag, both of which appear in the record's `identity.arn`
+(`.../agate-authenticated/<RoleSessionName>`). The period is derived from the
 record timestamp (year-month) so the key rolls over automatically.
 """
 
@@ -53,7 +53,7 @@ def _identity(record: dict) -> tuple[str, str]:
     """Derive (user, tenant_hint) from the record's identity ARN.
 
     The RoleSessionName (set by the broker to the federated subject) is the user.
-    The tenant is carried as the `agg:tenant` session tag, surfaced in the record's
+    The tenant is carried as the `agate:tenant` session tag, surfaced in the record's
     requestMetadata when present; otherwise it must be supplied out-of-band.
     """
     arn = (record.get("identity") or {}).get("arn", "")
@@ -71,8 +71,8 @@ def parse_invocation_record(
     """Translate one Bedrock invocation-log record into a priced `SpendRecord`.
 
     `tenant` may be passed explicitly (e.g. from the record's `requestMetadata`
-    carrying the `agg:tenant` tag, which the caller extracts); if absent we read
-    `record['requestMetadata']['agg:tenant']`, falling back to "unknown". Raises
+    carrying the `agate:tenant` tag, which the caller extracts); if absent we read
+    `record['requestMetadata']['agate:tenant']`, falling back to "unknown". Raises
     RecordError if token counts or timestamp are missing — such a record cannot be
     metered and should be skipped, not guessed.
     """
@@ -85,7 +85,8 @@ def parse_invocation_record(
     period = _period_from_timestamp(record.get("timestamp", ""))
     user, _arn = _identity(record)
 
-    resolved_tenant = tenant or (record.get("requestMetadata") or {}).get("agg:tenant") or "unknown"
+    metadata = record.get("requestMetadata") or {}
+    resolved_tenant = tenant or metadata.get("agate:tenant") or "unknown"
 
     inp = record.get("input") or {}
     out = record.get("output") or {}

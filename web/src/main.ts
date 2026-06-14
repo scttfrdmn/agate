@@ -34,7 +34,7 @@ function idpToken(): string {
 function render(app: HTMLElement): void {
   app.innerHTML = `
     <main style="max-width:64rem;margin:1.5rem auto;font-family:system-ui">
-      <h1 style="margin:0">agg</h1>
+      <h1 style="margin:0">agate</h1>
       <p id="scope" style="color:#666;margin:.25rem 0 1rem"></p>
       <form id="f" style="display:flex;gap:.5rem;align-items:center">
         <select id="mode" style="padding:.5rem">
@@ -124,7 +124,7 @@ async function runAsk(
       const tenant = creds.scope?.tenant;
       if (!tenant) return [];
       const retriever = new Retriever(
-        { region: config.region, vectorBucketName: config.vectorBucketName, indexName: `agg-${tenant}` },
+        { region: config.region, vectorBucketName: config.vectorBucketName, indexName: `agate-${tenant}` },
         () => creds.get(),
       );
       return withContext([], await retriever.retrieve(query));

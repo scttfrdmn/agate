@@ -7,7 +7,7 @@ A minimal HTTP server honouring the AgentCore Runtime invocation protocol:
 
 Standard-library only (no web framework — CLAUDE.md "no OSS middleware in core").
 The Runtime invokes this; the per-session microVM scales to zero between calls, so
-there is no idle clock. The orchestration is the pure `agg.agent_dispatch.dispatch`
+there is no idle clock. The orchestration is the pure `agate.agent_dispatch.dispatch`
 driven by the Bedrock-backed adapters in `agent.backends`.
 """
 
@@ -17,10 +17,10 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from agg.agent_dispatch import InvocationError, dispatch
-from agg.entitlements import DEFAULT_TIER, models_for_tier
-from agg.jwt_verify import TokenError, config_from_env, verify_token
-from agg.tags import ClaimsError, claims_to_tags
+from agate.agent_dispatch import InvocationError, dispatch
+from agate.entitlements import DEFAULT_TIER, models_for_tier
+from agate.jwt_verify import TokenError, config_from_env, verify_token
+from agate.tags import ClaimsError, claims_to_tags
 from cost import CostMeter
 
 from agent.backends import (
@@ -29,8 +29,8 @@ from agent.backends import (
     decode_payload,
 )
 
-REGION = os.environ.get("AGG_REGION", "us-east-1")
-CODE_INTERPRETER_ID = os.environ.get("AGG_CODE_INTERPRETER_ID", "")
+REGION = os.environ.get("AGATE_REGION", "us-east-1")
+CODE_INTERPRETER_ID = os.environ.get("AGATE_CODE_INTERPRETER_ID", "")
 PORT = int(os.environ.get("PORT", "8080"))
 
 
@@ -38,8 +38,8 @@ def _verified_tier(payload: dict) -> str:
     """Derive the caller's tier from the VERIFIED IdP token in the payload (SEC-4b).
 
     The tier is NOT taken from a request header or a payload field — it is the
-    `agg:tier` derived from the token's claims after real RS256/JWKS verification
-    (shared agg.jwt_verify), the same path the broker and choke point use. Any
+    `agate:tier` derived from the token's claims after real RS256/JWKS verification
+    (shared agate.jwt_verify), the same path the broker and choke point use. Any
     verification failure or missing token falls back to the cheapest tier (oss) —
     fail closed, never unrestricted.
     """

@@ -23,8 +23,8 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from agg.contracts import Backend, CostMeter, Emit
-from agg.panel.schema import Divergence, strip_fences
+from agate.contracts import Backend, CostMeter, Emit
+from agate.panel.schema import Divergence, strip_fences
 
 __all__ = ["Backend", "CostMeter", "run_panel"]
 

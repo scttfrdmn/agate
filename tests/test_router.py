@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from agg.router import (
+from agate.router import (
     DEFAULT_MODE,
     ROUTER_SYSTEM,
     classify_mode,

@@ -54,7 +54,7 @@ def wired(monkeypatch):
     monkeypatch.setattr(cp, "assume_user_role", fake_assume)
     monkeypatch.setattr(cp, "read_spend", lambda tenant, user, period: w.spend)
     monkeypatch.setattr(cp, "lookup_budget", lambda tenant, user, period: w.budget)
-    monkeypatch.setattr(cp, "AUTHENTICATED_ROLE_ARN", "arn:aws:iam::123:role/agg-authenticated")
+    monkeypatch.setattr(cp, "AUTHENTICATED_ROLE_ARN", "arn:aws:iam::123:role/agate-authenticated")
 
     # Simulate a VERIFIED token: decode the JSON the test passes as `idp_token`.
     # Real signature/JWKS verification is covered by tests/test_jwt_verify.py.
@@ -97,8 +97,8 @@ def test_allows_and_invokes_when_within_budget(wired):
     assert wired.calls == 1
     # the session was scoped by the TOKEN-derived tags
     sent = {t["Key"]: t["Value"] for t in wired.assumed_tags.to_sts_tags()}
-    assert sent["agg:tenant"] == "chem"
-    assert sent["agg:tier"] == "oss"
+    assert sent["agate:tenant"] == "chem"
+    assert sent["agate:tier"] == "oss"
 
 
 def test_rejects_pre_call_when_over_budget(wired):
@@ -134,8 +134,8 @@ def test_body_cannot_forge_tenant_or_tier(wired):
     assert out["text"] == "answer"
     sent = {t["Key"]: t["Value"] for t in wired.assumed_tags.to_sts_tags()}
     # tenant/tier come from the TOKEN (chem/oss), not the body (law/frontier)
-    assert sent["agg:tenant"] == "chem"
-    assert sent["agg:tier"] == "oss"
+    assert sent["agate:tenant"] == "chem"
+    assert sent["agate:tier"] == "oss"
 
 
 def test_body_budget_field_is_ignored(wired):

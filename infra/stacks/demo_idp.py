@@ -4,7 +4,7 @@ Real login requires an OIDC IdP whose JWKS the broker/agent verify (SEC-4). For 
 demo without a campus IdP, this stack stands up a self-contained Cognito User Pool
 that issues real RS256 JWTs. A pre-token trigger maps the demo user's
 `custom:affiliation` / `custom:tenant` / `custom:courses` / `custom:grant`
-attributes to the top-level `agg` claim names the gateway consumes — so the demo
+attributes to the top-level `agate` claim names the gateway consumes — so the demo
 token scopes exactly like a campus token, with no gateway changes.
 
 This is explicitly a DEMO convenience (design §5 says hook into the campus IdP, not
@@ -18,7 +18,7 @@ Outputs the issuer + JWKS URL + audience to wire into the broker/agent OIDC conf
 from __future__ import annotations
 
 import aws_cdk as cdk
-from agg.names import HANDLE
+from agate.names import HANDLE
 from aws_cdk import (
     Stack,
 )
@@ -36,7 +36,7 @@ class DemoIdpStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        # Pre-token trigger: surface custom:* attrs as agg claim names.
+        # Pre-token trigger: surface custom:* attrs as agate claim names.
         pretoken_fn = lambda_.Function(
             self,
             "PreToken",
@@ -45,10 +45,10 @@ class DemoIdpStack(Stack):
             handler="infra.functions.demo_idp.pretoken.handler",
             code=lambda_.Code.from_asset(".", exclude=LAMBDA_ASSET_EXCLUDES),
             timeout=cdk.Duration.seconds(5),
-            description="agg demo IdP — map custom:* attrs to agg claim names",
+            description="agate demo IdP — map custom:* attrs to agate claim names",
         )
 
-        # Custom attributes carrying the agg scope. Mutable so a demo operator can
+        # Custom attributes carrying the agate scope. Mutable so a demo operator can
         # flip a user student<->researcher to show tiering live.
         def _attr() -> cognito.StringAttribute:
             return cognito.StringAttribute(mutable=True, max_len=256, min_len=0)

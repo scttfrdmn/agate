@@ -29,9 +29,9 @@ func TestDeployPlanBuildsCdkCommand(t *testing.T) {
 }
 
 func TestDeployPlanNamedStacks(t *testing.T) {
-	p, _ := DeployPlan(cfg("chem"), []string{"agg-identity", "agg-data"})
+	p, _ := DeployPlan(cfg("chem"), []string{"agate-identity", "agate-data"})
 	got := p.String()
-	if !strings.Contains(got, "agg-identity agg-data") {
+	if !strings.Contains(got, "agate-identity agate-data") {
 		t.Fatalf("named stacks not in plan: %q", got)
 	}
 	if strings.Contains(got, "--all") {
@@ -47,17 +47,17 @@ func TestDeployPlanRequiresTenants(t *testing.T) {
 
 func TestIngestPlanTargetsTenantPrefix(t *testing.T) {
 	c := cfg("chem")
-	p, target, err := IngestPlan(c, "chem", "agg-docs-123-us-east-1", "/local/syllabus.pdf")
+	p, target, err := IngestPlan(c, "chem", "agate-docs-123-us-east-1", "/local/syllabus.pdf")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if target.Key != "chem/syllabus.pdf" {
 		t.Fatalf("key=%q want chem/syllabus.pdf", target.Key)
 	}
-	if target.S3URI() != "s3://agg-docs-123-us-east-1/chem/syllabus.pdf" {
+	if target.S3URI() != "s3://agate-docs-123-us-east-1/chem/syllabus.pdf" {
 		t.Fatalf("uri=%q", target.S3URI())
 	}
-	if !strings.Contains(p.String(), "aws s3 cp /local/syllabus.pdf s3://agg-docs-123-us-east-1/chem/syllabus.pdf") {
+	if !strings.Contains(p.String(), "aws s3 cp /local/syllabus.pdf s3://agate-docs-123-us-east-1/chem/syllabus.pdf") {
 		t.Fatalf("unexpected plan: %q", p.String())
 	}
 }

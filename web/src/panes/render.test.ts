@@ -34,23 +34,23 @@ describe("renderPanel", () => {
   it("renders one column per pane plus a reconciliation column", () => {
     const target = host();
     renderPanel(runStateFrom(events), target);
-    const panes = target.querySelectorAll(".agg-pane");
+    const panes = target.querySelectorAll(".agate-pane");
     expect(panes).toHaveLength(2);
-    expect(target.querySelector('[data-pane="frontier"] .agg-pane-body')?.textContent).toBe("answer A");
-    expect(target.querySelector(".agg-divergence")).not.toBeNull();
+    expect(target.querySelector('[data-pane="frontier"] .agate-pane-body')?.textContent).toBe("answer A");
+    expect(target.querySelector(".agate-divergence")).not.toBeNull();
   });
 
   it("renders a disagreement claim with verify flag and side-by-side positions", () => {
     const target = host();
     renderPanel(runStateFrom(events), target);
-    const claim = target.querySelector(".agg-claim-disagreement")!;
+    const claim = target.querySelector(".agate-claim-disagreement")!;
     expect(claim).not.toBeNull();
     expect(claim.getAttribute("data-verify")).toBe("true");
     const positions = claim.querySelectorAll("li");
     expect(positions).toHaveLength(2);
     expect(positions[0].textContent).toContain("frontier: partial");
     expect(positions[1].textContent).toContain("open-weight-70b: supports");
-    expect(claim.querySelector(".agg-claim-refs")?.textContent).toContain("DOC1");
+    expect(claim.querySelector(".agate-claim-refs")?.textContent).toContain("DOC1");
   });
 });
 
@@ -63,10 +63,10 @@ describe("renderCells (Analyze)", () => {
     let ran: string | undefined;
     renderCells(runStateFrom(events).cells, target, { onRun: (s) => (ran = s) });
 
-    const editor = target.querySelector(".agg-cell-source") as HTMLTextAreaElement;
+    const editor = target.querySelector(".agate-cell-source") as HTMLTextAreaElement;
     expect(editor.value).toBe("print(1)");
     editor.value = "print(2)"; // user edits
-    (target.querySelector(".agg-cell-run") as HTMLButtonElement).click();
+    (target.querySelector(".agate-cell-run") as HTMLButtonElement).click();
     expect(ran).toBe("print(2)");
   });
 
@@ -77,7 +77,7 @@ describe("renderCells (Analyze)", () => {
     ];
     const target = host();
     renderCells(runStateFrom(events).cells, target);
-    const img = target.querySelector(".agg-cell-chart") as HTMLImageElement;
+    const img = target.querySelector(".agate-cell-chart") as HTMLImageElement;
     expect(img.getAttribute("src")).toBe("data:image/png;base64,QUJD");
   });
 });

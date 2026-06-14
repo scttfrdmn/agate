@@ -1,8 +1,8 @@
 """Embed-on-upload ingest Lambda (design §4, §12 Phase 3).
 
-Triggered by an S3 ObjectCreated event on the `agg-docs` bucket. For each object:
+Triggered by an S3 ObjectCreated event on the `agate-docs` bucket. For each object:
   1. derive the tenant from the key prefix (fail closed if absent),
-  2. read + chunk the document (pure logic in agg.rag),
+  2. read + chunk the document (pure logic in agate.rag),
   3. embed each chunk with Bedrock Titan embeddings,
   4. PutVectors into that tenant's S3 Vectors index.
 
@@ -21,14 +21,14 @@ import os
 from urllib.parse import unquote_plus
 
 import boto3
-from agg.rag import build_chunk_records, index_name_for_tenant, tenant_from_s3_key
+from agate.rag import build_chunk_records, index_name_for_tenant, tenant_from_s3_key
 
 # Embedding contract — MUST match infra/stacks/data.py (EMBED_MODEL_ID/DIMENSION).
-EMBED_MODEL_ID = os.environ.get("AGG_EMBED_MODEL_ID", "amazon.titan-embed-text-v2:0")
-EMBED_DIMENSION = int(os.environ.get("AGG_EMBED_DIMENSION", "1024"))
-VECTOR_BUCKET = os.environ.get("AGG_VECTOR_BUCKET", "")
+EMBED_MODEL_ID = os.environ.get("AGATE_EMBED_MODEL_ID", "amazon.titan-embed-text-v2:0")
+EMBED_DIMENSION = int(os.environ.get("AGATE_EMBED_DIMENSION", "1024"))
+VECTOR_BUCKET = os.environ.get("AGATE_VECTOR_BUCKET", "")
 # Max bytes we'll pull into memory for a single object (keeps the Lambda bounded).
-MAX_OBJECT_BYTES = int(os.environ.get("AGG_MAX_OBJECT_BYTES", str(5 * 1024 * 1024)))
+MAX_OBJECT_BYTES = int(os.environ.get("AGATE_MAX_OBJECT_BYTES", str(5 * 1024 * 1024)))
 
 _s3 = boto3.client("s3")
 _bedrock = boto3.client("bedrock-runtime")

@@ -84,9 +84,9 @@ def verify_token(
         raise TokenError(f"token verification failed: {exc}") from exc
 
 
-def config_from_env(prefix: str = "AGG") -> dict[str, str]:
+def config_from_env(prefix: str = "AGATE") -> dict[str, str]:
     """Read the verifier config (JWKS URL / issuer / audience) from env vars set at
-    deploy time, e.g. AGG_OIDC_JWKS_URL / AGG_OIDC_ISSUER / AGG_OIDC_AUDIENCE.
+    deploy time, e.g. AGATE_OIDC_JWKS_URL / AGATE_OIDC_ISSUER / AGATE_OIDC_AUDIENCE.
     Missing values are returned empty; verify_token then fails closed."""
     return {
         "jwks_url": os.environ.get(f"{prefix}_OIDC_JWKS_URL", ""),

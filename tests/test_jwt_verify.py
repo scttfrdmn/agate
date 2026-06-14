@@ -7,11 +7,11 @@ import time
 
 import jwt
 import pytest
-from agg.jwt_verify import TokenError, verify_token
+from agate.jwt_verify import TokenError, verify_token
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 ISSUER = "https://idp.example.edu"
-AUDIENCE = "agg-app"
+AUDIENCE = "agate-app"
 JWKS = "https://idp.example.edu/.well-known/jwks.json"
 
 

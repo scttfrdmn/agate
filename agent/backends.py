@@ -1,9 +1,9 @@
 """Bedrock-backed implementations of the orchestration interfaces (design §13.7).
 
 These adapt the gateway's `Backend` / `CodeRunner` / `CostMeter` protocols (defined
-in agg.panel/agg.analyze) to real AWS calls, for use inside the AgentCore Runtime
+in agate.panel/agate.analyze) to real AWS calls, for use inside the AgentCore Runtime
 container. They are thin I/O shims; all the logic they drive lives in the pure,
-fakes-tested `agg` orchestration. Kept out of `agg/` so the pure suite stays
+fakes-tested `agate` orchestration. Kept out of `agate/` so the pure suite stays
 AWS-free.
 
 The `tier` a roster member names is resolved to a concrete Bedrock model id via the
@@ -18,7 +18,7 @@ import time
 from typing import Any
 
 import boto3
-from agg.analyze.schema import parse_invoke_result
+from agate.analyze.schema import parse_invoke_result
 
 # Model id is carried per call as the `tier` value (the roster maps a logical tier
 # label to a concrete Bedrock model id at config time). The adapter treats `tier`

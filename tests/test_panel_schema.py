@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from agg.panel.schema import Divergence, strip_fences
+from agate.panel.schema import Divergence, strip_fences
 from pydantic import ValidationError
 
 # The §10.2.5 worked example, with neutral pane labels (repo convention).

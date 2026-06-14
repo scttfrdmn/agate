@@ -1,5 +1,5 @@
-// Package config is the pure, side-effect-light model behind the agg CLI's
-// tenant and budget commands. The on-disk form (.agg.json) is the operator's
+// Package config is the pure, side-effect-light model behind the agate CLI's
+// tenant and budget commands. The on-disk form (.agate.json) is the operator's
 // declaration of which tenants exist and their per-period budgets; the deploy
 // command turns the tenant set into `cdk -c tenants=...`, and the budgets feed
 // the soft-cap the broker reads (design §7.1). Load/Save touch the filesystem;
@@ -15,9 +15,9 @@ import (
 )
 
 // DefaultPath is the config file the CLI reads/writes when --config is unset.
-const DefaultPath = ".agg.json"
+const DefaultPath = ".agate.json"
 
-// tenantID must match the agg:tenant tag charset (the ABAC isolation key); keep
+// tenantID must match the agate:tenant tag charset (the ABAC isolation key); keep
 // it in lockstep with the Python claims_to_tags sanitiser.
 var tenantID = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 

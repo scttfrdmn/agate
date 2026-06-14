@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from agg.entitlements import (
+from agate.entitlements import (
     TIER_MODELS,
     derive_tier,
     foundation_model_arn,
@@ -50,7 +50,7 @@ def test_foundation_vs_inference_profile_arn():
 def test_inference_profile_needs_profile_and_underlying_fm_arns():
     # Live finding (2026-06-12): invoking a cross-region inference profile requires
     # InvokeModel on BOTH the profile ARN AND the underlying foundation-model ARN.
-    from agg.entitlements import model_resource_arns
+    from agate.entitlements import model_resource_arns
 
     arns = model_resource_arns(
         "us.anthropic.claude-opus-4-1-20250805-v1:0", region="us-east-1", account="123"
@@ -64,7 +64,7 @@ def test_inference_profile_needs_profile_and_underlying_fm_arns():
 
 
 def test_plain_foundation_model_needs_only_its_own_arn():
-    from agg.entitlements import model_resource_arns
+    from agate.entitlements import model_resource_arns
 
     arns = model_resource_arns("openai.gpt-oss-20b-1:0", region="us-east-1")
     assert arns == ["arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-oss-20b-1:0"]

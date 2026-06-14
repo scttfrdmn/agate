@@ -1,14 +1,14 @@
 """Shared Lambda-asset packaging config.
 
 Several stacks bundle the repo root as a Lambda asset (the broker, ingest, LTI,
-chokepoint functions all ship the pure `agg`/`policy` packages plus their handler).
+chokepoint functions all ship the pure `agate`/`policy` packages plus their handler).
 They MUST exclude build/cache output — most importantly `cdk.out`, which lives at
 the repo root and, if included, recursively copies the asset into itself until the
 path length blows the filesystem limit. Keep the exclude list here so every stack
 shares one correct definition.
 
 `pip_bundled_code()` additionally pip-installs runtime deps (e.g. PyJWT for the
-shared `agg.jwt_verify`) into the asset, via a Docker-free local bundler with a
+shared `agate.jwt_verify`) into the asset, via a Docker-free local bundler with a
 Docker-image fallback — so handlers that import third-party packages work at
 runtime. Centralised here so the broker/chokepoint/LTI bundlers can't drift.
 """
@@ -55,7 +55,7 @@ LAMBDA_ASSET_EXCLUDES: list[str] = [
 
 
 # Runtime requirements pip-installed into a bundled asset. Pinned to match the
-# project's pyproject (PyJWT[crypto] for agg.jwt_verify / lti.handler).
+# project's pyproject (PyJWT[crypto] for agate.jwt_verify / lti.handler).
 _PIP_REQUIREMENTS: list[str] = ["pyjwt[crypto]>=2.8"]
 
 
@@ -91,8 +91,8 @@ class _LocalPipBundler:
 
 def pip_bundled_code(*packages: str) -> lambda_.Code:
     """A Lambda Code asset that pip-installs the runtime deps (PyJWT) AND copies the
-    given source packages (e.g. "agg", "infra", "chokepoint"). Used by any handler
-    that imports agg.jwt_verify, so real JWT verification has its dependency at
+    given source packages (e.g. "agate", "infra", "chokepoint"). Used by any handler
+    that imports agate.jwt_verify, so real JWT verification has its dependency at
     runtime. Docker-free locally; Docker-image fallback in CI without pip."""
     bundle_cmd = (
         "set -e; pip install "

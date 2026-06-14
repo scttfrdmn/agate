@@ -1,7 +1,7 @@
 """Cognito pre-token-generation trigger for the demo IdP.
 
 Cognito stores custom attributes prefixed `custom:` and would emit them as
-`custom:affiliation` etc. in the id_token. The broker/agent consume the `agg`
+`custom:affiliation` etc. in the id_token. The broker/agent consume the `agate`
 claim names (`affiliation`, `tenant`, `courses`, `grant`) via `claims_to_tags`,
 so this trigger copies the demo user's custom attributes up to those top-level
 claim names. This makes the demo Cognito User Pool issue tokens the gateway

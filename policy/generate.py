@@ -3,9 +3,9 @@
 Two policies make up the authenticated role's effective scope (design §13.2/§13.3):
 
   * model-access  — `bedrock:Converse*` / `InvokeModel*` allowed only for the
-    model ARNs entitled to the session's `agg:tier`.
+    model ARNs entitled to the session's `agate:tier`.
   * data-scope    — `s3:GetObject` and the S3 Vectors query action allowed only
-    within the session's `agg:tenant` (the principal tag is the isolation key).
+    within the session's `agate:tenant` (the principal tag is the isolation key).
 
 Everything is deny-by-default: the role grants nothing except via these Allow
 statements, and an explicit Deny guards the data path against a missing tenant tag.
@@ -13,8 +13,8 @@ statements, and an explicit Deny guards the data path against a missing tenant t
 
 from __future__ import annotations
 
-from agg.entitlements import TIERS, model_arns_for_tier
-from agg.names import DOCS_BUCKET_PREFIX, tag_key
+from agate.entitlements import TIERS, model_arns_for_tier
+from agate.names import DOCS_BUCKET_PREFIX, tag_key
 
 BEDROCK_INVOKE_ACTIONS = [
     "bedrock:InvokeModel",
@@ -25,7 +25,7 @@ BEDROCK_INVOKE_ACTIONS = [
 
 
 def model_access_policy(region: str = "*", account: str = "") -> dict:
-    """One Allow per tier, gated on `agg:tier` == that tier.
+    """One Allow per tier, gated on `agate:tier` == that tier.
 
     Tiers are cumulative (model_arns_for_tier includes lower tiers), so a
     `frontier` session matches the frontier statement and gets the full set,
@@ -49,7 +49,7 @@ def model_access_policy(region: str = "*", account: str = "") -> dict:
 
 
 def data_scope_policy(bucket: str | None = None) -> dict:
-    """S3 + S3 Vectors reads scoped to `${aws:PrincipalTag/agg:tenant}`.
+    """S3 + S3 Vectors reads scoped to `${aws:PrincipalTag/agate:tenant}`.
 
     The principal tag is interpolated into the resource ARN, so the credential
     itself cannot read another tenant's prefix (security memo §6). A guard Deny

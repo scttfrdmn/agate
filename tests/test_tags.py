@@ -9,8 +9,8 @@ normalisation, tier derivation, tenant fail-closed, course sanitisation, and the
 from __future__ import annotations
 
 import pytest
-from agg.names import tag_key
-from agg.tags import (
+from agate.names import tag_key
+from agate.tags import (
     MAX_TAG_VALUE_LEN,
     ClaimsError,
     SessionTags,
@@ -139,9 +139,9 @@ def test_to_sts_tags_shape():
     assert by_key[tag_key("tenant")] == "kempner"
     assert by_key[tag_key("courses")] == "CS50,CS51"
     assert by_key[tag_key("tier")] == "frontier"
-    # exactly the four agg: tags, all namespaced
+    # exactly the four agate: tags, all namespaced
     assert len(sts) == 4
-    assert all(d["Key"].startswith("agg:") for d in sts)
+    assert all(d["Key"].startswith("agate:") for d in sts)
 
 
 def test_all_tag_values_within_aws_limit():

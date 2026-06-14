@@ -1,7 +1,7 @@
 {
   "app": "uv run python infra/app.py",
   "watch": {
-    "include": ["infra/**", "agg/**", "policy/**"],
+    "include": ["infra/**", "agate/**", "policy/**"],
     "exclude": ["**/__pycache__", "web", "cli", "docs", ".venv"]
   },
   "context": {

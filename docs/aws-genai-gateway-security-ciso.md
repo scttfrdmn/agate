@@ -5,13 +5,13 @@
 > officer. **Purpose:** justify the Tier 0 architecture — a static client that calls
 > Amazon Bedrock and Amazon S3 Vectors directly using short-lived, scoped credentials
 > — and preempt the objections a security review will (correctly) raise.
-> Project / repo / package: **`aws-genai-gateway`** (provisional, "for now"). Short handle / CLI: **`agg`**.
+> Project / repo / package: **`aws-genai-gateway`** (provisional, "for now"). Short handle / CLI: **`agate`**.
 
 ---
 
 ## 1. Executive summary
 
-`agg`'s default ("Tier 0") design has the user's browser call Amazon Bedrock and S3
+`agate`'s default ("Tier 0") design has the user's browser call Amazon Bedrock and S3
 Vectors **directly**, using temporary AWS credentials vended by Amazon Cognito after
 the user authenticates through the campus identity provider. There is **no proxy
 server** in the request path and **no long-lived secret** anywhere in the client.
@@ -41,7 +41,7 @@ conventional proxy design (§5).
 ## 2. Scope of this memo
 
 This covers **Tier 0** — browser-direct access — which is the default and the basis of
-`agg`'s cost and sovereignty properties. Two optional tiers exist for institutions with
+`agate`'s cost and sovereignty properties. Two optional tiers exist for institutions with
 stricter requirements (a server-side choke point for hard pre-spend budget cutoffs and
 centralized inspection; a managed gateway container). They reduce some residual risks
 below at the cost of standing infrastructure. This memo defends the *default*; the
@@ -82,7 +82,7 @@ The credentials in the browser are produced by this chain:
 2. **Cognito Identity Pool** validates the federated assertion and, server-side, mints
    **temporary STS credentials** for an authenticated IAM role.
 3. The role's effective permissions are **narrowed by session tags** derived from IdP
-   claims: `agg:affiliation`, `agg:tenant`, `agg:courses`, `agg:tier`.
+   claims: `agate:affiliation`, `agate:tenant`, `agate:courses`, `agate:tier`.
 4. The browser uses those creds (SigV4) to call only what the scope permits.
 
 Consequences a reviewer should verify:
@@ -108,7 +108,7 @@ read that user's own in-scope data. It is **not** an escalation, **not** cross-t
 The conventional "secure" pattern — a server-side proxy that holds AWS credentials and
 makes calls on behalf of all users — concentrates risk:
 
-| Property | Privileged proxy | `agg` Tier 0 (browser-direct) |
+| Property | Privileged proxy | `agate` Tier 0 (browser-direct) |
 |---|---|---|
 | Credential power | One credential able to act for **all** users/tenants | Each session holds only **one user's** minimal scope |
 | Value as a target | High — single point, total compromise | Low — no super-credential exists |
@@ -125,17 +125,17 @@ of concentrating it in one privileged service.
 ## 6. Tenant isolation (the FERPA-critical control)
 
 Cross-tenant data leakage — a CHEM-101 student reading PSYCH-200 records — is the
-nightmare case. In `agg` it is prevented **structurally, below the application**:
+nightmare case. In `agate` it is prevented **structurally, below the application**:
 
 - Each tenant's documents live under a dedicated S3 prefix; each tenant has its own
   S3 Vectors index with its **own customer-managed KMS key**.
-- The session's IAM scope permits S3/vector reads **only** for the `agg:tenant` /
-  `agg:courses` carried in its tags. Cross-tenant reads are **denied by the credential**.
+- The session's IAM scope permits S3/vector reads **only** for the `agate:tenant` /
+  `agate:courses` carried in its tags. Cross-tenant reads are **denied by the credential**.
 - Because isolation is enforced at the AWS authorization layer, **an application bug
   cannot leak across tenants** — the deny is in IAM, not in app logic that could be
   bypassed. This is a stronger guarantee than app-enforced multi-tenancy.
 
-Course enrollment driving `agg:courses` comes from the LMS via LTI 1.3 NRPS (the
+Course enrollment driving `agate:courses` comes from the LMS via LTI 1.3 NRPS (the
 authoritative roster), so retrieval scope tracks actual enrollment.
 
 ### 6.1 Agent path containment (AgentCore)
@@ -147,7 +147,7 @@ posture than the chat path, not a weaker one:
 - **Per-session microVM isolation.** Each agent session runs in its own microVM that is
   destroyed at session end. One user's agent run cannot observe another's.
 - **Identity-bound.** AgentCore Identity validates the invoking user (inbound, via Cognito
-  → the campus IdP) and carries the user's `agg:tenant`/`agg:courses` into the session, so
+  → the campus IdP) and carries the user's `agate:tenant`/`agate:courses` into the session, so
   the agent acts only within that user's scope.
 - **Every tool call is authorized.** AgentCore Policy (Cedar) gates each tool/action
   against the user's entitlements; tools behind AgentCore Gateway enforce the same

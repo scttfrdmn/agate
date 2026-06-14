@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import pytest
-from agg.lti import (
+from agate.lti import (
     CLAIM_CONTEXT,
     CLAIM_ROLES,
     LtiClaimError,
     affiliation_from_roles,
     course_from_context,
-    lti_claims_to_agg_claims,
+    lti_claims_to_agate_claims,
     nonce_is_fresh,
     state_matches,
 )
-from agg.tags import claims_to_tags
+from agate.tags import claims_to_tags
 
 INSTRUCTOR = "http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor"
 LEARNER = "http://purl.imsglobal.org/vocab/lis/v2/membership#Learner"
@@ -65,20 +65,20 @@ def test_course_absent():
 # --- full mapping, end-to-end into claims_to_tags ---------------------------
 
 
-def test_lti_claims_to_agg_claims_with_registration_tenant():
+def test_lti_claims_to_agate_claims_with_registration_tenant():
     claims = {
         "sub": "user-42",
         CLAIM_ROLES: [LEARNER],
         CLAIM_CONTEXT: {"id": "CHEM-101", "label": "chem"},
     }
-    agg = lti_claims_to_agg_claims(claims, tenant="harvard-chem")
-    assert agg["affiliation"] == "student"
-    assert agg["tenant"] == "harvard-chem"
-    assert agg["courses"] == ["CHEM-101"]
-    assert agg["sub"] == "user-42"
+    agate = lti_claims_to_agate_claims(claims, tenant="harvard-chem")
+    assert agate["affiliation"] == "student"
+    assert agate["tenant"] == "harvard-chem"
+    assert agate["courses"] == ["CHEM-101"]
+    assert agate["sub"] == "user-42"
 
     # And it flows cleanly into the Phase 1 translation.
-    tags = claims_to_tags(agg)
+    tags = claims_to_tags(agate)
     assert tags.affiliation == "student"
     assert tags.tier == "oss"
     assert tags.tenant == "harvard-chem"
@@ -91,7 +91,7 @@ def test_instructor_launch_maps_to_faculty_mid_tier():
         CLAIM_ROLES: [INSTRUCTOR],
         CLAIM_CONTEXT: {"id": "CHEM-101", "label": "chem"},
     }
-    tags = claims_to_tags(lti_claims_to_agg_claims(claims, tenant="chem"))
+    tags = claims_to_tags(lti_claims_to_agate_claims(claims, tenant="chem"))
     assert tags.affiliation == "faculty"
     assert tags.tier == "mid"
 
@@ -102,21 +102,21 @@ def test_tenant_never_derived_from_context_claim():
     # fail closed even though a context label is present.
     claims = {CLAIM_ROLES: [LEARNER], CLAIM_CONTEXT: {"id": "C1", "label": "psych-dept"}}
     with pytest.raises(LtiClaimError):
-        lti_claims_to_agg_claims(claims)
+        lti_claims_to_agate_claims(claims)
 
 
 def test_registration_tenant_is_authoritative():
     # The course context is still captured as a COURSE, never as the tenant.
     claims = {CLAIM_ROLES: [LEARNER], CLAIM_CONTEXT: {"id": "CHEM-101", "label": "evil-tenant"}}
-    agg = lti_claims_to_agg_claims(claims, tenant="harvard-chem")
-    assert agg["tenant"] == "harvard-chem"
-    assert agg["courses"] == ["CHEM-101"]
+    agate = lti_claims_to_agate_claims(claims, tenant="harvard-chem")
+    assert agate["tenant"] == "harvard-chem"
+    assert agate["courses"] == ["CHEM-101"]
 
 
 def test_no_tenant_fails_closed():
     claims = {CLAIM_ROLES: [LEARNER]}  # no registration tenant
     with pytest.raises(LtiClaimError):
-        lti_claims_to_agg_claims(claims)
+        lti_claims_to_agate_claims(claims)
 
 
 # --- nonce / state ----------------------------------------------------------

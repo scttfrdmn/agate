@@ -16,7 +16,7 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 
-# S3 layout: s3://{agg-docs bucket}/{tenant}/{path...}  (design §4).
+# S3 layout: s3://{agate-docs bucket}/{tenant}/{path...}  (design §4).
 # The first path segment IS the tenant; this is the isolation key.
 _TENANT_SEG = re.compile(r"^([a-zA-Z0-9._-]+)/(.+)$")
 
@@ -40,7 +40,7 @@ def tenant_from_s3_key(key: str) -> str:
 
 def index_name_for_tenant(tenant: str) -> str:
     """The per-tenant S3 Vectors index name (design §4: one index per tenant)."""
-    return f"agg-{tenant}"
+    return f"agate-{tenant}"
 
 
 def chunk_text(

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from agg.contracts import Backend, CostMeter, Emit
+from agate.contracts import Backend, CostMeter, Emit
 
 Mode = Literal["SYNTHESIS", "DEBATE", "ANALYSIS"]
 MODES: tuple[Mode, ...] = ("SYNTHESIS", "DEBATE", "ANALYSIS")

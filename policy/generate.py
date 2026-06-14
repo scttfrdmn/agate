@@ -55,20 +55,42 @@ def data_scope_policy(bucket: str | None = None) -> dict:
     itself cannot read another tenant's prefix (security memo §6). A guard Deny
     rejects the whole data path if the tenant tag is absent — fail closed rather
     than fall through to a broad match.
+
+    Additionally (#80), when the session carries an `agate:scope` principal tag, S3
+    document reads are CONFINED to `{tenant}/{scope}/` (strict containment). The
+    confinement Denies are `Null:false`-guarded, so an unscoped session keeps
+    tenant-wide access (no regression). Vector reads are tenant-fenced only — scope
+    is not IAM-enforceable for vectors (deferred).
     """
     docs_bucket = bucket or f"{DOCS_BUCKET_PREFIX}-*"
     tenant_tag = f"${{aws:PrincipalTag/{tag_key('tenant')}}}"
+    # Optional per-session DATA-scope confinement (#80): when the session carries an
+    # `agate:scope` principal tag, S3 document reads are confined to `{tenant}/{scope}/`
+    # (strict containment — tenant-root + sibling subtrees are denied). The tag is a
+    # single scope path (agate.tags._normalise_data_scope); it is ABSENT for the common
+    # tenant-wide case, and the Denies below are `Null:false`-guarded so an unscoped
+    # session is unaffected (no regression). Vectors are NOT scope-confined here — the
+    # index is per-tenant and scope is row metadata IAM can't see (deferred to a new issue).
+    scope_tag = f"${{aws:PrincipalTag/{tag_key('scope')}}}"
     return {
         "Version": "2012-10-17",
         "Statement": [
             {
-                "Sid": "ReadOwnTenantDocs",
+                # GetObject is gated by the RESOURCE ARN (tenant interpolated into the
+                # key path). NOT by s3:prefix — that context key is only populated for
+                # ListBucket, so conditioning GetObject on it would never match.
+                "Sid": "GetOwnTenantDocs",
                 "Effect": "Allow",
-                "Action": ["s3:GetObject", "s3:ListBucket"],
-                "Resource": [
-                    f"arn:aws:s3:::{docs_bucket}",
-                    f"arn:aws:s3:::{docs_bucket}/{tenant_tag}/*",
-                ],
+                "Action": ["s3:GetObject"],
+                "Resource": [f"arn:aws:s3:::{docs_bucket}/{tenant_tag}/*"],
+            },
+            {
+                # ListBucket is a bucket-level action gated by the s3:prefix the caller
+                # asks to list — confined to the tenant's prefix.
+                "Sid": "ListOwnTenantDocs",
+                "Effect": "Allow",
+                "Action": ["s3:ListBucket"],
+                "Resource": [f"arn:aws:s3:::{docs_bucket}"],
                 "Condition": {"StringLike": {"s3:prefix": [f"{tenant_tag}/*", tenant_tag]}},
             },
             {
@@ -76,6 +98,8 @@ def data_scope_policy(bucket: str | None = None) -> dict:
                 "Effect": "Allow",
                 # S3 Vectors query action (GA). Verify the exact action name for
                 # the target region before deploy; scope it by tenant tag here.
+                # NOTE: not scope-confined — vector subtree isn't IAM-enforceable
+                # (per-tenant index, scope is row metadata). Deferred to its own issue.
                 "Action": ["s3vectors:QueryVectors", "s3vectors:GetVectors"],
                 "Resource": "*",
                 "Condition": {"StringEquals": {f"aws:ResourceTag/{tag_key('tenant')}": tenant_tag}},
@@ -88,6 +112,29 @@ def data_scope_policy(bucket: str | None = None) -> dict:
                 "Action": ["s3:GetObject", "s3:ListBucket", "s3vectors:*"],
                 "Resource": "*",
                 "Condition": {"Null": {f"aws:PrincipalTag/{tag_key('tenant')}": "true"}},
+            },
+            {
+                # Scope confinement for object reads (#80). Fires ONLY when the session
+                # has an `agate:scope` tag (Null:false); then any GetObject whose ARN is
+                # NOT under `{tenant}/{scope}/` is denied. The explicit Deny overrides the
+                # tenant-wide Allow, confining a scoped session to its subtree.
+                "Sid": "DenyS3GetOutsideScopeSubtree",
+                "Effect": "Deny",
+                "Action": ["s3:GetObject"],
+                "NotResource": [f"arn:aws:s3:::{docs_bucket}/{tenant_tag}/{scope_tag}/*"],
+                "Condition": {"Null": {f"aws:PrincipalTag/{tag_key('scope')}": "false"}},
+            },
+            {
+                # Parallel confinement for listing: a scoped session may only list within
+                # its subtree prefix. Same Null:false guard -> inert when unscoped.
+                "Sid": "DenyS3ListOutsideScopeSubtree",
+                "Effect": "Deny",
+                "Action": ["s3:ListBucket"],
+                "Resource": "*",
+                "Condition": {
+                    "Null": {f"aws:PrincipalTag/{tag_key('scope')}": "false"},
+                    "StringNotLike": {"s3:prefix": [f"{tenant_tag}/{scope_tag}/*"]},
+                },
             },
         ],
     }

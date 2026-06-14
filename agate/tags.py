@@ -91,20 +91,35 @@ class SessionTags:
     # admin console uses it to narrow analytics to the admin's subtree. (Promoting
     # scope to an IAM principal tag for data access is a later, review-gated phase.)
     admin_scope: tuple[str, ...] = ()
+    # Data-access scope (#80, #70 phase 4): a SINGLE scope-path the session is CONFINED
+    # to for S3 document reads, e.g. "arts-sci/chemistry" for a dept chair. Unlike
+    # admin_scope this DOES become an IAM principal tag (`agate:scope`) that the
+    # data-scope policy interpolates to deny reads outside `{tenant}/{scope}/`. Empty
+    # for the common case = tenant-wide (today's behaviour, no confinement). A single
+    # scalar because an IAM principal tag is one string; a multi-subtree session
+    # resolves to "" (tenant-wide; app-level retrieval still narrows) — see
+    # _normalise_data_scope. Distinct from courses (relevance) and admin_scope (console).
+    scope: str = ""
 
     def to_sts_tags(self) -> list[dict[str, str]]:
         """STS AssumeRole `Tags` form: [{"Key": "agate:affiliation", "Value": ...}, ...].
 
         `agate:courses` is a comma-joined list (session-tag values are scalar
         strings); IAM policies match it with StringLike `*course*` conditions.
+        `agate:scope` is emitted ONLY when set: a confined session carries it (the
+        data-scope policy's `Null:false` guard then activates the subtree Deny), while
+        an unscoped session omits it entirely and keeps tenant-wide access.
         """
-        return [
+        tags = [
             {"Key": tag_key("affiliation"), "Value": self.affiliation},
             {"Key": tag_key("tenant"), "Value": self.tenant},
             {"Key": tag_key("courses"), "Value": COURSE_SEP.join(self.courses)},
             {"Key": tag_key("tier"), "Value": self.tier},
             {"Key": tag_key("role"), "Value": self.role},
         ]
+        if self.scope:
+            tags.append({"Key": tag_key("scope"), "Value": self.scope})
+        return tags
 
 
 def role_session_name(tenant: str, subject: str) -> str:
@@ -197,6 +212,42 @@ def _normalise_admin_scope(raw: object, *, role: Role) -> tuple[str, ...]:
             seen.add(node)
             cleaned.append(node)
     return tuple(cleaned)
+
+
+def _normalise_data_scope(raw: object) -> str:
+    """The SINGLE scope path a session is CONFINED to for S3 data reads (#80).
+
+    Becomes the `agate:scope` IAM principal tag. Returns one normalised scope-path
+    string, or "" for the common (unconfined = tenant-wide) case. Applies to EVERY
+    session (not just admins) — it's the user's own data subtree, not admin governance.
+
+    Fail-closed and IAM-safe:
+      * missing/garbled claim -> "" (tenant-wide; no confinement, no regression).
+      * MORE THAN ONE distinct node -> "" — an IAM principal tag is a single scalar, so
+        a multi-subtree session can't be S3-confined to *both-but-not-the-rest* via one
+        tag; it stays tenant-wide and relies on app-level retrieval narrowing (never
+        cross-tenant — the tenant tag still fences that). Deliberate single-scalar limit.
+      * sanitised to the scope-path grammar (which permits `/`, a valid STS tag char)
+        and truncated to the STS value limit.
+    """
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        items = re.split(r"[;,]\s*", raw)
+    elif isinstance(raw, (list, tuple)):
+        items = [str(v) for v in raw]
+    else:
+        items = [str(raw)]
+    nodes = []
+    seen: set[str] = set()
+    for item in items:
+        node = _SCOPE_RE.sub("", item.strip()).strip("/")
+        if node and node not in seen:
+            seen.add(node)
+            nodes.append(node)
+    if len(nodes) != 1:  # zero OR multiple -> unconfined (tenant-wide), fail-closed
+        return ""
+    return nodes[0][:MAX_TAG_VALUE_LEN]
 
 
 def _normalise_affiliation(raw: object) -> Affiliation:
@@ -301,6 +352,8 @@ def claims_to_tags(claims: dict[str, object]) -> SessionTags:
       * courses      <- "courses" | "enrolledCourses" | "course_ids"  (list or delimited str)
       * grant        <- "grant" | "grantTagged"  (truthy -> promote to frontier)
       * role         <- "role" | "agate_role" | "isAdmin"  (admin -> console access)
+      * data_scope   <- "data_scope" | "scope_path" | "home_scope"  (confine S3 reads
+                        to one subtree; single path, "" = tenant-wide; #80)
 
     Raises ClaimsError if the tenant cannot be determined — the broker must then
     fail closed and vend no credentials.
@@ -313,6 +366,9 @@ def claims_to_tags(claims: dict[str, object]) -> SessionTags:
     grant = _truthy(get("grant", "granttagged", "grant_tagged"))
     role = _normalise_role(get("role", "agate_role", "isadmin"))
     admin_scope = _normalise_admin_scope(get("admin_scope", "scope", "governs"), role=role)
+    # Data-access scope (#80) — a DISTINCT claim from admin_scope/courses; from the
+    # verified claims only (#79 posture). Confines S3 reads to one subtree via IAM.
+    data_scope = _normalise_data_scope(get("data_scope", "scope_path", "home_scope"))
 
     tier = derive_tier(affiliation, grant=grant)
 
@@ -323,6 +379,7 @@ def claims_to_tags(claims: dict[str, object]) -> SessionTags:
         tier=tier,
         role=role,
         admin_scope=admin_scope,
+        scope=data_scope,
     )
 
 

@@ -193,6 +193,52 @@ def test_admin_scope_sanitises_and_dedupes():
     assert tags.admin_scope == ("a/b", "xy")  # dedup + stripped + sanitised
 
 
+# --- data-access scope -> agate:scope IAM tag (#80) -------------------------
+
+
+def test_no_data_scope_means_tenant_wide_and_five_tags():
+    # The common case: no data_scope claim -> scope "" -> agate:scope NOT emitted, so
+    # exactly the original 5 tags (no regression for unscoped sessions).
+    tags = _tags(tenant="chem")
+    assert tags.scope == ""
+    keys = [d["Key"] for d in tags.to_sts_tags()]
+    assert tag_key("scope") not in keys
+    assert len(keys) == 5
+
+
+def test_single_data_scope_emitted_as_agate_scope_tag():
+    tags = _tags(tenant="chem", data_scope="arts-sci/chemistry")
+    assert tags.scope == "arts-sci/chemistry"
+    by_key = {d["Key"]: d["Value"] for d in tags.to_sts_tags()}
+    assert by_key[tag_key("scope")] == "arts-sci/chemistry"  # path '/' preserved
+    assert len(by_key) == 6  # 5 + scope
+
+
+def test_multi_data_scope_fails_closed_to_tenant_wide():
+    # An IAM principal tag is a single scalar; a multi-subtree claim can't be
+    # confined to both-but-not-the-rest -> "" (tenant-wide), never cross-tenant.
+    assert _tags(tenant="chem", data_scope=["chemistry", "physics"]).scope == ""
+    assert _tags(tenant="chem", data_scope="chemistry, physics").scope == ""
+
+
+def test_garbled_or_missing_data_scope_is_empty():
+    assert _tags(tenant="chem").scope == ""
+    assert _tags(tenant="chem", data_scope="").scope == ""
+    assert _tags(tenant="chem", data_scope="  ///  ").scope == ""  # sanitises to nothing
+
+
+def test_data_scope_independent_of_admin_scope():
+    # A member with a data_scope gets the data tag but NO admin_scope (forged inert).
+    tags = _tags(tenant="chem", data_scope="chemistry", admin_scope="physics")
+    assert tags.scope == "chemistry"
+    assert tags.admin_scope == ()  # member -> admin_scope inert
+
+
+def test_data_scope_within_aws_tag_limit():
+    tags = _tags(tenant="chem", data_scope="a/" * 200)
+    assert len(tags.scope) <= MAX_TAG_VALUE_LEN
+
+
 # --- role-session-name tenant encoding (#79) --------------------------------
 
 from agate.tags import (  # noqa: E402

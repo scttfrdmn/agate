@@ -39,6 +39,55 @@ layer those standards deliberately leave open: a **scoped credential under every
 interaction**. The standards give interop; agate makes them safe in a regulated,
 multi-tenant setting. Restated: *the open agent stack, governed.*
 
+agate also doesn't have to build the agent *runtime* from scratch — see §0.1.
+
+---
+
+## 0.1 Relationship to agenkit — *agenkit builds the agent; agate governs it*
+
+**[seam]** [agenkit](https://agenkit.dev) (Apache-2.0, same author) is "the foundation
+layer for AI agents": a cross-language toolkit (Python / TypeScript / Go / Rust / C++ /
+Zig at parity) giving the `Agent`/`Message`/`Tool` primitive, **orchestration patterns
+(Sequential, Parallel, Router, Fallback, Conditional)**, resilience middleware (retry,
+circuit breaker, timeout, rate-limit), pluggable transports (HTTP/gRPC/WebSocket), and
+OpenTelemetry observability. By design it stops exactly where agate begins: it has **no
+identity, authorization, multi-tenancy, budget, or cloud-binding** — those are "the
+application's business." agate *is* that business. The two are complementary halves of
+one stack, not competitors:
+
+| Concern | agenkit | agate |
+|---------|---------|-------|
+| Agent primitive, orchestration patterns, resilience, transports, tracing, cross-language | ✅ owns it | consumes it |
+| Identity, scoped credential, ABAC, tenant/scope isolation, budget cascade, AWS deployment | left to the app | ✅ owns it |
+
+Three concrete consequences:
+
+1. **agenkit's orchestration patterns *are* the agent graph (§4).** Sequential /
+   Parallel / Router / Fallback / Conditional is the same vocabulary as Panel / Analyze
+   / the router today (`agate.patterns`) — agenkit is the portable, battle-tested
+   version. agate's move is to let an agenkit pattern *be* the spec's `reasoning`, and
+   wrap each node in a narrowed credential (§2). The graph topology comes from agenkit;
+   the authority boundary comes from agate.
+2. **agate's AgentCore Runtime container runs agenkit agents.** The container
+   (`agent/server.py`) becomes an agenkit host; the spec compiles to the scoped
+   credential it runs under. Cross-language is a free win — agate agents stop being
+   Python-locked (a Go/Rust agenkit agent for a hot path, still governed identically).
+3. **The standards (§8.6) can land in *either* layer — by deliberate split.** agenkit
+   is the author's project and can grow to speak MCP / A2A / AG-UI / A2UI / Skills /
+   AP2 / x402 natively. The clean division of labor:
+   - **agenkit owns the *protocol mechanics*** — speaking A2A on the wire, hosting MCP
+     tools, emitting AG-UI/A2UI event streams, parsing an x402 402 response. Portable,
+     reusable, identity-agnostic.
+   - **agate owns the *authority under the protocol*** — every A2A peer call, MCP tool
+     invocation, AG-UI stream, or x402 payment resolves to a narrowed credential +
+     budget check. agenkit carries the message; agate decides whether it's allowed.
+
+   So "does agenkit support AG-UI/AP2/etc. yet?" is the right question with the right
+   answer: *not all of them today, but it's the natural home for the mechanics, and
+   agate supplies the governance regardless of which layer the bytes flow through.*
+
+**Tagline:** *agenkit builds the agent; agate governs it.*
+
 ---
 
 ## 1. The Agent Spec — an agent is a declarative artifact that compiles to a scoped identity
@@ -301,11 +350,14 @@ only as an untrusted *drafter*, never as the source of authority.
 
 **[vision]** agate must not invent a proprietary agent stack. The industry is
 converging on open protocols for exactly the pieces the spec (§1) currently hand-waves
-— *how agents talk, how capabilities package, how agents render UI.* agate's job is not
-to replace them but to **put a scoped-credential boundary under each one.** Standards
-give interoperability; agate gives the bounded authority that makes them safe in a
-regulated, multi-tenant setting. That is the whole differentiator restated: *the open
-agent stack, governed.*
+— *how agents talk, how capabilities package, how agents render UI, how agents pay.*
+agate's job is not to replace them but to **put a scoped-credential boundary under each
+one.** Standards give interoperability; agate gives the bounded authority that makes
+them safe in a regulated, multi-tenant setting. That is the whole differentiator
+restated: *the open agent stack, governed.* Per the §0.1 split, the **protocol
+mechanics** naturally live in agenkit (portable, identity-agnostic) and the **authority
+under them** in agate — so "agate speaks X" below means "agate governs X, via whichever
+layer carries the bytes," not that every protocol is implemented today.
 
 Each standard answers a question the spec leaves open, and each gets the same
 treatment — **the credential, not the protocol, is the authority:**

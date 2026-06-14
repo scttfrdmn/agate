@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Agent-spec schema + compiler — the keystone of the agent platform (#104, #105,
+  Phase 10 / tracking #101).** An agent is now a declarative artifact that **compiles
+  to a scoped identity** — the spec IS the agent's IAM, so a compiled agent cannot
+  exceed it. `agate/agentspec.py` (pure, AWS-free) parses a `*.agate.yaml`-shaped dict
+  into a validated `AgentSpec` (role, scope, reasoning, tools, memory, budget, invokers,
+  triggers, visibility) with fail-closed validation (unknown keys/tools/garbled-scope/
+  `..`/NaN-budget all rejected) and a reviewed capability catalog (tools are denied by
+  absence). `agate/agentcompile.py` compiles it — **composing** the existing primitives,
+  not duplicating them: `policy.generate.model_access_policy`/`data_scope_policy` + a new
+  `agent_tool_policy` (each tool grant tenant+scope-fenced, writes confined to a
+  `_drafts/` path), `agate.patterns.compile_pattern` for the reasoning payload, and
+  `agate.budget` key-shape templates for the cascade budget rows. A live
+  `iam:SimulateCustomPolicy` proof (`tests/test_proof_agent_policy.py`) confirms the
+  compiled policies grant **exactly** the spec's tier + scope + tools and deny everything
+  broader (higher-tier model, sibling/cross-tenant doc, undeclared write). A pre-merge
+  security review caught and removed a self-escalation path: the spec had a `grant: true`
+  field that could promote tier — now gone, because authority is a property of the
+  verified spawner's credential (#106), never claimed by the artifact. The compiler is
+  pure (no STS/DynamoDB); spawn-time narrowing + budget authorization are deferred to
+  #106 bounded delegation.
 - **Multimodal retrieval now goes through the scope-enforcing proxy too (#94, closes
   the bypass #84 left).** #84 routed *text* vector retrieval through the proxy; the
   *multimodal* path (`MultimodalRetriever`) still queried the `agate-{tenant}-mm`

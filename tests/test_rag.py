@@ -14,6 +14,7 @@ from agate.rag import (
     course_filter,
     course_from_s3_key,
     index_name_for_tenant,
+    retrieval_nodes,
     scope_filter,
     scope_path_from_s3_key,
     tenant_from_s3_key,
@@ -139,6 +140,31 @@ def test_scope_filter_subtree_membership_and_backward_compat():
     branches = f["$or"]
     assert {SCOPE_META_KEY: {"$in": ["chemistry", "chemistry/chem-101"]}} in branches
     assert {COURSE_META_KEY: {"$in": ["chemistry", "chemistry/chem-101"]}} in branches
+
+
+# --- retrieval_nodes (#84): scope source for the broker-proxied retriever -----
+
+
+def test_retrieval_nodes_scope_ancestors_union_courses():
+    # A chair at chemistry/chem-101 also enrolled in bio-200: subtree ∪ courses.
+    nodes = retrieval_nodes("chemistry/chem-101", ("bio-200",))
+    assert nodes == ["chemistry", "chemistry/chem-101", "bio-200"]
+
+
+def test_retrieval_nodes_courses_only_when_unconfined():
+    # Most students: no data_scope -> just their courses (+ tenant-wide via scope_filter).
+    assert retrieval_nodes("", ("chem-101", "chem-202")) == ["chem-101", "chem-202"]
+
+
+def test_retrieval_nodes_empty_both_is_fail_closed():
+    # Empty -> [] -> scope_filter([]) is tenant-wide-only (never broader than tenant).
+    assert retrieval_nodes("", ()) == []
+    assert scope_filter(retrieval_nodes("", ())) == scope_filter([])
+
+
+def test_retrieval_nodes_dedupes_course_already_in_subtree():
+    # A course equal to a scope node isn't duplicated.
+    assert retrieval_nodes("chemistry", ("chemistry", "bio-200")) == ["chemistry", "bio-200"]
 
 
 # --- chunking ---------------------------------------------------------------

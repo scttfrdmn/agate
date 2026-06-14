@@ -256,25 +256,17 @@ async function runAsk(
   out.appendChild(log);
   log.textContent = `> ${q}\n`;
 
-  // RAG grounding when a vector store is configured (scoped to the session's tenant).
+  // RAG grounding via the broker-proxied retriever (#84). The proxy derives the
+  // tenant + scope filter from the verified token; this client supplies only the
+  // query. Tenant/scope are NOT taken from anything the browser controls.
   let contextProvider;
-  if (config.vectorBucketName) {
-    contextProvider = async (query: string) => {
-      await creds.get();
-      const tenant = creds.scope?.tenant;
-      if (!tenant) return [];
-      const retriever = new Retriever(
-        {
-          region: config.region,
-          vectorBucketName: config.vectorBucketName,
-          indexName: `agate-${tenant}`,
-          // Scope retrieval to the session's enrolled courses (+ tenant-wide docs).
-          courses: creds.scope?.courses,
-        },
-        () => creds.get(),
-      );
-      return withContext([], await retriever.retrieve(query));
-    };
+  if (config.retrievalProxyUrl) {
+    const retriever = new Retriever(
+      { region: config.region, endpoint: config.retrievalProxyUrl },
+      () => creds.get(),
+      () => idpToken(),
+    );
+    contextProvider = async (query: string) => withContext([], await retriever.retrieve(query));
   }
   const session = new ChatSession(bedrock, config.defaultModelId, undefined, undefined, contextProvider);
   await session.send(q, {

@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Vector sub-tenant scope is now a REAL boundary — broker-proxied retrieval (#84,
+  completes #70 phase 4).** #80 made hierarchical scope IAM-enforced for S3 documents,
+  but vectors stayed advisory: the browser signed `QueryVectors` directly and supplied
+  the scope `filter` itself, so a modified client could omit it and read the whole
+  tenant index (tenant was fenced; sub-tenant was not). Now the browser-held
+  `agate-authenticated` role has **no** `s3vectors` grant at all; vector retrieval goes
+  through a server-side proxy Lambda (`agate-retrieval`) that derives the scope filter
+  from the VERIFIED token (`scope_filter(retrieval_nodes(tags.scope, tags.courses))`)
+  and assumes a dedicated, tenant-tag-fenced `agate-vector-reader` role — the **only**
+  identity that can query vectors, and one the browser cannot assume. The proxy embeds
+  server-side (Titan) and ignores any `tenant`/`scope`/`filter` field in the request
+  body. **Boundary split, by design:** tenant stays IAM-enforced (`agate-vector-reader`
+  fenced by `ResourceTag==PrincipalTag`); sub-tenant scope is enforced by the proxy
+  code because it **cannot** be IAM-enforced (per-tenant index, row-metadata scope) —
+  what makes it real is that no client path can reach `QueryVectors` to omit the filter.
+  Pure `agate.rag.retrieval_nodes` is the tested seam; live `iam:SimulateCustomPolicy`
+  proves the browser role is now denied `QueryVectors` even for its own tenant, while
+  the reader role keeps the cross-tenant deny. The SPA POSTs `{idp_token, query}` to the
+  proxy (SigV4-signed, `VITE_RETRIEVAL_URL`); the direct S3 Vectors path is gone.
+  **Multimodal retrieval keeps the old direct/tenant-fenced-only path for now (#94).**
 - **Budget-table writer — admin-gated budget authoring (#87, splits from #81).** The
   #81 cascade READS budget rows from `agate-budget` but nothing in agate WROTE them
   (seeded by hand). The governed-access console's admin Lambda now takes a

@@ -317,6 +317,8 @@ class IdentityStack(Stack):
             "AGATE_VECTOR_BUCKET": vector_bucket_name,
             "AGATE_EMBED_MODEL_ID": "amazon.titan-embed-text-v2:0",
             "AGATE_EMBED_DIMENSION": "1024",
+            # Multimodal index uses the Nova embedder (3072-dim), #94.
+            "AGATE_MM_EMBED_MODEL_ID": "amazon.nova-2-multimodal-embeddings-v1:0",
         }
         # Same OIDC verification config as the broker (one deploy configures both).
         for env_key in ("AGATE_OIDC_ISSUER", "AGATE_OIDC_JWKS_URL", "AGATE_OIDC_AUDIENCE"):
@@ -363,14 +365,16 @@ class IdentityStack(Stack):
                 document=iam.PolicyDocument.from_json(vector_query_policy()),
             )
         )
-        # The proxy embeds server-side (Titan) and assumes the reader role. No data
-        # perms of its own beyond these two.
+        # The proxy embeds server-side (Titan for text, Nova for multimodal #94) and
+        # assumes the reader role. No data perms of its own beyond these two — and the
+        # InvokeModel grant is scoped to exactly the two embed models, nothing else.
         retrieval.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["bedrock:InvokeModel"],
                 resources=[
-                    f"arn:aws:bedrock:{region}::foundation-model/amazon.titan-embed-text-v2:0"
+                    f"arn:aws:bedrock:{region}::foundation-model/amazon.titan-embed-text-v2:0",
+                    f"arn:aws:bedrock:{region}::foundation-model/amazon.nova-2-multimodal-embeddings-v1:0",
                 ],
             )
         )

@@ -155,8 +155,17 @@ def retrieval_nodes(scope: str, courses: tuple[str, ...] | list[str]) -> list[st
 
 
 def index_name_for_tenant(tenant: str) -> str:
-    """The per-tenant S3 Vectors index name (design §4: one index per tenant)."""
+    """The per-tenant TEXT S3 Vectors index name (design §4: one index per tenant)."""
     return f"agate-{tenant}"
+
+
+def mm_index_name_for_tenant(tenant: str) -> str:
+    """The per-tenant MULTIMODAL index name (the 3072-dim `-mm` index; #94).
+
+    Mirrors infra/stacks/data.py's `_index(..., suffix="mm")`. Separate from the
+    1024-dim text index; scoped by the same tenant ABAC tag + the same scope filter.
+    """
+    return f"agate-{tenant}-mm"
 
 
 def chunk_text(

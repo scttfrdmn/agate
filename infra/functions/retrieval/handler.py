@@ -11,6 +11,10 @@ query vectors. The browser-held `agate-authenticated` role no longer has any
 `s3vectors` grant (policy.generate: the `QueryOwnTenantVectors` Allow moved to
 `vector_query_policy`), so there is no path that bypasses this proxy.
 
+Serves BOTH the text index (`agate-{tenant}`, Titan 1024-dim) and the multimodal
+index (`agate-{tenant}-mm`, Nova 3072-dim) — selected by `index_kind` — with the
+SAME scope filter injected for each (#94 extends #84 to close the multimodal bypass).
+
 WHERE THE BOUNDARY LIVES (flagged because it's split):
   * TENANT — IAM. `agate-vector-reader` is fenced by
     `aws:ResourceTag/agate:tenant == ${aws:PrincipalTag/agate:tenant}`; a cross-tenant
@@ -33,13 +37,22 @@ import os
 
 import boto3
 from agate.jwt_verify import TokenError, config_from_env, verify_token
-from agate.rag import index_name_for_tenant, retrieval_nodes, scope_filter
+from agate.multimodal import nova_embed_request, parse_nova_embedding
+from agate.rag import (
+    index_name_for_tenant,
+    mm_index_name_for_tenant,
+    retrieval_nodes,
+    scope_filter,
+)
 from agate.tags import ClaimsError, claims_to_tags, role_session_name
 
 VECTOR_READER_ROLE_ARN = os.environ.get("AGATE_VECTOR_READER_ROLE_ARN", "")
 VECTOR_BUCKET = os.environ.get("AGATE_VECTOR_BUCKET", "")
 EMBED_MODEL_ID = os.environ.get("AGATE_EMBED_MODEL_ID", "amazon.titan-embed-text-v2:0")
 EMBED_DIMENSION = int(os.environ.get("AGATE_EMBED_DIMENSION", "1024"))
+MM_EMBED_MODEL_ID = os.environ.get(
+    "AGATE_MM_EMBED_MODEL_ID", "amazon.nova-2-multimodal-embeddings-v1:0"
+)
 DEFAULT_TOP_K = int(os.environ.get("AGATE_DEFAULT_TOP_K", "5"))
 MAX_TOP_K = int(os.environ.get("AGATE_MAX_TOP_K", "20"))
 
@@ -62,11 +75,26 @@ def validate_idp_token(token: str) -> dict:
 
 
 def embed_query(query: str) -> list[float]:
-    """Embed the query with Titan — server-side, so the SPA needs no embed grant and
-    the embed contract can't drift from ingest (same EMBED_MODEL_ID/DIMENSION)."""
+    """Embed a TEXT query with Titan — server-side, so the SPA needs no embed grant
+    and the embed contract can't drift from ingest (same EMBED_MODEL_ID/DIMENSION)."""
     body = json.dumps({"inputText": query, "dimensions": EMBED_DIMENSION, "normalize": True})
     resp = _bedrock.invoke_model(modelId=EMBED_MODEL_ID, body=body)
     return json.loads(resp["body"].read())["embedding"]
+
+
+def embed_mm_query(
+    text: str | None, image_b64: str | None, image_format: str | None
+) -> list[float]:
+    """Embed a MULTIMODAL query with Nova (text OR image) for the `-mm` index (#94).
+    Reuses the gate-verified agate.multimodal request/response contract so the proxy
+    and ingest embed identically. GENERIC_QUERY purpose (this is a query, not a store)."""
+    body = json.dumps(
+        nova_embed_request(
+            text=text, image_b64=image_b64, image_format=image_format, purpose="GENERIC_QUERY"
+        )
+    )
+    resp = _bedrock.invoke_model(modelId=MM_EMBED_MODEL_ID, body=body)
+    return parse_nova_embedding(json.loads(resp["body"].read()))
 
 
 def assume_vector_reader(tags, subject: str):
@@ -93,10 +121,12 @@ def assume_vector_reader(tags, subject: str):
 def process(req: dict) -> dict:
     """Derive scope from the token, embed, and run the scoped QueryVectors.
 
-    The body carries ONLY `idp_token`, `query`, and an optional `top_k`. Tenant,
-    scope, courses, and the index name are ALL derived from the verified token —
-    any `tenant`/`scope`/`filter`/`index` field in the body is ignored (SEC: a
-    client cannot widen its own retrieval scope)."""
+    The body carries the `idp_token`, the query (`query` for text, or `image_b64` +
+    `image_format` for multimodal), an optional `index_kind` ("text"|"mm"), and an
+    optional `top_k`. Tenant, scope, courses, and the index name are ALL derived from
+    the verified token — any `tenant`/`scope`/`filter`/`index` field in the body is
+    ignored (SEC: a client cannot widen its own retrieval scope). The scope filter is
+    injected for BOTH index kinds (#94 closes the multimodal bypass left by #84)."""
     if not VECTOR_READER_ROLE_ARN or not VECTOR_BUCKET:
         raise RetrievalError("retrieval proxy misconfigured")
 
@@ -106,22 +136,30 @@ def process(req: dict) -> dict:
     except ClaimsError as exc:
         raise RetrievalError(f"cannot scope session: {exc}") from exc
 
-    query = req.get("query")
-    if not query or not isinstance(query, str):
-        raise RetrievalError("request missing query")
     top_k = req.get("top_k", DEFAULT_TOP_K)
     if not isinstance(top_k, int) or isinstance(top_k, bool) or top_k < 1:
         top_k = DEFAULT_TOP_K
     top_k = min(top_k, MAX_TOP_K)
 
     subject = str(claims.get("sub") or claims.get("subject") or "agate-user")
-    index_name = index_name_for_tenant(tags.tenant)
-    # Scope filter from the VERIFIED token — the load-bearing line of #84.
-    nodes = retrieval_nodes(tags.scope, tags.courses)
-    vfilter = scope_filter(nodes)
+    # Scope filter from the VERIFIED token — the load-bearing line of #84/#94. Applied
+    # to whichever index we query, so sub-tenant scope holds for text AND multimodal.
+    vfilter = scope_filter(retrieval_nodes(tags.scope, tags.courses))
+
+    index_kind = req.get("index_kind", "text")
+    if index_kind == "mm":
+        index_name = mm_index_name_for_tenant(tags.tenant)
+        vector = _embed_mm_from_request(req)
+    elif index_kind == "text":
+        query = req.get("query")
+        if not query or not isinstance(query, str):
+            raise RetrievalError("request missing query")
+        index_name = index_name_for_tenant(tags.tenant)
+        vector = embed_query(query)
+    else:
+        raise RetrievalError(f"unknown index_kind: {index_kind}")
 
     vectors_client = assume_vector_reader(tags, subject)
-    vector = embed_query(query)
     resp = vectors_client.query_vectors(
         vectorBucketName=VECTOR_BUCKET,
         indexName=index_name,
@@ -131,23 +169,60 @@ def process(req: dict) -> dict:
         returnMetadata=True,
         returnDistance=True,
     )
-    chunks = []
-    for v in resp.get("vectors", []):
-        md = v.get("metadata") or {}
-        text = md.get("text")
-        if not isinstance(text, str) or not text.strip():
-            continue
-        chunks.append(
-            {
-                "key": v.get("key", ""),
-                "text": text,
-                "sourceKey": md.get("source_key")
-                if isinstance(md.get("source_key"), str)
-                else None,
-                "distance": v.get("distance"),
-            }
+    if index_kind == "mm":
+        return {"matches": [_mm_match(v) for v in resp.get("vectors", [])]}
+    return {"chunks": [c for c in (_text_chunk(v) for v in resp.get("vectors", [])) if c]}
+
+
+def _embed_mm_from_request(req: dict) -> list[float]:
+    """Embed a multimodal query from the request (text OR image). The query CONTENT is
+    legitimately client-supplied (it's what the user is searching for); only the
+    tenant/scope/index — the access boundary — come from the token, never the body."""
+    text = req.get("query")
+    image_b64 = req.get("image_b64")
+    image_format = req.get("image_format")
+    has_text = isinstance(text, str) and bool(text)
+    has_image = isinstance(image_b64, str) and bool(image_b64)
+    if has_text == has_image:  # need exactly one
+        raise RetrievalError("multimodal query needs exactly one of query or image_b64")
+    try:
+        return embed_mm_query(
+            text if has_text else None,
+            image_b64 if has_image else None,
+            image_format if has_image else None,
         )
-    return {"chunks": chunks}
+    except ValueError as exc:  # bad image_format etc. -> 4xx, not 500
+        raise RetrievalError(str(exc)) from exc
+
+
+def _text_chunk(v: dict) -> dict | None:
+    """Map one text vector to a context chunk; None if it has no usable text."""
+    md = v.get("metadata") or {}
+    text = md.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return None
+    src = md.get("source_key")
+    return {
+        "key": v.get("key", ""),
+        "text": text,
+        "sourceKey": src if isinstance(src, str) else None,
+        "distance": v.get("distance"),
+    }
+
+
+def _mm_match(v: dict) -> dict:
+    """Map one multimodal vector to a visual match (mirrors the SPA elementFromMetadata
+    shape: source/modality/ref/thumb + distance)."""
+    md = v.get("metadata") or {}
+    src = md.get("source_key")
+    source_id = src if isinstance(src, str) else v.get("key", "")
+    return {
+        "sourceId": source_id,
+        "modality": md.get("modality") if isinstance(md.get("modality"), str) else "text",
+        "ref": md.get("ref") if isinstance(md.get("ref"), str) else "",
+        "thumb": md.get("thumb") if isinstance(md.get("thumb"), str) else None,
+        "distance": v.get("distance"),
+    }
 
 
 def handler(event: dict, context: object) -> dict:

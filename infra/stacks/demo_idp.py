@@ -45,7 +45,7 @@ class DemoIdpStack(Stack):
             handler="infra.functions.demo_idp.pretoken.handler",
             code=lambda_.Code.from_asset(".", exclude=LAMBDA_ASSET_EXCLUDES),
             timeout=cdk.Duration.seconds(5),
-            description="agate demo IdP — map custom:* attrs to agate claim names",
+            description="agate demo IdP - map custom:* attrs to agate claim names",
         )
 
         # Custom attributes carrying the agate scope. Mutable so a demo operator can

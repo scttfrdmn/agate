@@ -59,7 +59,7 @@ class ChokepointStack(Stack):
                 "AGATE_AUTHENTICATED_ROLE_ARN": auth_role_arn,
                 "AGATE_DEFAULT_MAX_TOKENS": "1024",
             },
-            description="agate Tier 1 choke point — exact pre-call budget enforcement (optional)",
+            description="agate Tier 1 choke point - exact pre-call budget enforcement (optional)",
         )
 
         # Read authoritative spend + the server-side budget; assume the user's scoped role.

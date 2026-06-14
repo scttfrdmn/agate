@@ -62,8 +62,46 @@ class AgentStack(Stack):
             "RuntimeExecutionRole",
             role_name=f"{HANDLE}-agent-runtime",
             assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
-            description="agate agent Runtime execution role — Bedrock invoke + tenant retrieval",
+            description="agate agent Runtime execution role: Bedrock invoke + tenant retrieval",
         )
+        # The Runtime must pull the agent image from ECR at cold start. AgentCore
+        # validates these on the execution role at create time. GetAuthorizationToken
+        # is account-wide (no resource); the image-layer reads are scoped to the
+        # agate-agent repo.
+        execution_role.add_to_policy(
+            iam.PolicyStatement(
+                sid="EcrAuth",
+                effect=iam.Effect.ALLOW,
+                actions=["ecr:GetAuthorizationToken"],
+                resources=["*"],
+            )
+        )
+        execution_role.add_to_policy(
+            iam.PolicyStatement(
+                sid="EcrPull",
+                effect=iam.Effect.ALLOW,
+                actions=["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
+                resources=[f"arn:aws:ecr:{region}:{account}:repository/{HANDLE}-agent"],
+            )
+        )
+        # The Runtime writes its own logs; AgentCore expects the execution role to
+        # be able to create/write the agent's log group.
+        execution_role.add_to_policy(
+            iam.PolicyStatement(
+                sid="Logs",
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents",
+                    "logs:DescribeLogStreams",
+                ],
+                resources=[
+                    f"arn:aws:logs:{region}:{account}:log-group:/aws/bedrock-agentcore/*",
+                ],
+            )
+        )
+
         # SEC-2: bound the role's Bedrock invoke to agate's entitled models only (the
         # full tier superset = frontier, cumulative). Per-SESSION tier enforcement is
         # done in the container against the verified JWT (model_arns_for_tier); this
@@ -137,9 +175,21 @@ class AgentStack(Stack):
                 "AGATE_REGION": region,
                 "AGATE_CODE_INTERPRETER_ID": code_interpreter.attr_code_interpreter_id,
             },
-            description="agate agent path — hosts Panel/Analyze/router orchestration",
+            description="agate agent path - hosts Panel/Analyze/router orchestration",
         )
         runtime.add_dependency(code_interpreter)
+
+        # AgentCore validates the execution role's ECR permissions at Runtime-create
+        # time. CloudFormation otherwise creates the Runtime as soon as the Role
+        # *resource* exists — before its inline policy (the separate DefaultPolicy
+        # node carrying the ECR grants) is attached — so creation races and fails
+        # "Access denied while validating ECR URI". Force both the Runtime and the
+        # Code Interpreter to wait for the role's default policy.
+        role_policy = execution_role.node.try_find_child("DefaultPolicy")
+        if role_policy is not None:
+            policy_resource = role_policy.node.default_child
+            runtime.add_dependency(policy_resource)
+            code_interpreter.add_dependency(policy_resource)
 
         # A named endpoint the SPA's agentcore transport invokes.
         endpoint = agentcore.CfnRuntimeEndpoint(

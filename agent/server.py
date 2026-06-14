@@ -51,6 +51,40 @@ def _verified_tier(payload: dict) -> str:
         return DEFAULT_TIER
 
 
+def _resolve_models(payload: dict, models: list[str]) -> dict:
+    """Fill missing roster/generator/router model ids with concrete, entitled ones.
+
+    `agate.agent_dispatch` treats a config's `tier` field as the literal Bedrock
+    model id at the Backend boundary (the roster is meant to be pinned to real ids
+    at config time). The SPA, however, sends only `{question, idp_token, mode}` and
+    no roster — so here, in the container, we materialise sensible defaults from the
+    caller's ENTITLED model set (derived from the verified token). This keeps the
+    pure dispatch contract intact (label==id) while never sending a bare logical
+    label like "oss" as a modelId (which Bedrock rejects as invalid).
+
+    Cheapest entitled model drives the router (a 1-word classification) and the Ask
+    generator; a small distinct panel is built for DEBATE when none was supplied.
+    Anything the payload DID specify is left untouched.
+    """
+    if not models:
+        return payload
+    cheapest = models[0]
+    p = dict(payload)
+    p.setdefault("router", {"tier": cheapest, "label": "router", "max_tokens": 5})
+    p.setdefault("generator", {"tier": cheapest, "label": "ask", "max_tokens": 1024})
+    # DEBATE needs a roster + adjudicator; build one from up to 3 distinct entitled
+    # models (falling back to repeats if the tier has fewer) when the SPA sent none.
+    if (payload.get("mode") == "DEBATE" or payload.get("router")) and not payload.get("roster"):
+        picks = (models + models + models)[:3]
+        p["roster"] = [
+            {"tier": m, "label": f"model-{i + 1}", "max_tokens": 1024} for i, m in enumerate(picks)
+        ]
+        p.setdefault(
+            "adjudicator", {"tier": cheapest, "label": "adjudicator", "max_tokens": 1024}
+        )
+    return p
+
+
 def run_invocation(payload: dict) -> list[dict]:
     """Run one invocation and return the ordered event stream.
 
@@ -73,7 +107,11 @@ def run_invocation(payload: dict) -> list[dict]:
     runner = CodeInterpreterRunner(REGION, CODE_INTERPRETER_ID) if CODE_INTERPRETER_ID else None
 
     tier = _verified_tier(payload)
-    allowed_models = set(models_for_tier(tier))
+    entitled = models_for_tier(tier)
+    allowed_models = set(entitled)
+    # Materialise concrete entitled model ids for any config the caller omitted, so
+    # a bare {question, idp_token, mode} from the SPA runs without an invalid modelId.
+    payload = _resolve_models(payload, entitled)
 
     try:
         dispatch(

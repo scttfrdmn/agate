@@ -41,7 +41,7 @@ class GovernanceStack(Stack):
             self,
             "Guardrail",
             name=f"{HANDLE}-baseline",
-            description="agate baseline guardrail — content + PII filters (CISO-readable)",
+            description="agate baseline guardrail - content + PII filters (CISO-readable)",
             blocked_input_messaging="This request was blocked by the agate guardrail.",
             blocked_outputs_messaging="This response was blocked by the agate guardrail.",
             content_policy_config=bedrock.CfnGuardrail.ContentPolicyConfigProperty(
@@ -75,7 +75,7 @@ class GovernanceStack(Stack):
             self,
             "PolicyEngine",
             name=f"{HANDLE}_policy_engine",
-            description="agate AgentCore policy engine — tool/action authz (Cedar)",
+            description="agate AgentCore policy engine - tool/action authz (Cedar)",
         )
         policy = agentcore.CfnPolicy(
             self,
@@ -87,7 +87,7 @@ class GovernanceStack(Stack):
                     statement=generate_policy_set(),
                 ),
             ),
-            description="Generated from agate.entitlements — mirrors the IAM model scope",
+            description="Generated from agate.entitlements - mirrors the IAM model scope",
         )
         policy.add_dependency(engine)
 

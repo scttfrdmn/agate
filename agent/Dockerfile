@@ -11,9 +11,12 @@ WORKDIR /app
 # boto3 + pydantic + PyJWT (the last for agate.jwt_verify's real token verification).
 RUN pip install --no-cache-dir "boto3>=1.34" "pydantic>=2.7" "pyjwt[crypto]>=2.8"
 
-# The pure orchestration + the container shims. Copy only what the agent needs.
+# The pure orchestration + the container shims. Copy only what the agent needs:
+# `agate` (orchestration + jwt verify + tags + entitlements), `agent` (the server
+# shims), and `cost` (CostMeter, imported by agent/server.py for the receipt).
 COPY agate/ ./agate/
 COPY agent/ ./agent/
+COPY cost/ ./cost/
 
 # AgentCore Runtime invokes over HTTP on 8080 (POST /invocations, GET /ping).
 EXPOSE 8080

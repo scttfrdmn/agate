@@ -19,6 +19,7 @@ import "./styles/agate.css";
 import { CredentialManager } from "./auth/credentials";
 import { currentToken, isLoggedIn, login, logout, type LoginConfig } from "./auth/login";
 import { ChatSession } from "./chat/session";
+import { mountChrome } from "./chrome/nav";
 import { config } from "./config";
 import { reduce, type RunState, emptyRunState } from "./events/collector";
 import type { RunEvent } from "./events/protocol";
@@ -56,7 +57,6 @@ function render(app: HTMLElement): void {
           <h1>agate</h1>
           <p class="subtitle">AWS-native GenAI gateway · governed by your campus identity</p>
         </div>
-        <button id="auth" class="btn ghost" type="button"></button>
       </header>
 
       <main id="main" class="main-col" tabindex="-1">
@@ -114,9 +114,33 @@ function main(): void {
   if (!app) return;
   render(app);
 
+  // The auth (login/logout) control lives in the shared top bar.
+  const authBtn = document.createElement("button");
+  authBtn.type = "button";
+  authBtn.className = "btn ghost";
+
+  // Top bar + pop-out navigation. The admin link only appears once we know the
+  // session is admin (added after creds resolve, below).
+  const { topbar } = mountChrome({
+    brand: "agate",
+    tag: "GenAI gateway",
+    actions: [authBtn],
+    items: [
+      { label: "Ask", icon: "💬", href: "#", current: true, onSelect: () => selectMode("ask") },
+      { label: "Panel", icon: "▤", href: "#", onSelect: () => selectMode("panel") },
+      { label: "Analyze", icon: "📊", href: "#", onSelect: () => selectMode("analyze") },
+    ],
+  });
+  app.insertBefore(topbar, app.firstChild);
+
+  function selectMode(value: string): void {
+    const sel = document.getElementById("mode") as HTMLSelectElement | null;
+    if (sel) sel.value = value;
+    (document.getElementById("q") as HTMLInputElement | null)?.focus();
+  }
+
   const scopeEl = document.getElementById("scope")!;
   const form = document.getElementById("f") as HTMLFormElement;
-  const authBtn = document.getElementById("auth") as HTMLButtonElement;
 
   if (!config.brokerUrl) {
     scopeEl.textContent =

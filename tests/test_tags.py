@@ -139,9 +139,35 @@ def test_to_sts_tags_shape():
     assert by_key[tag_key("tenant")] == "kempner"
     assert by_key[tag_key("courses")] == "CS50,CS51"
     assert by_key[tag_key("tier")] == "frontier"
-    # exactly the four agate: tags, all namespaced
-    assert len(sts) == 4
+    assert by_key[tag_key("role")] == "member"  # default, no admin claim
+    # exactly the five agate: tags, all namespaced
+    assert len(sts) == 5
     assert all(d["Key"].startswith("agate:") for d in sts)
+
+
+# --- role (admin) normalisation: fail-closed --------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("admin", "admin"),
+        ("administrator", "admin"),
+        ("agate-admin", "admin"),
+        ("ADMIN", "admin"),  # case-insensitive
+        (["student", "admin"], "admin"),  # multi-valued
+        (None, "member"),  # missing -> member
+        ("", "member"),
+        ("superuser", "member"),  # unrecognised -> member, never admin
+        ("user", "member"),
+    ],
+)
+def test_role_is_fail_closed(raw, expected):
+    assert _tags(tenant="t", role=raw).role == expected
+
+
+def test_role_absent_defaults_to_member():
+    assert _tags(tenant="t").role == "member"
 
 
 def test_all_tag_values_within_aws_limit():

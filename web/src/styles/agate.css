@@ -137,6 +137,130 @@ body {
   }
 }
 
+/* ── top bar (shared chrome) ──────────────────────────────────── */
+/* A slim global bar above the grid: nav toggle (hamburger) on the left, brand in
+ * the centre-left, session/account controls on the right. Used by both the main
+ * SPA and the admin console. */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 1.25rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.topbar .brand {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-size: 1.05rem;
+}
+.topbar .brand .tag {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.78rem;
+  margin-left: 0.4rem;
+}
+.topbar .spacer {
+  flex: 1;
+}
+.nav-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.nav-toggle:hover {
+  border-color: var(--accent);
+}
+
+/* ── pop-out side navigation (drawer) ─────────────────────────── */
+/* Off-canvas drawer toggled from the top bar. Hidden by default; slides in over a
+ * scrim. Keyboard: Esc closes, focus moves into it on open (wired in TS). */
+.nav-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 40;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+.nav-scrim.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.nav-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 264px;
+  max-width: 82vw;
+  z-index: 41;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  transform: translateX(-100%);
+  transition: transform 0.18s ease;
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem;
+  gap: 0.25rem;
+  overflow-y: auto;
+}
+.nav-drawer.open {
+  transform: translateX(0);
+}
+.nav-drawer .nav-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35rem 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.5rem;
+}
+.nav-drawer a,
+.nav-drawer .nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.92rem;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+}
+.nav-drawer a:hover,
+.nav-drawer .nav-link:hover {
+  background: rgba(123, 150, 255, 0.12);
+}
+.nav-drawer a[aria-current="page"],
+.nav-drawer .nav-link[aria-current="page"] {
+  background: rgba(123, 150, 255, 0.16);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-scrim,
+  .nav-drawer {
+    transition: none;
+  }
+}
+
 /* ── header ───────────────────────────────────────────────────── */
 
 .app-header {

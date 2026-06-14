@@ -40,6 +40,17 @@ describe("renderPanel", () => {
     expect(target.querySelector(".agate-divergence")).not.toBeNull();
   });
 
+  it("exposes a11y semantics: panel group, labelled panes, done-state class", () => {
+    const target = host();
+    renderPanel(runStateFrom(events), target);
+    const group = target.querySelector(".agate-panel")!;
+    expect(group.getAttribute("role")).toBe("group");
+    expect(group.getAttribute("aria-label")).toBe("Model panel");
+    const pane = target.querySelector('[data-pane="frontier"]')!;
+    expect(pane.getAttribute("aria-label")).toBe("Model frontier");
+    expect(pane.classList.contains("done")).toBe(true); // state=done
+  });
+
   it("renders a disagreement claim with verify flag and side-by-side positions", () => {
     const target = host();
     renderPanel(runStateFrom(events), target);
@@ -65,6 +76,8 @@ describe("renderCells (Analyze)", () => {
 
     const editor = target.querySelector(".agate-cell-source") as HTMLTextAreaElement;
     expect(editor.value).toBe("print(1)");
+    // the editable cell is labelled for assistive tech
+    expect(target.querySelector("label[for='agate-cell-source']")).not.toBeNull();
     editor.value = "print(2)"; // user edits
     (target.querySelector(".agate-cell-run") as HTMLButtonElement).click();
     expect(ran).toBe("print(2)");

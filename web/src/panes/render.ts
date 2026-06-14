@@ -18,10 +18,8 @@ function el(tag: string, attrs: Record<string, string> = {}, text?: string): HTM
 
 export function renderPanel(state: RunState, target: HTMLElement): void {
   target.replaceChildren();
-  const grid = el("div", {
-    class: "agate-panel",
-    style: "display:grid;grid-auto-flow:column;gap:1rem;align-items:start",
-  });
+  // group/list semantics so a screen reader announces "Panel, N items".
+  const grid = el("div", { class: "agate-panel", role: "group", "aria-label": "Model panel" });
   for (const pane of state.panes) {
     grid.appendChild(renderPane(pane));
   }
@@ -32,20 +30,21 @@ export function renderPanel(state: RunState, target: HTMLElement): void {
 }
 
 function renderPane(pane: PaneState): HTMLElement {
+  const done = pane.state === "done";
   const col = el("section", {
-    class: "agate-pane",
+    class: `agate-pane ${done ? "done" : "running"}`,
     "data-pane": pane.label,
-    style: "border:1px solid #ddd;padding:.75rem;min-width:18rem",
+    "aria-label": `Model ${pane.label}`,
   });
-  const head = el("header", { style: "display:flex;justify-content:space-between;gap:.5rem" });
+  const head = el("header", {});
   head.appendChild(el("strong", {}, pane.label));
-  const status =
-    pane.state === "done"
-      ? `${pane.elapsed_s ?? "?"}s · $${(pane.cost ?? 0).toFixed(4)}`
-      : "…thinking";
-  head.appendChild(el("span", { style: "color:#666;font-size:.85em" }, status));
+  const status = done
+    ? `${pane.elapsed_s ?? "?"}s · $${(pane.cost ?? 0).toFixed(4)}`
+    : "…thinking";
+  // role=status so the running→done transition is announced.
+  head.appendChild(el("span", { class: "pane-status", role: "status" }, status));
   col.appendChild(head);
-  col.appendChild(el("div", { class: "agate-pane-body", style: "white-space:pre-wrap;margin-top:.5rem" }, pane.text));
+  col.appendChild(el("div", { class: "agate-pane-body" }, pane.text));
   return col;
 }
 
@@ -58,18 +57,14 @@ const KIND_LABEL: Record<DivergenceClaim["kind"], string> = {
 };
 
 export function renderDivergence(div: DivergencePayload): HTMLElement {
-  const col = el("section", {
-    class: "agate-divergence",
-    style: "border:1px solid #bbb;background:#fafafa;padding:.75rem;min-width:20rem",
-  });
+  const col = el("section", { class: "agate-divergence", "aria-label": "Reconciled view" });
   col.appendChild(el("strong", {}, "Reconciled"));
-  col.appendChild(el("p", { style: "color:#444" }, div.summary));
+  col.appendChild(el("p", { class: "cost-line" }, div.summary));
 
   for (const claim of div.claims) {
     const card = el("details", {
       class: `agate-claim agate-claim-${claim.kind}`,
       "data-verify": String(claim.verify),
-      style: "margin:.5rem 0;border-left:3px solid #ccc;padding-left:.5rem",
     });
     const summary = el("summary", {});
     summary.appendChild(el("span", { class: "agate-claim-kind" }, `${KIND_LABEL[claim.kind]}: `));
@@ -87,8 +82,7 @@ export function renderDivergence(div: DivergencePayload): HTMLElement {
 
     if (claim.evidence_refs?.length) {
       card.appendChild(
-        el("div", { class: "agate-claim-refs", style: "font-size:.8em;color:#777" },
-          `sources: ${claim.evidence_refs.join(", ")}`),
+        el("div", { class: "agate-claim-refs" }, `sources: ${claim.evidence_refs.join(", ")}`),
       );
     }
     col.appendChild(card);
@@ -114,20 +108,23 @@ export function renderCells(
 }
 
 function renderCell(cell: AnalyzeCell, callbacks: CellCallbacks): HTMLElement {
-  const wrap = el("div", { class: "agate-cell", style: "border:1px solid #ddd;margin:.5rem 0" });
+  const wrap = el("div", { class: "agate-cell" });
 
-  // Editable source.
+  // Editable source — labelled for assistive tech.
+  const label = el("label", { class: "sr-only", for: "agate-cell-source" }, "Editable analysis code");
+  wrap.appendChild(label);
   const editor = el("textarea", {
+    id: "agate-cell-source",
     class: "agate-cell-source",
     rows: String(Math.max(3, cell.source.split("\n").length)),
-    style: "width:100%;font-family:ui-monospace,monospace;border:0;padding:.5rem",
+    spellcheck: "false",
   }) as HTMLTextAreaElement;
   editor.value = cell.source;
   wrap.appendChild(editor);
 
   // Re-run control.
-  const bar = el("div", { style: "display:flex;justify-content:flex-end;padding:.25rem;background:#f6f6f6" });
-  const run = el("button", { class: "agate-cell-run" }, "Run") as HTMLButtonElement;
+  const bar = el("div", { class: "agate-cell-bar" });
+  const run = el("button", { class: "btn agate-cell-run", type: "button" }, "Run") as HTMLButtonElement;
   run.addEventListener("click", () => callbacks.onRun?.(editor.value));
   bar.appendChild(run);
   wrap.appendChild(bar);

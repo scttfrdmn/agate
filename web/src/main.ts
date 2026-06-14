@@ -12,6 +12,10 @@
 // path, which derives the caller's tier/tenant from the IdP token server-side
 // (SEC-4b) — the SPA just forwards the token, never a tier.
 
+import "@fontsource/atkinson-hyperlegible/400.css";
+import "@fontsource/atkinson-hyperlegible/700.css";
+import "./styles/agate.css";
+
 import { CredentialManager } from "./auth/credentials";
 import { currentToken, isLoggedIn, login, logout, type LoginConfig } from "./auth/login";
 import { ChatSession } from "./chat/session";
@@ -43,27 +47,66 @@ const loginConfig: LoginConfig | null = config.cognitoDomain
   : null;
 
 function render(app: HTMLElement): void {
+  // Semantic landmarks (header / main / aside) + labelled controls + an ARIA
+  // live region so screen-reader users hear the streamed answer and run progress.
   app.innerHTML = `
-    <main style="max-width:64rem;margin:1.5rem auto;font-family:system-ui">
-      <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <h1 style="margin:0">agate</h1>
-        <button id="auth" style="padding:.35rem .75rem"></button>
-      </div>
-      <p id="scope" style="color:#666;margin:.25rem 0 1rem"></p>
-      <form id="f" style="display:flex;gap:.5rem;align-items:center">
-        <select id="mode" style="padding:.5rem">
-          ${UI_MODES.map((m) => `<option value="${m.value}">${m.label}</option>`).join("")}
-        </select>
-        <input id="q" style="flex:1;padding:.5rem" placeholder="Ask a research question…" autocomplete="off" />
-        <button>Send</button>
-      </form>
-      <div id="out" style="margin-top:1rem"></div>
-      <p id="cost" style="color:#888;font-size:.85em;margin-top:.5rem"></p>
-    </main>`;
+    <div class="layout">
+      <header class="app-header">
+        <div>
+          <h1>agate</h1>
+          <p class="subtitle">AWS-native GenAI gateway · governed by your campus identity</p>
+        </div>
+        <button id="auth" class="btn ghost" type="button"></button>
+      </header>
+
+      <main id="main" class="main-col" tabindex="-1">
+        <p id="scope" class="cost-line" role="status" aria-live="polite"></p>
+
+        <form id="f" class="composer" aria-label="Ask agate">
+          <div class="field">
+            <label for="mode">Mode</label>
+            <select id="mode">
+              ${UI_MODES.map((m) => `<option value="${m.value}">${m.label}</option>`).join("")}
+            </select>
+          </div>
+          <div class="field" style="flex:1">
+            <label for="q">Your question</label>
+            <div class="input-bar">
+              <input id="q" type="text" placeholder="Ask a research question…" autocomplete="off"
+                     aria-describedby="scope" />
+            </div>
+          </div>
+          <button class="btn" type="submit">Send</button>
+        </form>
+
+        <!-- The run output. aria-live=polite announces streamed answer + panes;
+             aria-busy is toggled while a run is in flight. -->
+        <section id="out" class="answer-region" aria-live="polite" aria-atomic="false"
+                 aria-label="Answer"></section>
+      </main>
+
+      <aside class="sidebar" aria-label="Session">
+        <div class="panel">
+          <div class="panel-title">Running cost</div>
+          <div id="cost" class="meter-total" aria-live="polite">$0.0000</div>
+          <div class="meter-status">this session · billed per request</div>
+        </div>
+      </aside>
+    </div>`;
 }
 
 function showCost(total: number): void {
-  document.getElementById("cost")!.textContent = total ? `running cost: $${total.toFixed(4)}` : "";
+  document.getElementById("cost")!.textContent = `$${(total || 0).toFixed(4)}`;
+}
+
+// Errors are announced assertively (role=alert) so a screen reader interrupts to
+// read them, rather than waiting for the polite answer queue.
+function renderError(out: HTMLElement, message: string): void {
+  const box = document.createElement("p");
+  box.className = "error-msg";
+  box.setAttribute("role", "alert");
+  box.textContent = `Error: ${message}`;
+  out.replaceChildren(box);
 }
 
 function main(): void {
@@ -116,13 +159,16 @@ function main(): void {
     input.value = "";
     const mode = modeSel.value as UiMode;
     out.replaceChildren();
+    out.setAttribute("aria-busy", "true");
+    const submitBtn = form.querySelector("button[type=submit]") as HTMLButtonElement;
+    submitBtn.disabled = true;
 
     try {
       if (mode === "ask") {
         await runAsk(q, bedrock, creds, out);
       } else {
         if (!agent) {
-          out.textContent = "Panel/Analyze need VITE_AGENT_RUNTIME_ARN (the deployed agent).";
+          renderError(out, "Panel/Analyze need VITE_AGENT_RUNTIME_ARN (the deployed agent).");
           return;
         }
         await runAgent(q, mode, agent, out);
@@ -133,7 +179,10 @@ function main(): void {
           `tier=${s.tier} · tenant=${s.tenant} · ${s.affiliation}`;
       }
     } catch (err) {
-      out.textContent = `[error: ${(err as Error).message}]`;
+      renderError(out, (err as Error).message);
+    } finally {
+      out.setAttribute("aria-busy", "false");
+      submitBtn.disabled = false;
     }
   });
 }
@@ -147,7 +196,7 @@ async function runAsk(
   out: HTMLElement,
 ): Promise<void> {
   const log = document.createElement("div");
-  log.style.cssText = "white-space:pre-wrap;border:1px solid #ddd;padding:1rem;min-height:6rem";
+  log.className = "answer-log";
   out.appendChild(log);
   log.textContent = `> ${q}\n`;
 

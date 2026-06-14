@@ -4,10 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- CSP hardening (security memo §9): no third-party scripts. Tighten the
-         connect-src to your account's Bedrock/STS/Cognito endpoints at build time. -->
+         connect-src to your account's Bedrock/STS/Cognito endpoints at build time.
+         Atkinson Hyperlegible is self-hosted via @fontsource — no third-party font
+         origin, keeping the CSP tight. -->
     <title>agate — AWS GenAI Gateway</title>
   </head>
   <body>
+    <!-- Keyboard users land here first; jumps past the header to the main region. -->
+    <a class="skip-link" href="#main">Skip to content</a>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -1,0 +1,418 @@
+"""Agent spec — a declarative agent that compiles to a scoped identity (#104, §1).
+
+This is the keystone of the agent-platform vision (`docs/agate-agents-vision.md` §1):
+an **agent is a declarative artifact** (`*.agate.yaml`) that the compiler
+(`agate.agentcompile`, #105) turns into a scoped credential + tool policy + budget
+rows + a reasoning payload. The spec IS the agent's IAM, so a compiled agent cannot
+exceed it.
+
+This module is the SCHEMA + PARSER half: frozen dataclasses + fail-closed validation,
+pure and AWS-free (no boto3) exactly like `agate.tags`/`agate.entitlements`, so it is
+fully unit-testable. It deliberately generalizes `agate.patterns.Pattern` (a reviewed
+declarative reasoning config) into the richer agent spec — the `reasoning` field IS a
+`patterns.Pattern` (or a registry key for one), so nothing about reasoning is reinvented.
+
+Fail-closed is the rule everywhere: an unknown key, an over-broad/garbled field, an
+unknown tool, or a malformed budget is REJECTED (`SpecError`), never silently widened.
+Tools are denied by absence — the compiler only emits a grant for a capability the spec
+explicitly lists, and a tool not in the capability catalog can't be listed at all.
+"""
+
+from __future__ import annotations
+
+import math
+import re
+from dataclasses import dataclass
+from typing import Any, Literal
+
+from agate.budget import normalise_scope
+from agate.entitlements import Affiliation, Tier, derive_tier
+from agate.patterns import Pattern, PatternError, Role
+from agate.patterns import get as pattern_get
+
+
+class SpecError(ValueError):
+    """A malformed or over-broad agent spec. Fail closed — never silently widened."""
+
+
+# --- role -> tier -----------------------------------------------------------
+# The spec's `role` vocabulary (what a human writes in the YAML) folded onto the
+# entitlement affiliation set, then through the single-source-of-truth tier derivation
+# (`entitlements.derive_tier`). An unrecognised role falls to the oss floor — least
+# privilege, never raise-then-widen. `grant: true` (a researcher with funding) reaches
+# frontier, mirroring derive_tier's grant path.
+_ROLE_AFFILIATION: dict[str, Affiliation] = {
+    "student": "student",
+    "ta": "student",  # a TA is entitlement-wise a student unless granted
+    "learner": "student",
+    "instructor": "faculty",
+    "faculty": "faculty",
+    "professor": "faculty",
+    "staff": "staff",
+    "researcher": "researcher",
+    "pi": "researcher",
+}
+
+
+def role_to_tier(role: str) -> Tier:
+    """Resolve a spec `role` label to a model tier via the affiliation→tier map.
+
+    Unknown role → oss floor (least privilege). There is deliberately NO `grant`
+    escalation here: a spec cannot self-assert frontier access. Tier is bounded by
+    the declared role, and any further promotion is a property of the VERIFIED
+    spawner's credential applied at spawn time (#106) — never claimed by the artifact
+    itself (the same "authority is the credential, never client-claimed" rule the
+    broker enforces). A funded researcher's agent reaches frontier via `role:
+    researcher`, not a flag."""
+    affiliation = _ROLE_AFFILIATION.get((role or "").strip().lower())
+    return derive_tier(affiliation)
+
+
+# --- capability catalog -----------------------------------------------------
+# The tools an agent may declare. Mirrors `patterns._REGISTRY`: a reviewed, in-code
+# registry. Each capability carries the GRANT it expands to — a typed descriptor, not
+# free-form policy, so the compiler stays the only thing that emits IAM JSON. An agent
+# can only list a capability that exists here; the compiler emits a grant ONLY for the
+# capabilities the spec lists (undeclared = denied by absence).
+
+ResourceKind = Literal["docs-scope", "drafts-queue", "vector-read"]
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityGrant:
+    """What IAM scope a capability expands to. The compiler interpolates the tenant/
+    scope principal tags into the resources, so a tool can never widen reach. A `write`
+    capability targets a DRAFT path (never a live system) — the vision §5 rule."""
+
+    actions: tuple[str, ...]
+    resource_kind: ResourceKind
+    write: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class Capability:
+    """A reviewed tool an agent may be granted. `name` is what the spec lists."""
+
+    name: str
+    title: str
+    grant: CapabilityGrant
+
+
+_CAPABILITIES: dict[str, Capability] = {}
+
+
+def register_capability(cap: Capability) -> Capability:
+    if cap.name in _CAPABILITIES:
+        raise SpecError(f"duplicate capability: {cap.name!r}")
+    _CAPABILITIES[cap.name] = cap
+    return cap
+
+
+def get_capability(name: str) -> Capability:
+    try:
+        return _CAPABILITIES[name]
+    except KeyError as exc:
+        raise SpecError(f"unknown tool/capability: {name!r}") from exc
+
+
+def capability_catalog() -> list[dict[str, str]]:
+    """The selectable capabilities, for an authoring UI (name/title/write)."""
+    return [
+        {"name": c.name, "title": c.title, "write": str(c.grant.write).lower()}
+        for c in _CAPABILITIES.values()
+    ]
+
+
+# Two reference capabilities matching the vision §1 YAML, proving the pattern.
+register_capability(
+    Capability(
+        name="course-materials-reader",
+        title="Read course/scope documents (read-only)",
+        grant=CapabilityGrant(actions=("s3:GetObject",), resource_kind="docs-scope"),
+    )
+)
+register_capability(
+    Capability(
+        name="gradebook-drafts",
+        title="Write feedback to a draft queue (instructor approves before it goes live)",
+        grant=CapabilityGrant(
+            actions=("s3:PutObject",), resource_kind="drafts-queue", write=True
+        ),
+    )
+)
+
+
+# --- spec field types -------------------------------------------------------
+
+BudgetPer = Literal["student", "user", "scope", "tenant"]
+PeriodKind = Literal["term", "month"]
+MemoryKind = Literal["none", "per-invoker", "personal", "shared"]
+Visibility = Literal["private", "course", "tenant"]
+InvokerKind = Literal["roster", "scope", "tenant"]
+
+ReasoningRef = str | Pattern
+
+_MEMORY_KINDS: frozenset[str] = frozenset(("none", "per-invoker", "personal", "shared"))
+_VISIBILITIES: frozenset[str] = frozenset(("private", "course", "tenant"))
+_BUDGET_PER: frozenset[str] = frozenset(("student", "user", "scope", "tenant"))
+_PERIOD_KINDS: frozenset[str] = frozenset(("term", "month"))
+_INVOKER_KINDS: frozenset[str] = frozenset(("roster", "scope", "tenant"))
+
+# "$20 / student / term"  ->  (20, student, term). Also accepts no leading $.
+_BUDGET_RE = re.compile(r"^\$?\s*([0-9]+(?:\.[0-9]+)?)\s*/\s*(\w+)\s*/\s*(\w+)$")
+
+
+@dataclass(frozen=True, slots=True)
+class BudgetSpec:
+    usd: float
+    per: BudgetPer
+    period_kind: PeriodKind
+
+
+@dataclass(frozen=True, slots=True)
+class InvokerSpec:
+    kind: InvokerKind
+    ref: str  # e.g. the course id for kind="roster" ("" for tenant-wide)
+
+
+@dataclass(frozen=True, slots=True)
+class TriggerSpec:
+    """A trigger binding — SHAPE only here. The actual EventBridge/S3/Step Functions
+    wiring is a later phase (§6); this validates the declaration is well-formed."""
+
+    on: str  # e.g. "lms:assignment-submitted"
+    then: str  # an action/handler name resolved by the triggers phase
+
+
+@dataclass(frozen=True, slots=True)
+class AgentSpec:
+    """A validated agent definition, ready for the compiler (#105). The `reasoning`
+    field is a `patterns.Pattern` (resolved from a registry key or built inline), so
+    the reasoning construct is the existing primitive, not a new one."""
+
+    name: str
+    description: str
+    role: str
+    reasoning: Pattern
+    scope: str = ""  # a single agate:scope path ("" = tenant-wide, see parse rules)
+    tools: tuple[str, ...] = ()
+    memory: MemoryKind = "none"
+    budget: BudgetSpec | None = None
+    invokers: InvokerSpec | None = None
+    triggers: tuple[TriggerSpec, ...] = ()
+    visibility: Visibility = "private"
+
+    @property
+    def tier(self) -> Tier:
+        return role_to_tier(self.role)
+
+
+# Keys the spec accepts. An unknown top-level key is rejected (fail closed) so a typo
+# can't silently become a no-op on an autonomous agent.
+_KNOWN_KEYS: frozenset[str] = frozenset(
+    (
+        "agent",
+        "name",
+        "description",
+        "role",
+        "scope",
+        "reasoning",
+        "tools",
+        "memory",
+        "budget",
+        "invokers",
+        "triggers",
+        "visibility",
+    )
+)
+
+
+def _require_str(data: dict, key: str, *, aliases: tuple[str, ...] = ()) -> str:
+    for k in (key, *aliases):
+        v = data.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    raise SpecError(f"{key} is required and must be a non-empty string")
+
+
+def _parse_reasoning(raw: object) -> Pattern:
+    """A registry key (str) → the registered Pattern; an inline dict → a built+validated
+    Pattern. Anything else → SpecError."""
+    if isinstance(raw, str) and raw.strip():
+        try:
+            return pattern_get(raw.strip())
+        except PatternError as exc:
+            raise SpecError(str(exc)) from exc
+    if isinstance(raw, dict):
+        return _inline_pattern(raw)
+    raise SpecError("reasoning must be a pattern key or an inline pattern definition")
+
+
+def _inline_pattern(d: dict) -> Pattern:
+    """Build a Pattern from an inline dict and validate its shape (DEBATE needs roles)."""
+    mode = d.get("mode")
+    if mode not in ("SYNTHESIS", "DEBATE", "ANALYSIS"):
+        raise SpecError("inline reasoning.mode must be SYNTHESIS, DEBATE, or ANALYSIS")
+    roles = tuple(
+        Role(
+            label=str(r.get("label", "")),
+            system=str(r.get("system", "")),
+            model=r.get("model", "balanced"),
+            max_tokens=int(r.get("max_tokens", 1024)),
+        )
+        for r in (d.get("roles") or [])
+        if isinstance(r, dict)
+    )
+    if mode == "DEBATE" and not roles:
+        raise SpecError("inline DEBATE reasoning must define at least one role")
+    adj = d.get("adjudicator")
+    adjudicator = (
+        Role(
+            label=str(adj.get("label", "adjudicator")),
+            system=str(adj.get("system", "")),
+            model=adj.get("model", "best"),
+            max_tokens=int(adj.get("max_tokens", 1024)),
+        )
+        if isinstance(adj, dict)
+        else None
+    )
+    return Pattern(
+        key=str(d.get("key", "inline")),
+        title=str(d.get("title", "inline")),
+        description=str(d.get("description", "")),
+        mode=mode,
+        roles=roles,
+        adjudicator=adjudicator,
+        review_system=d.get("review_system"),
+    )
+
+
+def _parse_budget(raw: object) -> BudgetSpec:
+    """Parse `"$20 / student / term"` or a structured `{usd, per, period}` dict."""
+    if isinstance(raw, str):
+        m = _BUDGET_RE.match(raw.strip())
+        if not m:
+            raise SpecError("budget must look like '$20 / student / term'")
+        usd_s, per, period = m.group(1), m.group(2).lower(), m.group(3).lower()
+        usd = float(usd_s)
+    elif isinstance(raw, dict):
+        per = str(raw.get("per", "")).lower()
+        period = str(raw.get("period", raw.get("period_kind", ""))).lower()
+        try:
+            usd = float(raw.get("usd"))  # type: ignore[arg-type]
+        except (TypeError, ValueError) as exc:
+            raise SpecError("budget.usd must be a number") from exc
+    else:
+        raise SpecError("budget must be a string or an object")
+    if not math.isfinite(usd) or usd < 0:  # mirror budget.py NaN/inf + range guard
+        raise SpecError("budget usd must be a finite number >= 0")
+    if per not in _BUDGET_PER:
+        raise SpecError(f"budget 'per' must be one of {sorted(_BUDGET_PER)}")
+    if period not in _PERIOD_KINDS:
+        raise SpecError(f"budget period must be one of {sorted(_PERIOD_KINDS)}")
+    return BudgetSpec(usd=usd, per=per, period_kind=period)  # type: ignore[arg-type]
+
+
+def _parse_invokers(raw: object) -> InvokerSpec:
+    """`"roster:chem-101"` → InvokerSpec(roster, chem-101). Shape only (resolution
+    is the per-invoker / LTI phase)."""
+    if not isinstance(raw, str) or not raw.strip():
+        raise SpecError("invokers must be a string like 'roster:chem-101'")
+    kind, _, ref = raw.strip().partition(":")
+    kind = kind.lower()
+    if kind not in _INVOKER_KINDS:
+        raise SpecError(f"invokers kind must be one of {sorted(_INVOKER_KINDS)}")
+    return InvokerSpec(kind=kind, ref=ref)  # type: ignore[arg-type]
+
+
+def _parse_triggers(raw: object) -> tuple[TriggerSpec, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, (list, tuple)):
+        raise SpecError("triggers must be a list")
+    out: list[TriggerSpec] = []
+    for t in raw:
+        if not isinstance(t, dict) or not t.get("on") or not t.get("then"):
+            raise SpecError("each trigger must have 'on' and 'then'")
+        out.append(TriggerSpec(on=str(t["on"]), then=str(t["then"])))
+    return tuple(out)
+
+
+def parse_spec(data: dict[str, Any]) -> AgentSpec:
+    """Validate a spec dict into an AgentSpec. Fail-closed: unknown keys, malformed or
+    over-broad fields, unknown tools, and bad budgets all raise SpecError.
+
+    Dict-in keeps the validated core dependency-light (no YAML import); `load_spec` is
+    the thin YAML edge.
+    """
+    if not isinstance(data, dict):
+        raise SpecError("spec must be a mapping")
+    unknown = set(data) - _KNOWN_KEYS
+    if unknown:
+        raise SpecError(f"unknown spec keys: {sorted(unknown)}")
+
+    name = _require_str(data, "name", aliases=("agent",))
+    description = _require_str(data, "description")
+    role = _require_str(data, "role")
+    reasoning = _parse_reasoning(data.get("reasoning"))
+
+    # Scope: a single path via the tags grammar (rejects `..`). A scope that is GIVEN
+    # but garbles to empty is rejected — a malformed scope must NOT silently become
+    # tenant-wide on an autonomous agent. Omitting scope entirely = tenant-wide ("").
+    raw_scope = data.get("scope")
+    if raw_scope is None or (isinstance(raw_scope, str) and not raw_scope.strip()):
+        scope = ""
+    else:
+        scope = normalise_scope(str(raw_scope))
+        if not scope:
+            raise SpecError("scope did not normalise to a valid path")
+
+    raw_tools = data.get("tools") or ()
+    if not isinstance(raw_tools, (list, tuple)):
+        raise SpecError("tools must be a list")
+    tools = tuple(str(t) for t in raw_tools)
+    for t in tools:
+        get_capability(t)  # raises SpecError on an unknown tool
+
+    memory = str(data.get("memory", "none")).lower()
+    if memory not in _MEMORY_KINDS:
+        raise SpecError(f"memory must be one of {sorted(_MEMORY_KINDS)}")
+
+    visibility = str(data.get("visibility", "private")).lower()
+    if visibility not in _VISIBILITIES:
+        raise SpecError(f"visibility must be one of {sorted(_VISIBILITIES)}")
+
+    budget = _parse_budget(data["budget"]) if data.get("budget") is not None else None
+    invokers = _parse_invokers(data["invokers"]) if data.get("invokers") is not None else None
+    triggers = _parse_triggers(data.get("triggers"))
+
+    return AgentSpec(
+        name=name,
+        description=description,
+        role=role,
+        reasoning=reasoning,
+        scope=scope,
+        tools=tools,
+        memory=memory,  # type: ignore[arg-type]
+        budget=budget,
+        invokers=invokers,
+        triggers=triggers,
+        visibility=visibility,  # type: ignore[arg-type]
+    )
+
+
+def load_spec(text: str) -> AgentSpec:
+    """Parse a YAML `*.agate.yaml` document into an AgentSpec. Thin edge: pyyaml is an
+    optional dependency (not in the core), so import it lazily and fail with a clear
+    message if absent — the validated core (`parse_spec`) needs no YAML."""
+    try:
+        import yaml  # noqa: PLC0415 — optional edge dependency, imported lazily
+    except ModuleNotFoundError as exc:  # pragma: no cover - environment-dependent
+        raise SpecError("load_spec needs pyyaml installed; pass a dict to parse_spec") from exc
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise SpecError(f"invalid YAML: {exc}") from exc
+    if not isinstance(data, dict):
+        raise SpecError("spec document must be a YAML mapping")
+    return parse_spec(data)

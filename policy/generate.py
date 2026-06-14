@@ -177,3 +177,54 @@ def vector_query_policy() -> dict:
             },
         ],
     }
+
+
+# How each capability resource_kind maps to a tenant/scope-fenced ARN. Kept here (with
+# the other emitters) so policy JSON has ONE source. The compiler (agate.agentcompile)
+# resolves a spec's declared tools to (sid, actions, resource_kind, write) tuples and
+# passes them in — policy.generate stays free of any agate.agentspec import.
+def _tool_resource(resource_kind: str, bucket: str) -> str:
+    tenant_tag = f"${{aws:PrincipalTag/{tag_key('tenant')}}}"
+    scope_tag = f"${{aws:PrincipalTag/{tag_key('scope')}}}"
+    if resource_kind == "docs-scope":
+        # Read within the session's tenant+scope subtree (mirrors data_scope_policy #80).
+        return f"arn:aws:s3:::{bucket}/{tenant_tag}/{scope_tag}/*"
+    if resource_kind == "drafts-queue":
+        # Writes land in a DRAFT prefix, never a live system (vision §5).
+        return f"arn:aws:s3:::{bucket}/{tenant_tag}/{scope_tag}/_drafts/*"
+    if resource_kind == "vector-read":
+        return "*"  # vectors fenced by tenant ResourceTag, not ARN (see vector_query_policy)
+    raise ValueError(f"unknown tool resource_kind: {resource_kind!r}")
+
+
+def agent_tool_policy(grants: list[dict], bucket: str | None = None) -> dict:
+    """The tool grants for a compiled agent (#105). One Allow per declared capability;
+    EVERY resource is interpolated with the agent's `agate:tenant` + `agate:scope`
+    principal tags, so a tool can never reach beyond the agent's scope. An undeclared
+    tool produces no statement → implicit deny (tools are denied by absence).
+
+    `grants` is a list of `{sid, actions, resource_kind, write}` dicts the compiler
+    builds from the spec's tools (resolved against `agentspec` capabilities). Returns a
+    deny-only fail-closed doc when there are no tools."""
+    docs_bucket = bucket or f"{DOCS_BUCKET_PREFIX}-*"
+    statements = [
+        {
+            "Sid": g["sid"],
+            "Effect": "Allow",
+            "Action": list(g["actions"]),
+            "Resource": [_tool_resource(g["resource_kind"], docs_bucket)],
+        }
+        for g in grants
+    ]
+    # Fail closed: with no tenant tag, deny every tool action regardless of grants.
+    tool_actions = sorted({a for g in grants for a in g["actions"]}) or ["s3:GetObject"]
+    statements.append(
+        {
+            "Sid": "DenyToolsWhenNoTenantTag",
+            "Effect": "Deny",
+            "Action": tool_actions,
+            "Resource": "*",
+            "Condition": {"Null": {f"aws:PrincipalTag/{tag_key('tenant')}": "true"}},
+        }
+    )
+    return {"Version": "2012-10-17", "Statement": statements}

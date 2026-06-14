@@ -65,7 +65,10 @@ def run_panel(
         tier, label, max_tok = member["tier"], member["label"], member["max_tokens"]
         safe_emit({"type": "model", "tier": tier, "label": label, "state": "start", "pane": label})
         t0 = _monotonic()
-        text, usage, _ = backend.converse(tier, review_system, prompt, max_tok)
+        # A reasoning PATTERN gives each role its own system prompt (the institution's
+        # recipe); fall back to the shared review_system when a member has none.
+        member_system = member.get("system") or review_system
+        text, usage, _ = backend.converse(tier, member_system, prompt, max_tok)
         cost = meter.add_llm(f"panel · {label}", tier, label, usage)
         safe_emit(
             {

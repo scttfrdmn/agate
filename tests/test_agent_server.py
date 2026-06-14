@@ -139,6 +139,52 @@ def test_bare_spa_payload_runs_to_receipt(stub_backends):
     assert any(e["type"] == "answer" and e.get("text") for e in events)
 
 
+def test_pattern_runs_through_run_invocation(stub_backends, monkeypatch):
+    # A registered pattern compiles against the verified tier's entitled models and
+    # runs the DEBATE primitive end-to-end (route -> per-role models -> receipt).
+    monkeypatch.setattr(server, "_verified_tier", lambda payload: "frontier")
+    events = server.run_invocation(
+        {"question": "Is the effect real?", "pattern": "red-team", "evidence": "some trials"}
+    )
+    labels = {e.get("label") for e in events if e["type"] == "model"}
+    assert {"for", "against"} <= labels  # the red-team roles ran
+    assert events[-1]["type"] == "receipt"
+    assert not any(e.get("title") == "error" for e in events if e["type"] == "answer")
+
+
+def test_unknown_pattern_surfaces_error(stub_backends):
+    events = server.run_invocation({"question": "q", "pattern": "no-such-pattern"})
+    assert any(e.get("title") == "error" for e in events if e["type"] == "answer")
+    assert events[-1]["type"] == "receipt"
+
+
+def test_pattern_per_role_system_prompt_reaches_backend(monkeypatch):
+    # Each role's institution-defined system prompt must reach the model (not a
+    # single shared prompt) — the whole point of a reasoning pattern.
+    seen: list[str] = []
+
+    class CapturingBackend:
+        def __init__(self, *_a, **_k):
+            pass
+
+        def converse(self, tier, system, prompt, max_tokens):
+            seen.append(system)
+            return ("SYNTHESIS" if "Reply with one word" in system else "ok"), {
+                "inputTokens": 1,
+                "outputTokens": 1,
+            }, None
+
+    monkeypatch.setattr(server, "BedrockBackend", CapturingBackend)
+    monkeypatch.setattr(server, "CODE_INTERPRETER_ID", "")
+    monkeypatch.setattr(server, "_verified_tier", lambda payload: "frontier")
+    server.run_invocation({"question": "q", "pattern": "lit-review", "evidence": "e"})
+    joined = " ".join(seen)
+    # the distinct role recipes are present, not one shared prompt
+    assert "empirical CLAIMS" in joined
+    assert "methodologist" in joined
+    assert "GAPS" in joined
+
+
 def test_events_to_blob_is_ndjson():
     blob = server._events_to_blob(
         [{"type": "answer", "text": "hi"}, {"type": "cost", "total": 1.0}]

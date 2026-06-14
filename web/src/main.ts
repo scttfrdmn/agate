@@ -68,6 +68,10 @@ function render(app: HTMLElement): void {
             <label for="mode">Mode</label>
             <select id="mode">
               ${UI_MODES.map((m) => `<option value="${m.value}">${m.label}</option>`).join("")}
+              <optgroup label="Reasoning patterns">
+                <option value="pattern:lit-review">Pattern · Literature synthesis</option>
+                <option value="pattern:red-team">Pattern · Steel-man / red-team</option>
+              </optgroup>
             </select>
           </div>
           <div class="field" style="flex:1">
@@ -203,21 +207,23 @@ function main(): void {
     const q = input.value.trim();
     if (!q) return;
     input.value = "";
-    const mode = modeSel.value as UiMode;
+    const selected = modeSel.value; // "ask"|"panel"|"analyze" or "pattern:<key>"
     out.replaceChildren();
     out.setAttribute("aria-busy", "true");
     const submitBtn = form.querySelector("button[type=submit]") as HTMLButtonElement;
     submitBtn.disabled = true;
 
     try {
-      if (mode === "ask") {
+      const pattern = selected.startsWith("pattern:") ? selected.slice("pattern:".length) : null;
+      if (!pattern && selected === "ask") {
         await runAsk(q, bedrock, creds, out);
       } else {
         if (!agent) {
-          renderError(out, "Panel/Analyze need VITE_AGENT_RUNTIME_ARN (the deployed agent).");
+          renderError(out, "Panel/Analyze/patterns need VITE_AGENT_RUNTIME_ARN (the deployed agent).");
           return;
         }
-        await runAgent(q, mode, agent, out);
+        // A pattern run sends {pattern}; a plain mode sends {mode}.
+        await runAgent(q, pattern ? { pattern } : { mode: selected as UiMode }, agent, out);
       }
       const s = creds.scope;
       if (s) {
@@ -277,7 +283,7 @@ async function runAsk(
 
 async function runAgent(
   q: string,
-  mode: UiMode,
+  choice: { mode: UiMode } | { pattern: string },
   agent: AgentCoreTransport,
   out: HTMLElement,
 ): Promise<void> {
@@ -303,7 +309,9 @@ async function runAgent(
     {
       question: q,
       idp_token: idpToken(), // verified server-side; SPA never sends a tier
-      mode: uiToRoute(mode),
+      ...("pattern" in choice
+        ? { pattern: choice.pattern }
+        : { mode: uiToRoute(choice.mode) }),
     },
     emit,
   );

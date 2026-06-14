@@ -64,6 +64,7 @@ class DemoIdpStack(Stack):
                 "tenant": _attr(),
                 "courses": _attr(),
                 "grant": _attr(),
+                "role": _attr(),  # operator role (admin) for the console
             },
             lambda_triggers=cognito.UserPoolTriggers(pre_token_generation=pretoken_fn),
             removal_policy=cdk.RemovalPolicy.DESTROY,  # throwaway demo pool

@@ -8,6 +8,7 @@ interface ImportMetaEnv {
   readonly VITE_AGENT_RUNTIME_ARN?: string;
   readonly VITE_COGNITO_DOMAIN?: string;
   readonly VITE_COGNITO_CLIENT_ID?: string;
+  readonly VITE_ADMIN_URL?: string;
 }
 
 interface ImportMeta {

@@ -16,6 +16,7 @@ import "@fontsource/atkinson-hyperlegible/400.css";
 import "@fontsource/atkinson-hyperlegible/700.css";
 import "./styles/agate.css";
 
+import { fetchAdmin, renderAdmin } from "./admin/view";
 import { CredentialManager } from "./auth/credentials";
 import { currentToken, isLoggedIn, login, logout, type LoginConfig } from "./auth/login";
 import { ChatSession } from "./chat/session";
@@ -119,17 +120,22 @@ function main(): void {
   authBtn.type = "button";
   authBtn.className = "btn ghost";
 
-  // Top bar + pop-out navigation. The admin link only appears once we know the
-  // session is admin (added after creds resolve, below).
+  // Top bar + pop-out navigation. The Admin item is offered whenever the console
+  // API is configured; the API itself is the gate (a non-admin session gets a 403,
+  // surfaced as "not authorized"). So we never need to trust a client-side role.
+  const navItems = [
+    { label: "Ask", icon: "💬", href: "#", current: true, onSelect: () => selectMode("ask") },
+    { label: "Panel", icon: "▤", href: "#", onSelect: () => selectMode("panel") },
+    { label: "Analyze", icon: "📊", href: "#", onSelect: () => selectMode("analyze") },
+  ];
+  if (config.adminUrl) {
+    navItems.push({ label: "Admin · Usage", icon: "🛠", href: "#", onSelect: () => showAdmin() });
+  }
   const { topbar } = mountChrome({
     brand: "agate",
     tag: "GenAI gateway",
     actions: [authBtn],
-    items: [
-      { label: "Ask", icon: "💬", href: "#", current: true, onSelect: () => selectMode("ask") },
-      { label: "Panel", icon: "▤", href: "#", onSelect: () => selectMode("panel") },
-      { label: "Analyze", icon: "📊", href: "#", onSelect: () => selectMode("analyze") },
-    ],
+    items: navItems,
   });
   app.insertBefore(topbar, app.firstChild);
 
@@ -137,6 +143,22 @@ function main(): void {
     const sel = document.getElementById("mode") as HTMLSelectElement | null;
     if (sel) sel.value = value;
     (document.getElementById("q") as HTMLInputElement | null)?.focus();
+  }
+
+  // Render the governed-access console into the main region. Admin-gated server-side.
+  async function showAdmin(): Promise<void> {
+    const out = document.getElementById("out");
+    if (!out) return;
+    out.replaceChildren();
+    out.setAttribute("aria-busy", "true");
+    try {
+      const payload = await fetchAdmin(config.adminUrl, idpToken());
+      renderAdmin(payload, out);
+    } catch (err) {
+      renderError(out, (err as Error).message);
+    } finally {
+      out.setAttribute("aria-busy", "false");
+    }
   }
 
   const scopeEl = document.getElementById("scope")!;

@@ -40,8 +40,32 @@ def test_oss_statement_excludes_frontier_models():
 
 def test_data_scope_interpolates_tenant_tag_and_fails_closed():
     doc = data_scope_policy()
-    read = _stmt(doc, "ReadOwnTenantDocs")
-    assert any("${aws:PrincipalTag/agate:tenant}" in r for r in read["Resource"])
+    # GetObject is gated by the resource ARN (tenant interpolated); ListBucket by prefix.
+    get = _stmt(doc, "GetOwnTenantDocs")
+    assert any("${aws:PrincipalTag/agate:tenant}" in r for r in get["Resource"])
+    assert "Condition" not in get  # s3:prefix is NOT populated for GetObject
+    lst = _stmt(doc, "ListOwnTenantDocs")
+    assert "${aws:PrincipalTag/agate:tenant}" in lst["Condition"]["StringLike"]["s3:prefix"][0]
     deny = _stmt(doc, "DenyWhenNoTenantTag")
     assert deny["Effect"] == "Deny"
     assert deny["Condition"]["Null"]["aws:PrincipalTag/agate:tenant"] == "true"
+
+
+def test_scope_confinement_denies_are_null_guarded_and_vectors_untouched():
+    # #80: the scope-confinement Denies fire ONLY when agate:scope is present
+    # (Null:false), so an unscoped session is unaffected (no regression).
+    doc = data_scope_policy()
+    get_deny = _stmt(doc, "DenyS3GetOutsideScopeSubtree")
+    assert get_deny["Effect"] == "Deny"
+    assert get_deny["Condition"]["Null"]["aws:PrincipalTag/agate:scope"] == "false"
+    # confined to {tenant}/{scope}/ via NotResource (two interpolated principal tags)
+    assert get_deny["NotResource"] == [
+        "arn:aws:s3:::agate-docs-*/${aws:PrincipalTag/agate:tenant}/${aws:PrincipalTag/agate:scope}/*"
+    ]
+    list_deny = _stmt(doc, "DenyS3ListOutsideScopeSubtree")
+    assert list_deny["Condition"]["Null"]["aws:PrincipalTag/agate:scope"] == "false"
+    assert "StringNotLike" in list_deny["Condition"]
+    # vectors statement is NOT scope-confined (deferred): only the tenant ResourceTag.
+    vec = _stmt(doc, "QueryOwnTenantVectors")
+    assert vec["Condition"]["StringEquals"]["aws:ResourceTag/agate:tenant"]
+    assert "agate:scope" not in str(vec)

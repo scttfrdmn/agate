@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Hierarchical scope reaches the credential boundary for S3 documents (#80, #70
+  phase 4).** A session may now carry an `agate:scope` IAM principal tag; the
+  generated `data_scope_policy` confines its S3 *document* reads to
+  `{tenant}/{scope}/` (strict containment — tenant-root and sibling subtrees denied).
+  The confinement is two `Null:false`-guarded Denies, so an **unscoped** session is
+  unaffected (tenant-wide, no regression). `agate.tags` gains a `scope` field +
+  `_normalise_data_scope` (single path; multi-subtree or garbled → tenant-wide,
+  fail-closed; from verified claims only). Proven by live `iam:SimulateCustomPolicy`
+  tests (subtree allowed, sibling/root/cross-tenant denied, unscoped still tenant-wide).
+  - Also split the S3 Allow into `GetOwnTenantDocs` (gated by resource ARN — fixes a
+    latent issue where `GetObject` was wrongly conditioned on `s3:prefix`, which is
+    only populated for `ListBucket`) and `ListOwnTenantDocs` (gated by prefix).
+  - **Vectors are NOT scope-confined** — the index is per-tenant and scope is row
+    metadata IAM can't see; vector subtree enforcement is its own issue (#84). The
+    tenant boundary remains IAM-enforced for vectors as before.
+
 ### Fixed
 - **Spend attribution is now unforgeable (#79).** The broker encodes the tenant into
   the STS RoleSessionName as `<tenant>@<subject>` (`agate.tags.role_session_name`), so

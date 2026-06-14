@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Consolidation security re-review of the Phase 9 / #70 session work (adversarial
+  pass over the broker→scoped-STS path, the ABAC tag scheme, the admin gate, scope
+  retrieval, reasoning patterns, and the new IAM grants; tracked in #38). Boundary
+  posture, confirmed:
+  - **The ABAC `agate:tenant` session tag is the data fence.** `requestMetadata`,
+    `admin_scope`, `role`, and the course/scope retrieval filters are **not** security
+    boundaries — they are attribution hints or within-tenant relevance narrowing.
+  - `data_scope_policy` (IAM) gates data on `agate:tenant` (+ `agate:tier` for models)
+    **only**. `admin_scope` is app-level (console analytics scope); `role` is emitted
+    as a session tag but no IAM policy conditions on it (it gates the admin surface,
+    not data). Promoting scope to an IAM principal tag for data access is a separate,
+    review-gated phase (#80).
+  - Reasoning patterns cannot escape a session's entitled model set (compiled against
+    `models_for_tier(verified_tier)`; `dispatch` re-checks `allowed_models`).
+  - One finding (#79): the spend meter trusts a client-supplied `requestMetadata`
+    tenant, so spend can be misattributed — a metering-integrity / soft-cap-evasion
+    issue (not an access breach). Remediation deferred to #79/#81 (derive the metered
+    tenant from the assumed-role session, not client input).
+
 ### Fixed
 - Spend attribution (#77): Bedrock calls now pass `requestMetadata`
   (`agate:tenant` + user/affiliation) so the invocation log carries the tenant the

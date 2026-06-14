@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Deploy-time Price List fetcher — authoritative Bedrock rates (#90, follows #88).**
+  #88 fixed the key-mismatch bug with best-effort hand-entered rates; this bakes in
+  AUTHORITATIVE numbers from the AWS Price List API at **deploy time** (never on the
+  request hot path — NO CLOCKS). `cost/pricelist.py` adds a **pure parser**
+  (`parse_price_list`, no boto3 — unit-tested against a recorded us-east-1 fixture)
+  plus a thin live fetcher (`fetch_bedrock_price_list`, the only boto3 surface,
+  read-only `pricing:GetProducts`) and a CLI: `python -m cost.pricelist --out
+  cost/model_rates.json`. The meter/chokepoint load that baked artifact automatically
+  (it ships inside the bundled `cost` package; `AGATE_MODEL_RATES_PATH` overrides) via
+  `pricing.load_baked_rates` — a plain file read, no env var or API call required.
+  A **curated alias map** (`BEDROCK_ALIASES`) maps each `entitlements.TIER_MODELS` id
+  to its Price List row, because the API keys rows by human `servicename`
+  ("Claude Opus 4.1 (Amazon Bedrock Edition)") / `model` slug ("gpt-oss-20b"), not the
+  concrete invoke id — a typo'd alias fails loud rather than silently mis-pricing real
+  money. Claude rows prefer the `_Global` (cross-region inference-profile) variant,
+  matching the `us.`-prefixed ids we invoke. Verified live: 6 of 8 hand-entered #88
+  rates were already exact; the two Gemma output rates were corrected from the live
+  data (the hard-default fallbacks are now live-verified too).
 - **Budget cascade — hierarchical pre-call enforcement (#81, #70 phase 5).** The
   Tier-1 choke point now allows a call only if it fits under the user/tenant budget
   AND under **every ancestor scope node's** budget (school → dept → course/lab),

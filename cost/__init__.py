@@ -15,14 +15,22 @@ from cost.precall import (
     evaluate_cascade,
     evaluate_precall,
 )
+from cost.pricelist import (
+    BEDROCK_ALIASES,
+    build_pricebook_rates,
+    parse_price_list,
+    rates_to_json,
+)
 from cost.pricing import (
     ModelRate,
     PriceBook,
     default_pricebook,
+    load_baked_rates,
 )
 from cost.softcap import CapResult, evaluate_soft_cap
 
 __all__ = [
+    "BEDROCK_ALIASES",
     "CapResult",
     "CascadeResult",
     "CostMeter",
@@ -31,9 +39,13 @@ __all__ = [
     "PrecallResult",
     "PriceBook",
     "Receipt",
+    "build_pricebook_rates",
     "default_pricebook",
     "estimate_call_cost",
     "evaluate_cascade",
     "evaluate_precall",
     "evaluate_soft_cap",
+    "load_baked_rates",
+    "parse_price_list",
+    "rates_to_json",
 ]

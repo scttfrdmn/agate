@@ -167,3 +167,152 @@ def test_missing_spend_table_degrades_to_empty(admin_token, monkeypatch):
     body = json.loads(resp["body"])
     assert body["grand_total_usd"] == 0
     assert body["tenants"] == []
+
+
+# --- #87: admin-gated budget writes ------------------------------------------
+
+
+class _WriteTable:
+    """Captures the last put_item Item so a test can assert the written row."""
+
+    def __init__(self):
+        self.put = None
+
+    def put_item(self, Item):  # noqa: N803 — boto3 kwarg name
+        self.put = Item
+        return {}
+
+
+@pytest.fixture
+def budget_writer(monkeypatch):
+    """Admin verifier + a capturing budget table (no spend table needed for writes)."""
+
+    def fake_verify(token, **_cfg):
+        if not token:
+            from agate.jwt_verify import TokenError
+
+            raise TokenError("empty")
+        return json.loads(token)
+
+    table = _WriteTable()
+    monkeypatch.setattr(admin_handler, "verify_token", fake_verify)
+    monkeypatch.setattr(admin_handler, "config_from_env", lambda: {})
+    monkeypatch.setattr(admin_handler, "BUDGET_TABLE", "agate-budget")
+    monkeypatch.setattr(admin_handler._ddb, "Table", lambda _n: table, raising=False)
+    return table
+
+
+def _budget_event(claims: dict, **op_fields) -> dict:
+    body = {"idp_token": json.dumps(claims), "op": "set_budget", **op_fields}
+    return {"body": json.dumps(body)}
+
+
+def test_admin_writes_tenant_budget(budget_writer):
+    resp = admin_handler.handler(
+        _budget_event(
+            {"sub": "u", "tenant": "chem", "role": "admin"},
+            tenant="chem",
+            usd=500,
+            period="2026-06",
+        ),
+        None,
+    )
+    assert resp["statusCode"] == 200
+    assert budget_writer.put["pk"] == "chem#2026-06"
+    # stored as Decimal (DynamoDB), value preserved
+    assert float(budget_writer.put["budget_usd"]) == 500.0
+
+
+def test_admin_writes_scope_budget_with_chokepoint_key(budget_writer):
+    from meter import scope_pk
+
+    resp = admin_handler.handler(
+        _budget_event(
+            {"sub": "u", "tenant": "chem", "role": "admin"},
+            tenant="chem",
+            usd=250,
+            period="2026-06",
+            scope="chemistry/chem-101",
+        ),
+        None,
+    )
+    assert resp["statusCode"] == 200
+    assert budget_writer.put["pk"] == scope_pk("chem", "chemistry/chem-101", "2026-06")
+
+
+def test_non_admin_cannot_write_budget(budget_writer):
+    resp = admin_handler.handler(
+        _budget_event(
+            {"sub": "u", "tenant": "chem", "role": "student"},
+            tenant="chem",
+            usd=1,
+            period="2026-06",
+        ),
+        None,
+    )
+    assert resp["statusCode"] == 403
+    assert budget_writer.put is None  # nothing written
+
+
+def test_cross_tenant_budget_write_is_rejected(budget_writer):
+    resp = admin_handler.handler(
+        _budget_event(
+            {"sub": "u", "tenant": "chem", "role": "admin"},
+            tenant="physics",  # not the admin's tenant
+            usd=1,
+            period="2026-06",
+        ),
+        None,
+    )
+    assert resp["statusCode"] == 403
+    assert budget_writer.put is None
+
+
+def test_scoped_admin_budget_write_confined_to_subtree(budget_writer):
+    # A chemistry-scoped admin can set chemistry/* but not a sibling subtree.
+    ok = admin_handler.handler(
+        _budget_event(
+            {"sub": "u", "tenant": "chem", "role": "admin", "admin_scope": "chemistry"},
+            tenant="chem",
+            usd=10,
+            period="2026-06",
+            scope="chemistry/chem-101",
+        ),
+        None,
+    )
+    assert ok["statusCode"] == 200
+    assert budget_writer.put["pk"] == "chem#scope#chemistry/chem-101#2026-06"
+
+    bad = admin_handler.handler(
+        _budget_event(
+            {"sub": "u", "tenant": "chem", "role": "admin", "admin_scope": "chemistry"},
+            tenant="chem",
+            usd=10,
+            period="2026-06",
+            scope="physics/phys-101",
+        ),
+        None,
+    )
+    assert bad["statusCode"] == 403
+
+
+def test_budget_write_without_table_is_misconfig(budget_writer, monkeypatch):
+    monkeypatch.setattr(admin_handler, "BUDGET_TABLE", "")
+    resp = admin_handler.handler(
+        _budget_event(
+            {"sub": "u", "tenant": "chem", "role": "admin"},
+            tenant="chem",
+            usd=1,
+            period="2026-06",
+        ),
+        None,
+    )
+    assert resp["statusCode"] == 403  # AdminError -> forbidden, nothing written
+    assert budget_writer.put is None
+
+
+def test_unknown_op_rejected(budget_writer):
+    claims = {"sub": "u", "tenant": "chem", "role": "admin"}
+    body = {"idp_token": json.dumps(claims), "op": "drop_table"}
+    resp = admin_handler.handler({"body": json.dumps(body)}, None)
+    assert resp["statusCode"] == 403

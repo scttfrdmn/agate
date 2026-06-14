@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Budget-table writer — admin-gated budget authoring (#87, splits from #81).** The
+  #81 cascade READS budget rows from `agate-budget` but nothing in agate WROTE them
+  (seeded by hand). The governed-access console's admin Lambda now takes a
+  `op:"set_budget"` mutation that authors a budget row in the EXACT key shape the
+  chokepoint reads — tenant (`tenant#period`), per-user (`tenant#user#period`), or
+  scope-node (`tenant#scope#<node>#period`). Gated at the SAME credential boundary as
+  everything else: `agate:role == admin` from the verified campus token; identity
+  (tenant + admin_scope) is read from the token, never the request body. The pure
+  `agate.budget.plan_budget_write` does all validation/authorization: **no cross-tenant
+  writes** (target tenant must equal the admin's own), and a **scoped admin is confined
+  to its own subtree** (segment-wise containment — `chem` does not match `chemistry`;
+  scoped admins cannot set tenant- or user-level budgets). Keys are rebuilt in `agate`
+  (can't import `meter` — cycle) with a parity test asserting they equal the reader's.
+  IAM grants `dynamodb:PutItem` on the budget table only. A pre-merge security review
+  caught and fixed a real bypass: a **NaN budget** would pass `usd < 0` and then the
+  chokepoint's `spend > budget` (both False), silently disabling enforcement —
+  non-finite amounts are now rejected; `..` scope segments too.
 - **Deploy-time Price List fetcher — authoritative Bedrock rates (#90, follows #88).**
   #88 fixed the key-mismatch bug with best-effort hand-entered rates; this bakes in
   AUTHORITATIVE numbers from the AWS Price List API at **deploy time** (never on the

@@ -1,15 +1,22 @@
-"""Governed-access console API — admin-gated usage/spend analytics (Track 1, #63).
+"""Governed-access console API — admin-gated usage/spend analytics + budget writes.
 
 The differentiator vs both NebulaONE ("usage limits per user") and Amazon Quick
 (no per-capita entitlement): agate already derives a verified `agate:role` from the
 campus token, so the admin surface is gated at the SAME credential boundary as
 everything else — not an app-layer check.
 
+Two operations, both admin-gated at the credential boundary:
+  * default (no `op`) — READ: scan the spend table, return the console rollups
+    (agate.admin, pure).
+  * `op: "set_budget"` — WRITE (#87): author a budget row in `agate-budget` in the
+    EXACT key shape the chokepoint reads (agate.budget, pure). A scoped admin may
+    only write within their own subtree; cross-tenant writes are impossible.
+
 Flow (fail-closed at every step):
   1. Verify the inbound IdP token (real RS256/JWKS, shared agate.jwt_verify).
-  2. Derive tags; require role == admin. Anything else -> 403, no data.
-  3. Scan the authoritative spend table and return the rollups the console renders
-     (agate.admin, pure). Read-only — this slice vends analytics, not writes.
+  2. Derive tags; require role == admin. Anything else -> 403, no data, no write.
+  3. Dispatch on `op`; identity (tenant/admin_scope) comes from the VERIFIED token,
+     never the request body.
 
 Per-request Lambda behind the same HTTP API pattern as the broker. No clock.
 """
@@ -18,13 +25,16 @@ from __future__ import annotations
 
 import json
 import os
+from decimal import Decimal
 
 import boto3
 from agate.admin import to_console_payload
+from agate.budget import BudgetError, plan_budget_write
 from agate.jwt_verify import TokenError, config_from_env, verify_token
 from agate.tags import ROLE_ADMIN, ClaimsError, claims_to_tags
 
 SPEND_TABLE = os.environ.get("AGATE_SPEND_TABLE", "")
+BUDGET_TABLE = os.environ.get("AGATE_BUDGET_TABLE", "")
 
 _ddb = boto3.resource("dynamodb")
 
@@ -75,11 +85,48 @@ def _scan_spend(table) -> list[dict]:
     return items
 
 
-def handler(event: dict, context: object) -> dict:
-    """API Gateway v2 (HTTP API) entry point. POST {idp_token, period?}."""
+def set_budget(tags, payload: dict) -> dict:
+    """Write one budget row (#87). The target/amount come from the body but identity
+    (tenant + admin_scope) comes from the VERIFIED token, so a scoped admin cannot
+    escape their subtree and no one can write another tenant. The pure
+    `plan_budget_write` does all validation/authorization + builds the exact key the
+    chokepoint reads; here we only PUT it."""
+    if not BUDGET_TABLE:
+        raise AdminError("admin API misconfigured: no budget table")
     try:
-        if not SPEND_TABLE:
-            raise AdminError("admin API misconfigured: no spend table")
+        write = plan_budget_write(
+            actor_tenant=tags.tenant,
+            actor_admin_scope=tags.admin_scope,
+            tenant=str(payload.get("tenant", "")),
+            usd=payload.get("usd"),
+            period=str(payload.get("period", "")),
+            scope=payload.get("scope"),
+            user=payload.get("user"),
+        )
+    except BudgetError as exc:
+        # A validation/authorization rejection is the caller's fault -> 4xx, not 500.
+        raise AdminError(str(exc)) from exc
+    # Decimal: DynamoDB rejects float; mirror meter.handler._increment's Decimal use.
+    _ddb.Table(BUDGET_TABLE).put_item(
+        Item={"pk": write.pk, "budget_usd": Decimal(str(write.budget_usd))}
+    )
+    return {
+        "ok": True,
+        "pk": write.pk,
+        "budget_usd": write.budget_usd,
+        "tenant": write.tenant,
+        "period": write.period,
+        "scope": write.scope,
+        "user": write.user,
+    }
+
+
+def handler(event: dict, context: object) -> dict:
+    """API Gateway v2 (HTTP API) entry point.
+    POST {idp_token, period?}                       -> spend analytics (read)
+    POST {idp_token, op:"set_budget", tenant, usd, period, scope?|user?} -> write (#87)
+    """
+    try:
         body = event.get("body") or "{}"
         if event.get("isBase64Encoded"):
             import base64
@@ -87,8 +134,17 @@ def handler(event: dict, context: object) -> dict:
             body = base64.b64decode(body).decode("utf-8")
         payload = json.loads(body) if isinstance(body, str) else body
 
+        # Admin gate first — no op runs for a non-admin (or unverifiable) token.
         tags = require_admin(payload.get("idp_token", ""))
 
+        op = payload.get("op")
+        if op == "set_budget":
+            return _resp(200, set_budget(tags, payload))
+        if op not in (None, "spend", "analytics"):
+            raise AdminError(f"unknown op: {op}")
+
+        if not SPEND_TABLE:
+            raise AdminError("admin API misconfigured: no spend table")
         # A SCOPED admin (admin_scope set) governs their own tenant only; a
         # tenant-wide/global admin (no admin_scope) sees every tenant. (#70 RBAC,
         # app-level — subtree-granular spend awaits scope-keyed spend rows in the

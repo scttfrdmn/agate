@@ -35,10 +35,15 @@ class AdminStack(Stack):
         account = self.account
         spend_table_name = f"{HANDLE}-spend"
         spend_table_arn = f"arn:aws:dynamodb:{region}:{account}:table/{spend_table_name}"
+        budget_table_name = f"{HANDLE}-budget"
+        budget_table_arn = f"arn:aws:dynamodb:{region}:{account}:table/{budget_table_name}"
 
         # OIDC verification config — same context keys as the broker so one deploy
         # invocation configures both (campus IdP or the demo pool).
-        admin_env = {"AGATE_SPEND_TABLE": spend_table_name}
+        admin_env = {
+            "AGATE_SPEND_TABLE": spend_table_name,
+            "AGATE_BUDGET_TABLE": budget_table_name,  # #87: admin-gated budget writes
+        }
         for env_key, ctx_key in (
             ("AGATE_OIDC_ISSUER", "oidc_issuer"),
             ("AGATE_OIDC_JWKS_URL", "oidc_jwks_url"),
@@ -61,12 +66,23 @@ class AdminStack(Stack):
             description="agate governed-access console API - admin-gated spend analytics",
         )
 
-        # Read-only on the spend table (scan + get). The admin path never writes.
+        # Read-only on the spend table (scan + get) — analytics never writes spend.
         admin_fn.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["dynamodb:GetItem", "dynamodb:Scan", "dynamodb:Query"],
                 resources=[spend_table_arn],
+            )
+        )
+        # Write on the BUDGET table only (#87): the admin authors budget ceilings the
+        # chokepoint reads. Scoped to PutItem on this one table — the subtree/tenant
+        # authorization is enforced in agate.budget.plan_budget_write, not by IAM
+        # (the row key is data, not a resource ARN).
+        admin_fn.add_to_role_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=["dynamodb:PutItem"],
+                resources=[budget_table_arn],
             )
         )
 

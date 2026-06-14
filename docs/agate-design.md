@@ -1,8 +1,8 @@
-# aws-genai-gateway
+# agate
 **AWS-Native GenAI Gateway for Higher Education**  ·  CLI: `agate`
 ## Design & Implementation Plan (for Claude Code)
 
-> **Name (provisional).** Project / repo / package: **`aws-genai-gateway`**. CLI binary and short
+> **Name (provisional).** Project / repo / package: **`agate`**. CLI binary and short
 > handle used throughout: **`agate`** (session-tag namespace `agate:`, bucket prefix `agate-docs`). Chosen
 > "for now" — still swappable via a global rename; nothing in the design depends on it.
 
@@ -396,7 +396,7 @@ runtime do.
 ## 11. Repo layout
 
 ```
-aws-genai-gateway/
+agate/
 ├── infra/                 # AWS CDK v2 (aws-cdk-lib, Python 3.12+). One app, small focused stacks.
 │   ├── app.py
 │   └── stacks/

@@ -1,5 +1,5 @@
 {
-  "name": "aws-genai-gateway-toolchain",
+  "name": "agate-toolchain",
   "version": "0.1.0",
   "private": true,
   "description": "Node toolchain for agate. IaC is Python CDK; the aws-cdk CLI + jsii runtime require Node (see README).",

@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/scttfrdmn/aws-genai-gateway/cli/internal/config"
+	"github.com/scttfrdmn/agate/cli/internal/config"
 )
 
 // Plan is an external command the CLI would run, with a human-readable summary.

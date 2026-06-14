@@ -8,25 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- **Renamed the short handle `agg` → `agate`** (the mineral, a banded form of
-  bedrock — ties to Amazon Bedrock). This sweeps the CLI binary, the `agate:` ABAC
-  session-tag namespace (`agate:tenant`/`tier`/…), all `agate-*` AWS resource and
-  CDK stack names (`agate-identity`, `agate-data`, …), the `AGATE_*` Lambda env
-  vars, and the `agate/` Python package. The distribution/package slug
-  `aws-genai-gateway`, the Go module path, and the `docs/aws-genai-gateway-*`
-  filenames are unchanged. Names remain provisional. **Operational note:** because
-  resource and stack names changed, an existing `agg-*` deployment is not upgraded
-  in place — destroy the old stacks and deploy the `agate-*` ones (nothing was live).
+- **Renamed the project `agg` → `agate`** (named for agate, a banded form of bedrock —
+  ties to Amazon Bedrock). The rename is now complete across both the code identifiers
+  and the distribution identity: the CLI binary, the `agate:` ABAC session-tag namespace
+  (`agate:tenant`/`tier`/…), all `agate-*` AWS resource and CDK stack names
+  (`agate-identity`, `agate-data`, …), the `AGATE_*` Lambda env vars, the `agate/` Python
+  package, the package slug (`pyproject`/`package.json` → `agate`), the Go module path
+  (`github.com/scttfrdmn/agate/cli`), the `docs/agate-*` filenames, and the GitHub repo.
+  The name remains provisional. **Operational note:** because resource and stack names
+  changed, an existing `agate-*` deployment is not upgraded in place — destroy the old
+  stacks and deploy the `agate-*` ones (nothing was live).
 
 ### Added
 - Demo readiness — `infra/stacks/demo_idp.py` (`agate-demo-idp`): an optional,
   throwaway Cognito User Pool that issues real RS256 JWTs so the gateway can be
   demoed without a campus IdP. A pre-token-generation Lambda
   (`infra/functions/demo_idp/pretoken.py`) maps the demo user's
-  `custom:affiliation|tenant|courses|grant` attributes onto the top-level `agg`
+  `custom:affiliation|tenant|courses|grant` attributes onto the top-level `agate`
   claim names, so the demo token verifies (SEC-4) and scopes (ABAC) exactly like a
   campus token with no gateway changes. The stack outputs the OIDC issuer, JWKS URL,
-  and audience to wire into the broker/agent `AGG_OIDC_*` config. Production omits
+  and audience to wire into the broker/agent `AGATE_OIDC_*` config. Production omits
   this stack and points the broker at the real IdP.
 - Demo readiness — the SPA now drives the full academic interaction model (#39):
   `web/src/main.ts` adds a mode selector (Ask / Panel / Analyze) and routes each
@@ -51,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whose trustworthiness wasn't established: the chokepoint reused the broker's
   unsigned-token placeholder behind a live Function URL (SEC-4a), and the agent
   derived its tier from an unsourced `X-Agg-Verified-Tier` header (SEC-4b).
-  - `agg/jwt_verify.py`: one shared real verifier — RS256 against the IdP JWKS,
+  - `agate/jwt_verify.py`: one shared real verifier — RS256 against the IdP JWKS,
     pinned algorithm (no `alg=none`/HS-confusion), `iss`/`aud`/`exp`/`sub` enforced,
     JWKS client injectable for tests. Used by the broker, the choke point, and the
     agent so verification can't drift between them.
@@ -72,17 +73,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     them into STS session tags — allowing ABAC tag forgery, budget bypass (omit the
     field → no cap), and spend mis-attribution. Now identity is derived from the
     validated IdP token via `claims_to_tags` (same path as the broker), budget is
-    looked up server-side from a new `agg-budget` table keyed by the verified
+    looked up server-side from a new `agate-budget` table keyed by the verified
     identity, and input tokens are always estimated server-side. The body carries
     only `idp_token` + `model`/`messages`/`max_tokens`.
-  - **SEC-2 — agent path had no tenant/tier enforcement (`agg/agent_dispatch.py`,
+  - **SEC-2 — agent path had no tenant/tier enforcement (`agate/agent_dispatch.py`,
     `agent/server.py`, `infra/stacks/agent.py`).** The container invoked any model
     the payload named, and the Runtime execution role granted Bedrock + S3 Vectors on
     `Resource:*`. Dispatch now rejects any model outside the verified caller's tier
-    (`allowed_models`, from the inbound-JWT `agg:tier`, fail-closed to oss); the
-    execution role is scoped to agg's entitled model ARNs and this deployment's
+    (`allowed_models`, from the inbound-JWT `agate:tier`, fail-closed to oss); the
+    execution role is scoped to agate's entitled model ARNs and this deployment's
     vector/docs bucket ARNs.
-  - **SEC-3 — LTI tenant fallback (`agg/lti.py`).** A registration without a `tenant`
+  - **SEC-3 — LTI tenant fallback (`agate/lti.py`).** A registration without a `tenant`
     fell back to the LTI context claim (instructor-controlled), enabling cross-tenant
     access on a shared LMS. The fallback is removed; a missing registration tenant
     now fails closed (`LtiClaimError`).
@@ -90,7 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Refactor pass (no behavior change; demo-readiness #35–#37): removed three
   duplications surfaced now that the build is complete.
-  - `agg/contracts.py` defines the `Backend` / `CostMeter` Protocols + `Emit` /
+  - `agate/contracts.py` defines the `Backend` / `CostMeter` Protocols + `Emit` /
     `Usage` aliases once; the panel, analyze, and router orchestrators import them
     instead of each redeclaring their own.
   - `meter.read_spend_item()` is the single spend-table accessor (shared key format);
@@ -108,7 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   log-delivery statement on the same bucket. NO CLOCKS (storage-priced).
 - Phase 5 governance tail — Guardrails + AgentCore Policy (Cedar):
   - `policy/cedar.py`: pure generation of the Cedar policy set (§13.4) from the SAME
-    `agg.entitlements` table that drives the IAM model-access policy — a per-tier
+    `agate.entitlements` table that drives the IAM model-access policy — a per-tier
     `InvokeModel` permit (tier+tenant matched), a tenant/course-scoped `Retrieve`
     permit, a per-user `CallTool` permit, and a defence-in-depth cross-tenant
     `forbid`. The human-auditable layer and the enforced IAM layer cannot drift.
@@ -143,7 +144,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   metering arc; the soft cap now has a real, log-derived number to enforce):
   - `meter/parse.py`: pure, AWS-free translation of a Bedrock model-invocation log
     record into a priced `SpendRecord` — attributes tenant/user from the assumed-role
-    identity + `agg:tenant` tag, derives the `{tenant}#{user}#{period}` (+ rollup)
+    identity + `agate:tenant` tag, derives the `{tenant}#{user}#{period}` (+ rollup)
     spend-table keys (§13.6), and prices via the shared `cost` engine. Fully tested.
   - `meter/handler.py`: the S3-triggered spend Lambda — reads invocation-log objects
     (incl. gzip), recomputes **authoritative** spend, and atomically increments the
@@ -156,20 +157,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tested end-to-end (fakes, no AWS): metering a log object increments both rows,
     and `evaluate_soft_cap` denies/allows against the resulting authoritative spend.
 - Phase 0 — repository scaffold: CDK v2 Python app (`infra/`, `uv`-managed, Python 3.13),
-  Go module for the `agg` CLI (`cli/`), Vite + TypeScript SPA skeleton (`web/`), and the
+  Go module for the `agate` CLI (`cli/`), Vite + TypeScript SPA skeleton (`web/`), and the
   component directories from design §11 (`policy/`, `cost/`, `meter/`, `lti/`, `agent/`,
   `ingest/`, `docs/`). `README.md`, this changelog, `.gitignore`, and `cdk bootstrap` notes.
 - Phase 1 — identity broker + ABAC:
-  - Pure, side-effect-free `claims_to_tags()` translation (the `agg:` session-tag scheme,
+  - Pure, side-effect-free `claims_to_tags()` translation (the `agate:` session-tag scheme,
     §13.1) with full unit-test coverage and no AWS dependency.
   - Single-source-of-truth tier → entitled-model-ARN table, shared by the broker and the
     generated IAM model-access policy.
   - `infra/stacks/identity.py`: Cognito **Identity Pool** (federated SAML/OIDC, no User
-    Pool), the authenticated role + permissions boundary keyed on `agg:` principal tags,
+    Pool), the authenticated role + permissions boundary keyed on `agate:` principal tags,
     and the per-request **broker Lambda** that validates the IdP token, derives the four
     tags, and vends scoped STS credentials.
   - Phase 1 end-to-end proof: IAM policy simulation asserting `Converse` is allowed for an
-    entitled model ARN and denied for a non-entitled one, scoped purely by `agg:` tags.
+    entitled model ARN and denied for a non-entitled one, scoped purely by `agate:` tags.
 - Phase 2 — static SPA, Tier 0 browser-direct transport:
   - `web/src/auth/credentials.ts`: `CredentialManager` that fetches scoped STS credentials
     from the broker and refreshes them before expiry, with a pure, unit-tested
@@ -183,18 +184,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Minimal streaming chat UI wired in `web/src/main.ts`; build-time config in
     `web/src/config.ts` (no secrets in the client).
   - Vitest unit tests for the refresh decision, message mapping, and chat accumulation;
-    an opt-in live `ConverseStream` smoke test (`AGG_LIVE_SMOKE=1`), verified against
+    an opt-in live `ConverseStream` smoke test (`AGATE_LIVE_SMOKE=1`), verified against
     Bedrock.
 - Phase 3 — data plane (S3 Vectors RAG):
-  - `infra/stacks/data.py`: an `agg-docs` S3 bucket (per-tenant prefix, versioned,
+  - `infra/stacks/data.py`: an `agate-docs` S3 bucket (per-tenant prefix, versioned,
     retained), an S3 Vectors vector bucket with one **index per tenant** (1024-dim,
     cosine), and a **per-tenant KMS CMK** on each index. Each index is tagged with its
-    `agg:tenant` so the Phase 1 ABAC data-scope policy isolates reads. Built on L1
+    `agate:tenant` so the Phase 1 ABAC data-scope policy isolates reads. Built on L1
     `Cfn*` constructs (no L2 for S3 Vectors yet).
   - `ingest/handler.py`: embed-on-upload Lambda — S3 `ObjectCreated` → chunk → Bedrock
     Titan embeddings → `PutVectors` into the tenant's index. Tenant is derived from the
     key prefix and fails closed; one bad object never aborts the batch.
-  - `agg/rag.py`: pure, AWS-free chunking, tenant-key derivation, and vector-record
+  - `agate/rag.py`: pure, AWS-free chunking, tenant-key derivation, and vector-record
     assembly with full unit-test coverage.
   - `web/src/rag/`: query-embed → scoped `QueryVectors` on the tenant index → context
     injection; a pure, unit-tested context builder. RAG is opt-in via an optional
@@ -202,9 +203,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tenant-isolation proof (IAM policy simulation): a `chem`-scoped session may
     `QueryVectors` its own index and is **denied** the `psych` index (both directions).
 - Phase 4 — LTI 1.3 tool provider:
-  - `agg/lti.py`: pure, AWS-free mapping of an LTI 1.3 launch (roles, context, NRPS)
+  - `agate/lti.py`: pure, AWS-free mapping of an LTI 1.3 launch (roles, context, NRPS)
     into the claims dict that the Phase 1 `claims_to_tags()` consumes — so LTI is one
-    concrete source of `agg:affiliation` / `agg:courses`, with no second tag scheme.
+    concrete source of `agate:affiliation` / `agate:courses`, with no second tag scheme.
     Instructor → faculty (mid tier), Learner → student (oss); plus pure nonce/state
     replay-protection decisions.
   - `lti/handler.py`: the four LTI 1.3 endpoints (`/lti/login`, `/lti/launch`,
@@ -236,13 +237,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Ask/Analyze runs, backward-compatibility with unknown events, and the divergence
     and Analyze-cell rendering.
 - Academic interaction model — Phase 2 (Panel orchestration + adjudicator contract):
-  - `agg/panel/schema.py`: the `Divergence` Pydantic model mirroring the §10.2.5
+  - `agate/panel/schema.py`: the `Divergence` Pydantic model mirroring the §10.2.5
     draft-07 schema (forbids extra properties, requires ≥1 position per claim,
     constrains the stance/kind enums) plus `strip_fences()` for accidental Markdown
     fences around the adjudicator's JSON.
-  - `agg/panel/prompts.py`: the `ADJUDICATE_SYSTEM` prompt (structured-only output)
+  - `agate/panel/prompts.py`: the `ADJUDICATE_SYSTEM` prompt (structured-only output)
     and a default review prompt; reviewer labels are roster config, kept neutral.
-  - `agg/panel/orchestrator.py`: `run_panel` — N roster members review the same
+  - `agate/panel/orchestrator.py`: `run_panel` — N roster members review the same
     evidence in parallel over injected `Backend`/`CostMeter` interfaces (no AWS in
     core), each emitting its own `model` start/done + per-pane `cost`; the
     adjudication tail validates the structured output and emits a `divergence`
@@ -252,14 +253,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     roster labels, cost accumulation, and the malformed- **and** schema-invalid-
     adjudicator fallback paths.
 - Academic interaction model — Phase 3 (Analyze cell / Code Interpreter):
-  - `agg/analyze/schema.py`: pure, AWS-free `extract_code()` (pulls the Python
+  - `agate/analyze/schema.py`: pure, AWS-free `extract_code()` (pulls the Python
     script from the model's fenced output), `parse_invoke_result()` (normalises an
     AgentCore `InvokeCodeInterpreter` stream result into text/image content blocks),
     and `result_to_events()` (maps a result to `answer`/`chart` events, surfacing a
     traceback on error rather than swallowing it).
-  - `agg/analyze/prompts.py`: the `ANALYZE_SYSTEM` prompt (one self-contained,
+  - `agate/analyze/prompts.py`: the `ANALYZE_SYSTEM` prompt (one self-contained,
     network-free Python script; chart saved to a known path for inline rendering).
-  - `agg/analyze/orchestrator.py`: `run_analyze` over injected `Backend` /
+  - `agate/analyze/orchestrator.py`: `run_analyze` over injected `Backend` /
     `CodeRunner` (the Code Interpreter microVM) / `CostMeter` — generate → emit the
     editable `code` cell → execute in the sandbox → emit `answer`/`chart`. Execution
     time is metered as a **compute** line distinct from token cost (`add_compute`),
@@ -271,12 +272,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `amazon.nova-2-multimodal-embeddings-v1:0` (TEXT/IMAGE/AUDIO/VIDEO → embedding,
     **3072-dim**), S3 Vectors as a first-class Bedrock-KB backend
     (`s3_vectors_configuration`), and the supplemental multimodal-storage location.
-  - `agg/multimodal.py`: pure, AWS-free helpers — the Nova embedding request/response
+  - `agate/multimodal.py`: pure, AWS-free helpers — the Nova embedding request/response
     mapping, ingestion-path selection (native multimodal vs parser+text fallback),
     and visual-citation resolution (`citation` event + figure/table corpus deep links).
   - `infra/stacks/data.py`: a **3072-dim multimodal S3 Vectors index per tenant**,
     built alongside (not replacing) the 1024-dim text index, sharing the tenant CMK
-    and `agg:tenant` tag; a `_mm-artifacts/` supplemental-storage prefix. Embedding
+    and `agate:tenant` tag; a `_mm-artifacts/` supplemental-storage prefix. Embedding
     dimension is now per-index config, not a global constant.
   - `web/src/rag/multimodal.ts` + `citation.ts`: query-by-image and figure-aware
     text retrieval against the multimodal index, and visual-citation/deep-link
@@ -285,7 +286,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     shapes, path selection, the 3072-vs-1024 dimension guard, and citation/deep-link
     resolution for text vs figure vs table.
 - Academic interaction model — Phase 5 (reproducible run artifact):
-  - `agg/artifact.py`: pure, AWS-free `RunArtifact` Pydantic model + `build_artifact()`
+  - `agate/artifact.py`: pure, AWS-free `RunArtifact` Pydantic model + `build_artifact()`
     that folds a run's typed event stream into one shareable, citable record — mode,
     question, panel roster, models used, transcript, generated code, citations (text
     and visual), the divergence structure (reusing the `Divergence` model), and the
@@ -298,7 +299,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     capture, deduped models in first-seen order, JSON round-trip, canonical
     none-omission, the cost-tag CSV export, and forward-compat with unknown events.
 - Academic interaction model — Phase 6 (router + mode override), completing §10.2:
-  - `agg/router.py`: pure `classify_mode()` (a router model's one-word reply →
+  - `agate/router.py`: pure `classify_mode()` (a router model's one-word reply →
     SYNTHESIS/DEBATE/ANALYSIS, robust to noise, cue-word fallback, never escalating
     past the cheapest default) and `resolve_mode()` (explicit override wins). The
     `run_router` orchestration makes the cheap routing call (one fast model,
@@ -324,7 +325,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Wired into the CDK app; `cdk synth` verified for all four stacks (identity,
     data, lti, agent), with and without the Cognito authorizer context.
 - Phase 8 — agent path: reference agent container + agent transport:
-  - `agg/agent_dispatch.py`: pure, AWS-free `dispatch()` that resolves the mode
+  - `agate/agent_dispatch.py`: pure, AWS-free `dispatch()` that resolves the mode
     (router or explicit override) and drives the matching orchestration — Ask, Panel
     (`run_panel`), or Analyze (`run_analyze`) — over injected `Backend`/`CodeRunner`/
     `CostMeter`, emitting the run event stream. Fully unit-tested with fakes.
@@ -361,23 +362,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tests (fakes only, Python + TypeScript): dollar math per kind, config-vs-default
     rate resolution, the S3-Vectors config fallback, thread-safe parallel metering,
     the soft-cap decision matrix, and Python/TS parity on a worked example.
-- Phase 7 — the `agg` admin CLI (Go): real `tenant`, `budget`, `deploy`, and
+- Phase 7 — the `agate` admin CLI (Go): real `tenant`, `budget`, `deploy`, and
   `ingest` commands replacing the Phase 0 stubs.
-  - `internal/config`: a pure `.agg.json` model — tenant set (validated against the
-    `agg:tenant` charset, kept sorted/deduped) and per-tenant budgets (which the
+  - `internal/config`: a pure `.agate.json` model — tenant set (validated against the
+    `agate:tenant` charset, kept sorted/deduped) and per-tenant budgets (which the
     soft cap reads). Load treats a missing file as empty; full table tests.
   - `internal/commands`: pure plan construction — `deploy` turns the tenant set into
     `cdk deploy ... -c tenants=...`; `ingest` targets the FERPA-correct
-    `s3://agg-docs-…/{tenant}/<file>` prefix. Both return the exact argv, tested.
+    `s3://agate-docs-…/{tenant}/<file>` prefix. Both return the exact argv, tested.
   - The cloud-mutating commands (`deploy`, `ingest`) **plan by default and run only
-    with `--confirm`** — agg never changes cloud state implicitly. `budget set`
+    with `--confirm`** — agate never changes cloud state implicitly. `budget set`
     accepts the natural `set <tenant> --usd N` ordering.
   - `gofmt`/`go vet` clean; `go test ./...` green across the three packages.
 
 ### Fixed
 - **Phase 1 proven live** (first real AWS deploy, us-east-1): the identity stack
   deploys and the full chain works against real Bedrock — broker Lambda derives the
-  `agg:` tags, vends scoped STS creds, and IAM/ABAC allows an entitled model and
+  `agate:` tags, vends scoped STS creds, and IAM/ABAC allows an entitled model and
   denies a non-entitled one (oss session: gpt-oss allowed / frontier denied;
   frontier session: both allowed, cumulative). Two corrections the live deploy
   surfaced:
@@ -391,4 +392,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     ARN **and** the underlying foundation-model ARN; `model_resource_arns()` now
     emits both, region-wildcarded for the underlying FM.
 
-[Unreleased]: https://github.com/scttfrdmn/aws-genai-gateway/commits/main
+[Unreleased]: https://github.com/scttfrdmn/agate/commits/main

@@ -4,7 +4,7 @@ Everything else imports from here instead of scattering string literals.
 """
 
 # Project / repo / package name and short handle (CLI binary).
-NAME = "aws-genai-gateway"
+NAME = "agate"
 HANDLE = "agate"
 
 # ABAC session-tag namespace. Tag keys are f"{TAG_NAMESPACE}affiliation", etc.

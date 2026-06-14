@@ -161,21 +161,42 @@ class AuditStack(Stack):
         # --- CloudTrail (the management-plane forensic trail, §8) ---------
         # Bedrock invocation logging (above) captures the *data* plane — who invoked
         # which model. CloudTrail captures the *management* plane — who assumed which
-        # role, who changed config — into the same audit bucket under its own prefix.
-        # Together they give the per-identity "prove who accessed what" trail (§8).
-        # File validation lets a reviewer detect tampering; the Trail construct adds
-        # the bucket policy CloudTrail delivery requires.
-        trail = cloudtrail.Trail(
-            self,
-            "Trail",
-            trail_name=f"{HANDLE}-audit",
-            bucket=log_bucket,
-            s3_key_prefix="cloudtrail/",
-            include_global_service_events=True,
-            is_multi_region_trail=True,
-            enable_file_validation=True,
-            management_events=cloudtrail.ReadWriteType.ALL,
-        )
+        # role, who changed config. Together they give the per-identity "prove who
+        # accessed what" trail (§8).
+        #
+        # OPT-IN (`-c cloudtrail=true`): the CloudTrail Trail construct's create-time
+        # bucket-policy validation is flaky against a just-created bucket ("Incorrect
+        # S3 bucket policy" even with the correct policy + an explicit DependsOn —
+        # an S3/CloudTrail eventual-consistency issue, tracked in #75). The
+        # forensic trail is INDEPENDENT of the authoritative-spend path (spend table
+        # + Bedrock invocation logging + meter), so it is gated off by default: the
+        # spend path — what the governed-access console needs — deploys cleanly, and
+        # CloudTrail can be enabled once #75 is resolved.
+        if self.node.try_get_context("cloudtrail") in (True, "true", "1"):
+            trail_bucket = s3.Bucket(
+                self,
+                "TrailLogs",
+                bucket_name=f"{HANDLE}-trail-{self.account}-{self.region}",
+                encryption=s3.BucketEncryption.S3_MANAGED,
+                block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+                enforce_ssl=True,
+                removal_policy=cdk.RemovalPolicy.RETAIN,  # forensic trail
+                versioned=True,
+            )
+            trail = cloudtrail.Trail(
+                self,
+                "Trail",
+                trail_name=f"{HANDLE}-audit",
+                bucket=trail_bucket,
+                s3_key_prefix="cloudtrail/",
+                include_global_service_events=True,
+                is_multi_region_trail=True,
+                enable_file_validation=True,
+                management_events=cloudtrail.ReadWriteType.ALL,
+            )
+            if trail_bucket.policy is not None:
+                trail.node.add_dependency(trail_bucket.policy)
+            cdk.CfnOutput(self, "CloudTrailArn", value=trail.trail_arn)
 
         # --- Cost-allocation tags (per-tenant chargeback attribution) -----
         cdk.Tags.of(self).add("agate:component", "audit")
@@ -185,9 +206,7 @@ class AuditStack(Stack):
         cdk.CfnOutput(self, "SpendTableName", value=spend_table.table_name)
         cdk.CfnOutput(self, "BudgetTableName", value=budget_table.table_name)
         cdk.CfnOutput(self, "SpendMeterFunction", value=spend_fn.function_name)
-        cdk.CfnOutput(self, "CloudTrailArn", value=trail.trail_arn)
 
         self.log_bucket = log_bucket
         self.spend_table = spend_table
         self.budget_table = budget_table
-        self.trail = trail

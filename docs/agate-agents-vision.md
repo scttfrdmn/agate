@@ -131,6 +131,49 @@ tool-scoped policy, Runtime config, budget rows, trigger bindings}`.
 
 ---
 
+## 1.5 The interface is Claude-Code-like — multi-model by default, with *entitlement-aware* routing
+
+**[seam]** The interaction model should feel like Claude Code, not a model picker: you
+**state intent and the system routes** — multi-model by definition, with an "auto mode"
+that chooses the right model and the right reasoning construct for the task. agate is
+already multi-model (the tier→model map) and already has a router (`agate/router.py`
+routes free-form input to Ask/Panel/Analyze, cheapest-default, user-override-wins). The
+leap is to flip the default from *"pick a model"* to *"declare the task; auto-route
+within what you're allowed and can afford."*
+
+**The agate twist — routing is entitlement-and-budget-aware by construction.** Claude
+Code routes on task difficulty; agate routes on difficulty **clamped to the session's
+entitled model set and remaining budget**. Auto mode can *never* select a model the
+tier doesn't permit or the budget can't afford, because **the router's candidate set IS
+the entitled set** (`entitlements.models_for_tier`) and each candidate is pre-checked
+against the cascade (#81). That is a routing story no commodity chat UI can tell: the
+optimizer's search space is the credential's allow-set.
+
+Two routing axes, one engine (generalizing the existing mode router):
+- **which construct** — Ask / Panel / Analyze / (later) a named agent or graph;
+- **which model** — the cheapest-that-clears-the-bar vs most-capable-affordable choice,
+  *within the entitled set*.
+
+**Routing policy is selectable; routing is transparent and overridable.** Ship named
+policies — `thrifty` (cheapest entitled model that clears an estimated difficulty bar;
+escalate only when warranted *and* affordable) and `best` (most capable the budget
+comfortably affords; step down under pressure) — that a user picks per session or an
+admin/`spec` pins per agent; auto picks a sensible default. Every turn **shows which
+model handled it and why** (reusing the existing `route` + receipt/cost events), and the
+user can **pin a specific entitled model anytime** — academics prefer explicit control,
+and the cost/quality/entitlement tradeoff is a selling point, not something to hide. The
+override-wins precedence is exactly `agate/router.py::resolve_mode` today, extended to
+the model axis.
+
+**Why this composes with the rest of the vision.** Auto mode at request time and the
+agent spec's `reasoning`/model choice at compile time are the **same routing engine**,
+resolved at two moments: a live session routes per turn; a compiled agent bakes its
+policy into the spec. So the Claude-Code-like surface and the agent platform share one
+governed router — and "auto" is safe everywhere because its candidate set is always the
+bounded credential.
+
+---
+
 ## 2. Bounded delegation — the unlock unique to agate
 
 **[seam → vision]** When a principal spawns an agent, the agent's credential is a
@@ -431,6 +474,11 @@ data access, and agate is already most of the way there.
    Pure + unit-testable + proof-simulated, like every load-bearing part before it.
 2. **Bounded delegation** (§2): the spawn-narrows-credential `AssumeRole` path + the
    per-invoker instantiation. Proof-sim: a child can never out-scope its parent.
+2.5. **Entitlement-aware routing / auto mode** (§1.5): extend `agate/router.py` to a
+   second axis (which model), candidate set = the entitled set, each pre-checked against
+   the budget cascade; selectable `thrifty`/`best` policy; transparent + override-wins.
+   Foundational because the agent spec's `reasoning`/model choice and live auto mode are
+   the same engine.
 3. **Saved sessions + personal/shared memory** (§3), ABAC-namespaced.
 4. **Agent graphs** (§4) with monotonic narrowing + cascade budget + attribution.
 5. **MCP tool catalog** (§5), starting with read-only LMS/library, then the HPC

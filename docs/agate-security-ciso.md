@@ -138,6 +138,20 @@ nightmare case. In `agate` it is prevented **structurally, below the application
 Course enrollment driving `agate:courses` comes from the LMS via LTI 1.3 NRPS (the
 authoritative roster), so retrieval scope tracks actual enrollment.
 
+**Sub-tenant scope** (school → department → course/lab) is a real boundary too, but
+the enforcement layer differs by store:
+
+- **Documents (S3):** IAM-enforced. A session's `agate:scope` principal tag confines
+  `s3:GetObject`/`ListBucket` to `{tenant}/{scope}/` (strict containment, #80).
+- **Vectors (S3 Vectors):** scope is **row metadata** in a per-tenant index, which IAM
+  conditions cannot inspect — so it cannot be IAM-enforced directly. Instead, the
+  browser holds **no** vector-query permission at all; vector retrieval goes through a
+  server-side **proxy** that derives the scope filter from the verified token and is
+  the **only** identity able to query (it assumes a dedicated, tenant-tag-fenced
+  `agate-vector-reader` role; the browser cannot assume it). The tenant fence stays in
+  IAM; the scope filter is injected by code that no client can bypass (#84). Net: a
+  holder of valid scoped credentials cannot read another sub-tenant's vectors.
+
 ### 6.1 Agent path containment (AgentCore)
 
 Agentic workloads (multi-step, tool-using, code-executing) do **not** run browser-direct;

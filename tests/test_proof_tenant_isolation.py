@@ -1,13 +1,15 @@
 """Phase 3 end-to-end proof: tenant-scoped S3 Vectors retrieval (design §12).
 
 The FERPA-critical claim (security memo §6): a CHEM-101-scoped session can query
-ONLY its own tenant's index. This takes the SAME generated data-scope policy the
-Phase 1 identity stack attaches and runs it through IAM's simulator with an
-`agate:tenant` principal tag and a target index carrying its own `agate:tenant`
-resource tag, asserting:
+ONLY its own tenant's index. Since #84 the vector query grant lives on the
+`agate-vector-reader` role (`vector_query_policy`), assumed only by the retrieval
+proxy — the browser-held `data_scope_policy` role no longer grants it at all. These
+run BOTH generated policies through IAM's simulator with an `agate:tenant` principal
+tag and a target index carrying its own `agate:tenant` resource tag, asserting:
 
-  * same-tenant index  -> QueryVectors ALLOWED
-  * cross-tenant index -> QueryVectors DENIED
+  * reader policy, same-tenant index  -> QueryVectors ALLOWED
+  * reader policy, cross-tenant index -> QueryVectors DENIED
+  * browser policy, any index         -> QueryVectors DENIED (grant removed, #84)
 
 Like the Phase 1 model-scope proof this uses iam:SimulateCustomPolicy — read-only,
 deterministic, no deployed resources. Skipped without AWS creds.
@@ -21,7 +23,7 @@ import json
 
 import pytest
 from agate.names import tag_key
-from policy.generate import data_scope_policy
+from policy.generate import data_scope_policy, vector_query_policy
 
 REGION = "us-east-1"
 
@@ -38,16 +40,15 @@ def iam_client():
     return client
 
 
-def _simulate_query(iam_client, *, session_tenant: str, index_tenant: str) -> str:
+def _simulate_query(iam_client, *, session_tenant: str, index_tenant: str, policy: dict) -> str:
     """Eval s3vectors:QueryVectors for a session in `session_tenant` against an
-    index tagged with `index_tenant`."""
-    policy_json = json.dumps(data_scope_policy())
+    index tagged with `index_tenant`, under the given generated `policy`."""
     # A representative S3 Vectors index ARN (the resource the policy guards).
     index_arn = (
         f"arn:aws:s3vectors:{REGION}:111122223333:bucket/agate-vectors/index/agate-{index_tenant}"
     )
     resp = iam_client.simulate_custom_policy(
-        PolicyInputList=[policy_json],
+        PolicyInputList=[json.dumps(policy)],
         ActionNames=["s3vectors:QueryVectors"],
         ResourceArns=[index_arn],
         ContextEntries=[
@@ -67,21 +68,39 @@ def _simulate_query(iam_client, *, session_tenant: str, index_tenant: str) -> st
 
 
 @pytest.mark.aws
-def test_same_tenant_query_allowed(iam_client):
-    assert _simulate_query(iam_client, session_tenant="chem", index_tenant="chem") == "allowed"
+def test_reader_same_tenant_query_allowed(iam_client):
+    # The proxy's agate-vector-reader role queries its own tenant's index.
+    d = _simulate_query(
+        iam_client, session_tenant="chem", index_tenant="chem", policy=vector_query_policy()
+    )
+    assert d == "allowed"
 
 
 @pytest.mark.aws
-def test_cross_tenant_query_denied(iam_client):
-    # The FERPA nightmare case: a chem session must NOT read the psych index.
-    decision = _simulate_query(iam_client, session_tenant="chem", index_tenant="psych")
-    assert decision in ("implicitDeny", "explicitDeny")
+def test_reader_cross_tenant_query_denied(iam_client):
+    # The FERPA nightmare case: the reader role with a chem tag must NOT read psych.
+    d = _simulate_query(
+        iam_client, session_tenant="chem", index_tenant="psych", policy=vector_query_policy()
+    )
+    assert d in ("implicitDeny", "explicitDeny")
 
 
 @pytest.mark.aws
-def test_other_direction_also_denied(iam_client):
-    decision = _simulate_query(iam_client, session_tenant="psych", index_tenant="chem")
-    assert decision in ("implicitDeny", "explicitDeny")
+def test_reader_other_direction_also_denied(iam_client):
+    d = _simulate_query(
+        iam_client, session_tenant="psych", index_tenant="chem", policy=vector_query_policy()
+    )
+    assert d in ("implicitDeny", "explicitDeny")
+
+
+@pytest.mark.aws
+def test_browser_role_cannot_query_vectors_at_all(iam_client):
+    # #84 crux: the browser-held data_scope_policy no longer grants QueryVectors, so a
+    # client bypassing the proxy is denied even for its OWN tenant's index.
+    d = _simulate_query(
+        iam_client, session_tenant="chem", index_tenant="chem", policy=data_scope_policy()
+    )
+    assert d in ("implicitDeny", "explicitDeny")
 
 
 # --- S3 document subtree confinement (#80) ----------------------------------

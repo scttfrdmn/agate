@@ -26,6 +26,9 @@ from aws_cdk import (
     aws_apigatewayv2 as apigwv2,
 )
 from aws_cdk import (
+    aws_apigatewayv2_authorizers as apigwv2_authorizers,
+)
+from aws_cdk import (
     aws_apigatewayv2_integrations as apigwv2_integrations,
 )
 from aws_cdk import (
@@ -39,7 +42,7 @@ from aws_cdk import (
 )
 from constructs import Construct
 from infra.assets import pip_bundled_code
-from policy.generate import data_scope_policy, model_access_policy
+from policy.generate import data_scope_policy, model_access_policy, vector_query_policy
 
 # Sentinel for federation config that must be supplied before deploy.
 PLACEHOLDER = "PLACEHOLDER"
@@ -95,6 +98,15 @@ class IdentityStack(Stack):
                             "Sid": "CeilingAgentInvoke",
                             "Effect": "Allow",
                             "Action": "bedrock-agentcore:InvokeAgentRuntime",
+                            "Resource": "*",
+                        },
+                        {
+                            # The session SigV4-signs calls to the IAM-authed retrieval
+                            # HTTP API (#84) with these vended creds. Ceiling only; the
+                            # actual grant is scoped to this API's ARN on the role.
+                            "Sid": "CeilingInvokeApi",
+                            "Effect": "Allow",
+                            "Action": "execute-api:Invoke",
                             "Resource": "*",
                         },
                         {
@@ -285,6 +297,150 @@ class IdentityStack(Stack):
             )
         )
 
+        # --- Vector retrieval proxy (#84) ---------------------------------
+        # Makes sub-tenant vector scope a REAL boundary. The browser-held role above
+        # has NO s3vectors grant (data_scope_policy dropped it); vector queries go
+        # through this server-side proxy, which derives the scope filter from the
+        # VERIFIED token and assumes the dedicated agate-vector-reader role. The
+        # reader role is the ONLY identity that can query vectors, and only this
+        # proxy can assume it — so no client path can omit the filter.
+        vector_bucket_name = f"{HANDLE}-vectors-{account}-{region}"
+        # The reader role's name is deterministic, so we can break the Lambda↔role
+        # cycle by referencing its ARN up front: create the Lambda with the ARN string,
+        # then create the role trusting ONLY the Lambda's principal (no broad standing
+        # trust, unlike AccountPrincipal).
+        vector_reader_role_name = f"{HANDLE}-vector-reader"
+        vector_reader_role_arn = f"arn:aws:iam::{account}:role/{vector_reader_role_name}"
+
+        retrieval_env = {
+            "AGATE_VECTOR_READER_ROLE_ARN": vector_reader_role_arn,
+            "AGATE_VECTOR_BUCKET": vector_bucket_name,
+            "AGATE_EMBED_MODEL_ID": "amazon.titan-embed-text-v2:0",
+            "AGATE_EMBED_DIMENSION": "1024",
+        }
+        # Same OIDC verification config as the broker (one deploy configures both).
+        for env_key in ("AGATE_OIDC_ISSUER", "AGATE_OIDC_JWKS_URL", "AGATE_OIDC_AUDIENCE"):
+            if env_key in broker_env:
+                retrieval_env[env_key] = broker_env[env_key]
+
+        retrieval = lambda_.Function(
+            self,
+            "Retrieval",
+            function_name=f"{HANDLE}-retrieval",
+            runtime=lambda_.Runtime.PYTHON_3_13,
+            handler="infra.functions.retrieval.handler.handler",
+            code=pip_bundled_code("agate", "infra", "policy"),
+            timeout=cdk.Duration.seconds(15),
+            memory_size=256,
+            environment=retrieval_env,
+            description="agate broker-proxied vector retrieval - injects the scope filter",
+        )
+        # The reader role: tenant-fenced QueryVectors (vector_query_policy), trusted
+        # ONLY by the retrieval Lambda's exec role (the browser cannot assume it).
+        # Tenant stays IAM-enforced; scope is enforced in the proxy code (not
+        # IAM-enforceable for vectors).
+        vector_reader_role = iam.Role(
+            self,
+            "VectorReaderRole",
+            role_name=vector_reader_role_name,
+            assumed_by=retrieval.grant_principal,
+            description="agate: server-side vector-query role, tenant-fenced; proxy-only",
+            max_session_duration=cdk.Duration.hours(1),
+        )
+        # grant_principal trust gives sts:AssumeRole; add TagSession so the proxy can
+        # pass the agate: session tags (the tenant fence depends on the tenant tag).
+        vector_reader_role.assume_role_policy.add_statements(  # type: ignore[union-attr]
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                principals=[retrieval.grant_principal],
+                actions=["sts:TagSession"],
+            )
+        )
+        vector_reader_role.attach_inline_policy(
+            iam.Policy(
+                self,
+                "VectorQuery",
+                document=iam.PolicyDocument.from_json(vector_query_policy()),
+            )
+        )
+        # The proxy embeds server-side (Titan) and assumes the reader role. No data
+        # perms of its own beyond these two.
+        retrieval.add_to_role_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=["bedrock:InvokeModel"],
+                resources=[
+                    f"arn:aws:bedrock:{region}::foundation-model/amazon.titan-embed-text-v2:0"
+                ],
+            )
+        )
+        retrieval.add_to_role_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=["sts:AssumeRole", "sts:TagSession"],
+                resources=[vector_reader_role_arn],
+            )
+        )
+
+        # Retrieval HTTP endpoint — genuinely IAM-authed (unlike the broker, which
+        # MINTS creds and so can't require them, the SPA already HOLDS broker-vended
+        # scoped creds when it retrieves). The IAM authorizer is the FIRST of two
+        # layers: (1) the SPA must SigV4-sign with valid scoped creds to reach the
+        # Lambda at all, then (2) the Lambda verifies the idp_token in the body to
+        # derive scope. So a leaked idp_token alone cannot be replayed without also
+        # holding live vended creds. (Function URLs are blocked here; an HTTP API
+        # integration invokes via the service principal, unaffected.)
+        retrieval_api = apigwv2.HttpApi(
+            self,
+            "RetrievalApi",
+            api_name=f"{HANDLE}-retrieval",
+            default_authorizer=apigwv2_authorizers.HttpIamAuthorizer(),
+            cors_preflight=apigwv2.CorsPreflightOptions(
+                allow_origins=["*"],  # demo: any origin; pin to the SiteUrl for prod
+                allow_methods=[apigwv2.CorsHttpMethod.POST],
+                allow_headers=[
+                    "content-type",
+                    "authorization",
+                    "x-amz-date",
+                    "x-amz-security-token",
+                ],
+            ),
+        )
+        retrieval_api.add_routes(
+            path="/",
+            methods=[apigwv2.HttpMethod.POST],
+            integration=apigwv2_integrations.HttpLambdaIntegration(
+                "RetrievalIntegration", retrieval
+            ),
+            authorizer=apigwv2_authorizers.HttpIamAuthorizer(),
+        )
+        retrieval_endpoint = retrieval_api.url or ""
+
+        # The browser's authenticated role must be allowed to invoke the IAM-authed
+        # retrieval API (layer 1). Scoped to THIS api's execute-api ARN.
+        authenticated_role.attach_inline_policy(
+            iam.Policy(
+                self,
+                "InvokeRetrieval",
+                document=iam.PolicyDocument.from_json(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Sid": "InvokeRetrievalApi",
+                                "Effect": "Allow",
+                                "Action": "execute-api:Invoke",
+                                "Resource": (
+                                    f"arn:aws:execute-api:{region}:{account}:"
+                                    f"{retrieval_api.api_id}/*/POST/"
+                                ),
+                            }
+                        ],
+                    }
+                ),
+            )
+        )
+
         # --- Cognito Identity Pool (federated, no User Pool) ---------------
         # SAML/OIDC providers are deploy-time config (campus IdP). Supply via
         # `-c saml_provider_arn=...` / `-c oidc_provider_url=...`; both default to
@@ -311,6 +467,9 @@ class IdentityStack(Stack):
         cdk.CfnOutput(self, "AuthenticatedRoleArn", value=authenticated_role.role_arn)
         cdk.CfnOutput(self, "BrokerFunctionName", value=broker.function_name)
         cdk.CfnOutput(self, "BrokerUrl", value=broker_endpoint)
+        cdk.CfnOutput(self, "RetrievalUrl", value=retrieval_endpoint)
+        cdk.CfnOutput(self, "RetrievalFunctionName", value=retrieval.function_name)
+        cdk.CfnOutput(self, "VectorReaderRoleArn", value=vector_reader_role.role_arn)
         cdk.CfnOutput(
             self,
             "FederationStatus",

@@ -132,6 +132,28 @@ def scope_filter(scope_nodes: tuple[str, ...] | list[str]) -> dict:
     }
 
 
+def retrieval_nodes(scope: str, courses: tuple[str, ...] | list[str]) -> list[str]:
+    """The scope-node list a session retrieves under: `ancestors(scope)` ∪ `courses`.
+
+    Fed to `scope_filter` by the server-side retrieval proxy (#84). A session sees its
+    hierarchical subtree (a chair at `chemistry` reaches `chemistry/chem-101` via the
+    chunk's `scope_ancestors`) PLUS its flat enrolled courses, PLUS tenant-wide docs
+    (handled by `scope_filter`). Order is broad→specific then courses; deduped.
+
+    Fail-closed by construction: an unconfined session has scope=="" so
+    `ancestors("")==[]`, and a no-course session contributes []; both empty → []
+    → `scope_filter([])` returns tenant-wide-only. Never widens beyond the (separately
+    IAM-enforced) tenant. Derived ONLY from verified session tags, never a request field.
+    """
+    nodes = list(ancestors(scope))
+    seen = set(nodes)
+    for c in courses:
+        if c and c not in seen:
+            seen.add(c)
+            nodes.append(c)
+    return nodes
+
+
 def index_name_for_tenant(tenant: str) -> str:
     """The per-tenant S3 Vectors index name (design §4: one index per tenant)."""
     return f"agate-{tenant}"

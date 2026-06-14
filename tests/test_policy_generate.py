@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from agate.entitlements import TIER_MODELS, foundation_model_arn
-from policy.generate import data_scope_policy, model_access_policy
+from policy.generate import data_scope_policy, model_access_policy, vector_query_policy
 
 
 def _stmt(doc, sid):
     return next(s for s in doc["Statement"] if s["Sid"] == sid)
+
+
+def _maybe_stmt(doc, sid):
+    return next((s for s in doc["Statement"] if s["Sid"] == sid), None)
 
 
 def test_model_policy_has_one_statement_per_tier_gated_on_tag():
@@ -65,7 +69,33 @@ def test_scope_confinement_denies_are_null_guarded_and_vectors_untouched():
     list_deny = _stmt(doc, "DenyS3ListOutsideScopeSubtree")
     assert list_deny["Condition"]["Null"]["aws:PrincipalTag/agate:scope"] == "false"
     assert "StringNotLike" in list_deny["Condition"]
-    # vectors statement is NOT scope-confined (deferred): only the tenant ResourceTag.
-    vec = _stmt(doc, "QueryOwnTenantVectors")
-    assert vec["Condition"]["StringEquals"]["aws:ResourceTag/agate:tenant"]
-    assert "agate:scope" not in str(vec)
+
+
+def test_browser_role_has_no_vector_query_grant():
+    # #84: the vector query Allow moved OFF the browser-held role to agate-vector-reader,
+    # so a direct QueryVectors with the browser's creds has no Allow (denied).
+    doc = data_scope_policy()
+    assert _maybe_stmt(doc, "QueryOwnTenantVectors") is None
+    assert "s3vectors:QueryVectors" not in str(
+        [s for s in doc["Statement"] if s["Effect"] == "Allow"]
+    )
+    # The fail-closed guard still lists s3vectors:* as defense-in-depth.
+    assert "s3vectors:*" in _stmt(doc, "DenyWhenNoTenantTag")["Action"]
+
+
+def test_vector_query_policy_is_tenant_fenced_and_guarded():
+    # #84: the reader role's policy — the ONLY vector query grant — is tenant-fenced
+    # by ResourceTag==PrincipalTag, with a no-tenant deny. Scope is NOT here (enforced
+    # by the proxy injecting the filter; it isn't IAM-enforceable for vectors).
+    doc = vector_query_policy()
+    allow = _stmt(doc, "QueryOwnTenantVectors")
+    assert allow["Effect"] == "Allow"
+    assert allow["Action"] == ["s3vectors:QueryVectors", "s3vectors:GetVectors"]
+    assert (
+        allow["Condition"]["StringEquals"]["aws:ResourceTag/agate:tenant"]
+        == "${aws:PrincipalTag/agate:tenant}"
+    )
+    assert "agate:scope" not in str(allow)
+    deny = _stmt(doc, "DenyVectorsWhenNoTenantTag")
+    assert deny["Effect"] == "Deny"
+    assert deny["Condition"]["Null"]["aws:PrincipalTag/agate:tenant"] == "true"

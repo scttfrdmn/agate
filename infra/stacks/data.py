@@ -141,6 +141,22 @@ class DataStack(Stack):
                 description=f"agate per-tenant CMK for {tenant} vector indexes",
                 removal_policy=cdk.RemovalPolicy.RETAIN,
             )
+            # S3 Vectors performs asynchronous indexing under its own service
+            # principal, which must be able to use the index's CMK — otherwise the
+            # index create fails with "Insufficient access to perform asynchronous
+            # indexing" (a 403 from the indexing.s3vectors service principal).
+            # Scope it to this account + region's vector bucket via the standard
+            # KMS ViaService / SourceAccount conditions.
+            key.add_to_resource_policy(
+                iam.PolicyStatement(
+                    sid="AllowS3VectorsAsyncIndexing",
+                    effect=iam.Effect.ALLOW,
+                    principals=[iam.ServicePrincipal("indexing.s3vectors.amazonaws.com")],
+                    actions=["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"],
+                    resources=["*"],
+                    conditions={"StringEquals": {"aws:SourceAccount": self.account}},
+                )
+            )
 
             # Text index (1024-dim) — the Phase 3 RAG store, unchanged.
             self.tenant_indexes[tenant] = _index(tenant, key, suffix="", dimension=EMBED_DIMENSION)

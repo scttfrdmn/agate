@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Per-tenant + per-course RAG — live** (Phase 9 Track 3, #65). The data plane
+  (`agate-data`) is deployed and proven against real S3 Vectors: upload to
+  `{tenant}/...` → ingest Lambda → Titan embeddings (1024-dim) → per-tenant S3
+  Vectors index → scoped query. **RAG uses S3 Vectors directly, not a Bedrock
+  Knowledge Base** — a KB needed a clock-bearing vector store, and direct S3 Vectors
+  keeps NO CLOCKS *and* the scoped-STS credential as the isolation fence.
+  - **Per-course scoping** (the unique asset): a document under `{tenant}/{course}/…`
+    is tagged with that course; retrieval filters to the session's `agate:courses`
+    (+ tenant-wide docs). A course corpus is therefore visible only to enrolled
+    students, derived from the verified claim — fail-closed (no enrollment → no
+    course docs). `agate.rag.course_from_s3_key`/`course_filter` (pure) + the web
+    retriever's `courseFilter`. Verified live: a chem-101 session sees only chem-101
+    material, never bio-200; an unenrolled session sees neither.
+  - Flat course model for now; the hierarchical school/dept/course (+ lab/project)
+    scope for RBAC + budgets is designed in #70.
 - **Governed-access console — live** (Phase 9 Track 1, #63 — second slice). The
   admin spend-analytics dashboard end-to-end:
   - `infra/stacks/admin.py` (`agate-admin`): the admin Lambda behind its own API
@@ -91,6 +106,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than applied by hand post-deploy.
 
 ### Fixed
+- `agate-data` deploy failed creating the S3 Vectors indexes (403 "Insufficient
+  access to perform asynchronous indexing"): the per-tenant KMS CMK didn't grant
+  the S3 Vectors indexing service principal (`indexing.s3vectors.amazonaws.com`)
+  permission to use the key. Added a `SourceAccount`-scoped key policy statement
+  (`kms:Decrypt`/`GenerateDataKey`/`DescribeKey`). Found deploying the data plane live.
 - Analyze mode failed live (HTTP 500): the agent Runtime execution role could
   invoke Bedrock but not the **Code Interpreter** it runs generated code in
   (Ask/Panel never call it, so they worked). Added

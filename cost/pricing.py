@@ -35,17 +35,49 @@ class ModelRate:
     output_per_mtok: float = 0.0
 
 
-# Hard-default LLM/embedding rates, keyed by the logical tier/id the roster uses
-# (neutral labels — institutions map these to concrete model ids + real rates).
-# Values are conservative placeholders in USD per million tokens.
+# Hard-default LLM/embedding rates in USD per MILLION tokens. Two key kinds:
+#   * concrete Bedrock model ids (what the meter/chokepoint actually pass) — the
+#     authoritative pricing path; these must be present or pricing silently falls
+#     back (the #88 bug: every real id fell through to the cheapest "oss" rate).
+#   * logical tier labels (oss/mid/frontier) — the FALLBACK rung for an id that
+#     isn't individually listed (a session's tier is known to the caller, which
+#     passes it as `fallback_tier`).
+#
+# RATE VALUES are best-effort published Bedrock list prices as of 2026-06; they are
+# NOT fetched live and NOT authoritative — verify against the Bedrock console and
+# update as AWS prices change. A deploy-time Price List fetcher (separate issue)
+# will replace these with real numbers. Config overrides (PriceBook.model_rates)
+# always win over this table.
 _DEFAULT_MODEL_RATES: dict[str, ModelRate] = {
+    # --- logical tiers (fallback rung) ---
     "oss": ModelRate(input_per_mtok=0.10, output_per_mtok=0.40),
     "mid": ModelRate(input_per_mtok=0.80, output_per_mtok=4.00),
     "frontier": ModelRate(input_per_mtok=3.00, output_per_mtok=15.00),
     "router": ModelRate(input_per_mtok=0.10, output_per_mtok=0.40),
+    # --- concrete model ids (entitlements.TIER_MODELS) ---
+    # oss tier (open-weight, on-demand FMs)
+    "openai.gpt-oss-20b-1:0": ModelRate(input_per_mtok=0.07, output_per_mtok=0.30),
+    "openai.gpt-oss-120b-1:0": ModelRate(input_per_mtok=0.15, output_per_mtok=0.60),
+    "google.gemma-3-12b-it": ModelRate(input_per_mtok=0.10, output_per_mtok=0.40),
+    "google.gemma-3-4b-it": ModelRate(input_per_mtok=0.05, output_per_mtok=0.20),
+    # mid tier (Claude Haiku, inference profiles)
+    "us.anthropic.claude-3-5-haiku-20241022-v1:0": ModelRate(
+        input_per_mtok=0.80, output_per_mtok=4.00
+    ),
+    "us.anthropic.claude-haiku-4-5-20251001-v1:0": ModelRate(
+        input_per_mtok=1.00, output_per_mtok=5.00
+    ),
+    # frontier tier (Claude Sonnet/Opus, inference profiles)
+    "us.anthropic.claude-sonnet-4-5-20250929-v1:0": ModelRate(
+        input_per_mtok=3.00, output_per_mtok=15.00
+    ),
+    "us.anthropic.claude-opus-4-1-20250805-v1:0": ModelRate(
+        input_per_mtok=15.00, output_per_mtok=75.00
+    ),
     # Embedding models (output rate unused).
     "embed-text": ModelRate(input_per_mtok=0.02),
     "embed-multimodal": ModelRate(input_per_mtok=0.06),
+    "amazon.titan-embed-text-v2:0": ModelRate(input_per_mtok=0.02),
 }
 
 # Retrieval (per 1000 queries) and compute (per second) hard defaults. S3 Vectors
@@ -62,14 +94,23 @@ class PriceBook:
     retrieval_per_k: float | None = None
     compute_per_sec: float | None = None
 
-    def llm_rate(self, model_id: str) -> ModelRate:
-        """Rate for an LLM/embedding id. Config override wins; else hard default;
-        else the cheapest default so an unknown id never blocks a call."""
+    def llm_rate(self, model_id: str, fallback_tier: str | None = None) -> ModelRate:
+        """Rate for an LLM/embedding id. Resolution order:
+          1. config override (PriceBook.model_rates) for the concrete id,
+          2. the hard-default per-model rate for the concrete id,
+          3. the hard-default rate for `fallback_tier` (the caller's known tier),
+          4. the cheapest (oss) default — so an unknown id never blocks a call.
+
+        `fallback_tier` is what fixes the #88 bug: the meter/chokepoint pass a concrete
+        Bedrock id; if it isn't individually priced, an unlisted id resolves to its
+        TIER's rate (a new frontier model prices at frontier, not oss). Config still wins.
+        """
         if model_id in self.model_rates:
             return self.model_rates[model_id]
         if model_id in _DEFAULT_MODEL_RATES:
             return _DEFAULT_MODEL_RATES[model_id]
-        # Unknown id: fall back to the oss-tier default (cheapest), never crash.
+        if fallback_tier and fallback_tier in _DEFAULT_MODEL_RATES:
+            return _DEFAULT_MODEL_RATES[fallback_tier]
         return _DEFAULT_MODEL_RATES["oss"]
 
     def retrieval_rate_per_k(self) -> float:

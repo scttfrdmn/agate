@@ -29,6 +29,7 @@ from decimal import Decimal
 from typing import Any
 
 import boto3
+from agate.entitlements import tier_for_model
 from agate.jwt_verify import TokenError, config_from_env, verify_token
 from agate.rag import ancestors
 from agate.tags import ClaimsError, claims_to_tags
@@ -194,12 +195,14 @@ def process(req: dict, *, period: str | None = None) -> dict:
             )
         )
 
+    fallback_tier = tier_for_model(model_id)  # price unlisted ids at their tier (#88)
     gate = evaluate_cascade(
         model_id=model_id,
         input_tokens=input_tokens,
         max_tokens=max_tokens,
         nodes=nodes,
         pricebook=pricebook,
+        fallback_tier=fallback_tier,
     )
     if gate.decision == "reject":
         raise ChokepointError(
@@ -221,7 +224,9 @@ def process(req: dict, *, period: str | None = None) -> dict:
     # already-served call.
     in_tok = int(usage.get("inputTokens", 0))
     out_tok = int(usage.get("outputTokens", 0))
-    actual_cost = estimate_call_cost(model_id, in_tok, out_tok, pricebook=pricebook)
+    actual_cost = estimate_call_cost(
+        model_id, in_tok, out_tok, pricebook=pricebook, fallback_tier=fallback_tier
+    )
     for node in scope_nodes:
         _increment_scope_spend(tenant, node, period, actual_cost)
     return {

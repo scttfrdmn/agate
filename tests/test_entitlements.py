@@ -9,6 +9,7 @@ from agate.entitlements import (
     foundation_model_arn,
     model_arns_for_tier,
     models_for_tier,
+    tier_for_model,
 )
 
 
@@ -19,6 +20,20 @@ def test_tiers_are_cumulative():
     assert oss < mid < frontier  # strict supersets
     assert oss == set(TIER_MODELS["oss"])
     assert frontier == oss | set(TIER_MODELS["mid"]) | set(TIER_MODELS["frontier"])
+
+
+def test_tier_for_model_reverse_lookup():
+    # Every model in TIER_MODELS maps back to its tier (inverse of models_for_tier).
+    for tier, ids in TIER_MODELS.items():
+        for mid in ids:
+            assert tier_for_model(mid) == tier
+    # A representative frontier id specifically (the #88 headline case).
+    assert tier_for_model("us.anthropic.claude-opus-4-1-20250805-v1:0") == "frontier"
+
+
+def test_tier_for_model_unknown_is_none():
+    assert tier_for_model("some.unlisted-model-v9") is None
+    assert tier_for_model("") is None
 
 
 def test_oss_session_cannot_reach_frontier_models():

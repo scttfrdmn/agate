@@ -95,6 +95,19 @@ def models_for_tier(tier: Tier) -> list[str]:
     return out
 
 
+def tier_for_model(model_id: str) -> Tier | None:
+    """The tier a concrete model id belongs to (reverse of TIER_MODELS), or None.
+
+    Used by the cost engine to price an unlisted model id at its TIER's rate rather
+    than the cheapest fallback — `models_for_tier` is the forward map; this is the
+    inverse. Returns None for an id not in the table (caller decides the fallback).
+    """
+    for tier, ids in TIER_MODELS.items():
+        if model_id in ids:
+            return tier
+    return None
+
+
 _PROFILE_PREFIXES = ("us", "eu", "apac")
 
 

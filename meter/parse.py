@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from agate.entitlements import tier_for_model
 from agate.tags import subject_from_session_name, tenant_from_session_name
 from cost.pricing import PriceBook, default_pricebook
 
@@ -118,7 +119,7 @@ def parse_invocation_record(
     in_tok = int(in_tok or 0)
     out_tok = int(out_tok or 0)
 
-    rate = pb.llm_rate(_tier_key(model_id))
+    rate = pb.llm_rate(_tier_key(model_id), fallback_tier=tier_for_model(model_id))
     cost = (in_tok / 1e6) * rate.input_per_mtok + (out_tok / 1e6) * rate.output_per_mtok
 
     return SpendRecord(

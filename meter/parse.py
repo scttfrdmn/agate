@@ -152,6 +152,23 @@ def spend_rollup_key(tenant: str, period: str) -> str:
     return f"{tenant}#{period}"
 
 
+def scope_pk(tenant: str, node: str, period: str) -> str:
+    """Per-scope-node spend/budget key: `tenant#scope#<node>#period` (#81 cascade).
+
+    The literal `scope` segment discriminates these from the 3-part `tenant#user#period`
+    and 2-part `tenant#period` keys. `node` is one ancestor scope path (e.g. `chemistry`
+    or `chemistry/chem-101`); scope paths contain `/` but never `#`, so the key parses
+    unambiguously. Used by the Tier-1 choke point for BOTH the budget and spend tables.
+    """
+    return f"{tenant}#scope#{node}#{period}"
+
+
+def read_scope_spend_item(table, tenant: str, node: str, period: str) -> float:
+    """Read a per-scope-node spend row (mirrors read_spend_item). Absent row → 0.0."""
+    item = table.get_item(Key={"pk": scope_pk(tenant, node, period)}).get("Item")
+    return float(item["spend_usd"]) if item and "spend_usd" in item else 0.0
+
+
 def read_spend_item(table, tenant: str, user: str, period: str) -> float:
     """Read authoritative per-user spend from a DynamoDB spend table.
 

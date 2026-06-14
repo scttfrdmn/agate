@@ -32,6 +32,34 @@ class PrecallResult:
     reason: str
 
 
+@dataclass(frozen=True, slots=True)
+class CascadeResult:
+    """Outcome of a multi-node (hierarchical-budget) pre-call check (#81)."""
+
+    decision: PrecallDecision
+    estimated_cost: float  # worst-case USD for this call (priced once)
+    breaching_node: str | None  # label of the FIRST node that rejected, or None
+    reason: str
+
+
+def _node_decision(est: float, spend: float, budget: float | None) -> tuple[bool, str]:
+    """The per-node allow/reject rule, shared by the single- and multi-budget gates.
+
+    Mirrors the original evaluate_precall branches exactly so behaviour can't drift:
+    no budget -> ok (no cap); <=0 -> reject; negative spend -> reject (fail closed);
+    spend + worst-case > budget -> reject; else ok.
+    """
+    if budget is None:
+        return True, "no budget configured"
+    if budget <= 0:
+        return False, "no allocation"
+    if spend < 0:
+        return False, "invalid spend"
+    if round(spend + est, 6) > budget:
+        return False, "would exceed budget"
+    return True, "within budget"
+
+
 def estimate_call_cost(
     model_id: str,
     input_tokens: int,
@@ -73,13 +101,31 @@ def evaluate_precall(
     """
     est = estimate_call_cost(model_id, input_tokens, max_tokens, pricebook=pricebook)
     projected = round(spend + est, 6)
+    ok, reason = _node_decision(est, spend, budget)
+    return PrecallResult("allow" if ok else "reject", est, projected, reason)
 
-    if budget is None:
-        return PrecallResult("allow", est, projected, "no budget configured")
-    if budget <= 0:
-        return PrecallResult("reject", est, projected, "no allocation")
-    if spend < 0:
-        return PrecallResult("reject", est, projected, "invalid spend")
-    if projected > budget:
-        return PrecallResult("reject", est, projected, "would exceed budget")
-    return PrecallResult("allow", est, projected, "within budget")
+
+def evaluate_cascade(
+    *,
+    model_id: str,
+    input_tokens: int,
+    max_tokens: int,
+    nodes: list[tuple[str, float, float | None]],
+    pricebook: PriceBook | None = None,
+) -> CascadeResult:
+    """Allow a call only if it fits under EVERY node's budget (hierarchical cascade).
+
+    `nodes` is an ordered list of `(label, spend, budget)` — typically the user/tenant
+    node followed by each scope ancestor (broad -> specific). The call is priced ONCE
+    (worst case) and checked against each node with the same per-node rule as
+    `evaluate_precall`; the FIRST node to reject short-circuits and is named. A node
+    with `budget is None` is skipped (no cap there). An empty `nodes` list -> allow
+    (e.g. an unconfined session with no caps). Pure and AWS-free — the chokepoint
+    supplies each node's authoritative spend + budget.
+    """
+    est = estimate_call_cost(model_id, input_tokens, max_tokens, pricebook=pricebook)
+    for label, spend, budget in nodes:
+        ok, reason = _node_decision(est, spend, budget)
+        if not ok:
+            return CascadeResult("reject", est, label, reason)
+    return CascadeResult("allow", est, None, "within budget")

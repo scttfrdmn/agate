@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Budget cascade — hierarchical pre-call enforcement (#81, #70 phase 5).** The
+  Tier-1 choke point now allows a call only if it fits under the user/tenant budget
+  AND under **every ancestor scope node's** budget (school → dept → course/lab),
+  rejecting with the breaching node named (402). `cost.evaluate_cascade` (pure;
+  reuses `estimate_call_cost`, prices the call once) layers over the existing
+  single-budget `evaluate_precall` (refactored to share one per-node rule — behaviour
+  unchanged). The choke point reads each ancestor's budget + running spend
+  (`tenant#scope#<node>#period` rows via `meter.scope_pk`) and, on allow, increments
+  those scope rows with the call's actual cost. Fail-closed: an unconfined session
+  (no `agate:scope`) keeps today's user/tenant gate exactly; a node with no budget
+  row imposes no cap. **Tier-1 only** — Tier 0 stays soft/observed (wiring the
+  dormant soft cap into the broker is a separate issue). The async log meter is
+  unchanged (keys tenant/user); the choke point owns the scope rows, so no double
+  count. Budget-row *authoring* to DynamoDB is deferred (#87); displayed/enforced
+  dollars use placeholder rates until live pricing is wired (#88).
 - **Hierarchical scope reaches the credential boundary for S3 documents (#80, #70
   phase 4).** A session may now carry an `agate:scope` IAM principal tag; the
   generated `data_scope_policy` confines its S3 *document* reads to

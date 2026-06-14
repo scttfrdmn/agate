@@ -164,15 +164,26 @@ class AuditStack(Stack):
         # role, who changed config. Together they give the per-identity "prove who
         # accessed what" trail (§8).
         #
-        # OPT-IN (`-c cloudtrail=true`): the CloudTrail Trail construct's create-time
-        # bucket-policy validation is flaky against a just-created bucket ("Incorrect
-        # S3 bucket policy" even with the correct policy + an explicit DependsOn —
-        # an S3/CloudTrail eventual-consistency issue, tracked in #75). The
-        # forensic trail is INDEPENDENT of the authoritative-spend path (spend table
-        # + Bedrock invocation logging + meter), so it is gated off by default: the
-        # spend path — what the governed-access console needs — deploys cleanly, and
-        # CloudTrail can be enabled once #75 is resolved.
-        if self.node.try_get_context("cloudtrail") in (True, "true", "1"):
+        # ON BY DEFAULT (opt OUT with `-c cloudtrail=false`). #75 fix, verified live
+        # (2026-06-14, trail created CREATE_COMPLETE, IsLogging=true, no delivery
+        # error): the earlier L2 `cloudtrail.Trail` MUTATES the bucket policy after the
+        # bucket exists, so CloudTrail's create-time validation could run against a
+        # transiently-incomplete policy ("Incorrect S3 bucket policy") — even with an
+        # explicit DependsOn, because the dependency was on a policy the Trail was still
+        # editing. The fix has two parts:
+        #   1. author the COMPLETE CloudTrail bucket policy ourselves (one settled
+        #      resource), including the `aws:SourceArn` trail-ARN condition AWS now
+        #      requires (the trail ARN is deterministic, so no dependency cycle); and
+        #   2. use the L1 `CfnTrail`, which does NOT touch the bucket policy, and make
+        #      it DependsOn that policy — so the policy is fully created before the
+        #      trail validates it.
+        # The forensic trail is INDEPENDENT of the authoritative-spend path (spend table
+        # + Bedrock invocation logging + meter), so opting out still gives a clean spend
+        # deploy for anyone who only needs the governed-access console.
+        if self.node.try_get_context("cloudtrail") not in (False, "false", "0"):
+            trail_name = f"{HANDLE}-audit"
+            trail_arn = f"arn:aws:cloudtrail:{self.region}:{self.account}:trail/{trail_name}"
+            key_prefix = "cloudtrail"
             trail_bucket = s3.Bucket(
                 self,
                 "TrailLogs",
@@ -183,20 +194,54 @@ class AuditStack(Stack):
                 removal_policy=cdk.RemovalPolicy.RETAIN,  # forensic trail
                 versioned=True,
             )
-            trail = cloudtrail.Trail(
+            # The two statements CloudTrail validates at trail-create time. Authored
+            # here (not by the Trail construct) so the policy is COMPLETE before the
+            # trail exists. Both are scoped to THIS trail via aws:SourceArn.
+            trail_bucket.add_to_resource_policy(
+                iam.PolicyStatement(
+                    sid="AWSCloudTrailAclCheck",
+                    effect=iam.Effect.ALLOW,
+                    principals=[iam.ServicePrincipal("cloudtrail.amazonaws.com")],
+                    actions=["s3:GetBucketAcl"],
+                    resources=[trail_bucket.bucket_arn],
+                    conditions={"StringEquals": {"aws:SourceArn": trail_arn}},
+                )
+            )
+            trail_bucket.add_to_resource_policy(
+                iam.PolicyStatement(
+                    sid="AWSCloudTrailWrite",
+                    effect=iam.Effect.ALLOW,
+                    principals=[iam.ServicePrincipal("cloudtrail.amazonaws.com")],
+                    actions=["s3:PutObject"],
+                    resources=[
+                        trail_bucket.arn_for_objects(
+                            f"{key_prefix}/AWSLogs/{self.account}/*"
+                        )
+                    ],
+                    conditions={
+                        "StringEquals": {
+                            "s3:x-amz-acl": "bucket-owner-full-control",
+                            "aws:SourceArn": trail_arn,
+                        }
+                    },
+                )
+            )
+            # L1 trail — does NOT mutate the bucket policy. DependsOn the now-complete
+            # policy so it is settled before CloudTrail validates the bucket.
+            trail = cloudtrail.CfnTrail(
                 self,
                 "Trail",
-                trail_name=f"{HANDLE}-audit",
-                bucket=trail_bucket,
-                s3_key_prefix="cloudtrail/",
+                trail_name=trail_name,
+                s3_bucket_name=trail_bucket.bucket_name,
+                s3_key_prefix=key_prefix,
+                is_logging=True,
                 include_global_service_events=True,
                 is_multi_region_trail=True,
-                enable_file_validation=True,
-                management_events=cloudtrail.ReadWriteType.ALL,
+                enable_log_file_validation=True,
             )
             if trail_bucket.policy is not None:
                 trail.node.add_dependency(trail_bucket.policy)
-            cdk.CfnOutput(self, "CloudTrailArn", value=trail.trail_arn)
+            cdk.CfnOutput(self, "CloudTrailArn", value=trail.attr_arn)
 
         # --- Cost-allocation tags (per-tenant chargeback attribution) -----
         cdk.Tags.of(self).add("agate:component", "audit")

@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Hierarchical scope — retrieval slice** (#70, phase 2). RAG now supports a
+  `school/department/course` (teaching) or `school/department/lab-or-project`
+  (research) scope tree, giving **subtree visibility**: a dean sees their whole
+  school, a chair their department, a student only their course. A document under
+  `{tenant}/{scope-path}/…` stores its **ancestor-path list** (`scope_ancestors`);
+  retrieval matches the session's scope node(s) with `$in` (S3 Vectors has no prefix
+  operator — validated live, so the ancestor-list encoding is the mechanism). Pure
+  `agate.rag.scope_path_from_s3_key` / `ancestors` / `scope_filter`, mirrored by the
+  web retriever's `scopeFilter`; backward-compatible (a flat course is a one-segment
+  scope, and old `course`-tagged docs still match). Verified live across dean / chair
+  / student / sibling-dept / sibling-course / no-scope. **Deliberately does NOT touch
+  the ABAC session tag or IAM** — this narrows within the tenant index the credential
+  already gates; the RBAC + budget-cascade phases of #70 are separate, review-gated.
 - **Composable reasoning patterns — live** (Phase 9 Track 2, #64). The "do better"
   axis: reasoning constructs are now institution-composed declarative configs over
   the existing Panel/Analyze primitives, not hard-coded modes — the thing neither

@@ -152,6 +152,27 @@ class IdentityStack(Stack):
             )
         )
 
+        # --- Broker OIDC verification config -------------------------------
+        # The broker verifies the inbound IdP token against a JWKS (SEC-4). Supply
+        # the OIDC issuer/JWKS/audience as deploy-time context — the SAME keys work
+        # for a real campus IdP and for the throwaway demo pool (`agate-demo-idp`
+        # outputs OidcIssuer/OidcJwksUrl/OidcAudience). Codified here so the demo is
+        # reproducible without a post-deploy `aws lambda update-function-configuration`.
+        # Left unset → the broker fails closed (no token verifies). Production omits
+        # the demo stack and passes its campus IdP values here.
+        broker_env = {
+            "AGATE_AUTHENTICATED_ROLE_ARN": authenticated_role.role_arn,
+            "AGATE_SESSION_DURATION_SECONDS": "900",
+        }
+        for env_key, ctx_key in (
+            ("AGATE_OIDC_ISSUER", "oidc_issuer"),
+            ("AGATE_OIDC_JWKS_URL", "oidc_jwks_url"),
+            ("AGATE_OIDC_AUDIENCE", "oidc_audience"),
+        ):
+            value = self.node.try_get_context(ctx_key)
+            if value:
+                broker_env[env_key] = value
+
         # --- Broker Lambda -------------------------------------------------
         # Bundles infra/ + agate/ + policy/ source AND PyJWT, so claims_to_tags and the
         # real token verifier (agate.jwt_verify) run in-Lambda (SEC-4).
@@ -164,11 +185,23 @@ class IdentityStack(Stack):
             code=pip_bundled_code("agate", "infra", "policy"),
             timeout=cdk.Duration.seconds(10),
             memory_size=256,
-            environment={
-                "AGATE_AUTHENTICATED_ROLE_ARN": authenticated_role.role_arn,
-                "AGATE_SESSION_DURATION_SECONDS": "900",
-            },
+            environment=broker_env,
             description="agate claims -> scoped-STS credential broker (per-request, zero idle)",
+        )
+
+        # --- Broker HTTP endpoint (Function URL) ---------------------------
+        # The browser SPA POSTs {idp_token} here to exchange its IdP token for
+        # scoped STS creds. AuthType NONE is correct: the broker authenticates the
+        # caller from the JWT itself (verified RS256/JWKS, SEC-4) — there is no AWS
+        # principal to IAM-auth, and the endpoint vends nothing without a valid
+        # token. A Function URL is per-request (NO CLOCKS) — no ALB/API-GW idle fee.
+        broker_url = broker.add_function_url(
+            auth_type=lambda_.FunctionUrlAuthType.NONE,
+            cors=lambda_.FunctionUrlCorsOptions(
+                allowed_origins=["*"],  # demo: any origin; pin to the SiteUrl for prod
+                allowed_methods=[lambda_.HttpMethod.POST],
+                allowed_headers=["content-type"],
+            ),
         )
 
         # The broker is allowed to assume the authenticated role AND tag the session.
@@ -213,6 +246,7 @@ class IdentityStack(Stack):
         cdk.CfnOutput(self, "IdentityPoolId", value=pool.identity_pool_id)
         cdk.CfnOutput(self, "AuthenticatedRoleArn", value=authenticated_role.role_arn)
         cdk.CfnOutput(self, "BrokerFunctionName", value=broker.function_name)
+        cdk.CfnOutput(self, "BrokerUrl", value=broker_url.url)
         cdk.CfnOutput(
             self,
             "FederationStatus",

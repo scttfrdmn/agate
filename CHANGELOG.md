@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `agate-identity` now exposes the broker over a **Lambda Function URL** (CORS,
+  `AuthType NONE` — the broker authenticates from the verified JWT, not an AWS
+  principal), output as `BrokerUrl`, so the browser SPA can reach it. Per-request,
+  no idle endpoint fee (NO CLOCKS). The broker's OIDC verification config
+  (`AGATE_OIDC_ISSUER`/`_JWKS_URL`/`_AUDIENCE`) is now read from CDK context
+  (`-c oidc_issuer=… -c oidc_jwks_url=… -c oidc_audience=…`) instead of a
+  post-deploy CLI patch — the same keys take a campus IdP or the demo pool's
+  outputs, so the demo is reproducible from `cdk deploy` alone.
+
+### Changed
+- `agate-demo-idp` SPA client now enables username/password auth flows
+  (`user_password` + `admin_user_password`) in CDK, so a demo operator/script can
+  mint a token without the hosted-UI redirect. Demo-only convenience, codified
+  rather than applied by hand post-deploy.
+
 ### Fixed
 - Lambda asset bundling: the Docker-free local bundler now fetches **Linux/x86_64**
   wheels for the Lambda runtime instead of host-platform wheels. `pyjwt[crypto]`

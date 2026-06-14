@@ -86,6 +86,13 @@ class DemoIdpStack(Stack):
                 flows=cognito.OAuthFlows(authorization_code_grant=True, implicit_code_grant=True),
                 scopes=[cognito.OAuthScope.OPENID, cognito.OAuthScope.PROFILE],
             ),
+            # Username/password auth so a demo operator (or a script) can mint a
+            # token for a demo user without standing up the hosted-UI redirect flow.
+            # Demo-only convenience; a campus IdP wouldn't expose these.
+            auth_flows=cognito.AuthFlow(
+                user_password=True,
+                admin_user_password=True,
+            ),
             id_token_validity=cdk.Duration.hours(1),
         )
 

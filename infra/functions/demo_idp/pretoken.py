@@ -14,8 +14,9 @@ issue (per-request, no clock).
 from __future__ import annotations
 
 # eduPerson-style claims the gateway's claims_to_tags understands. `role` carries
-# the operator role (admin) for the governed-access console (Phase 9 Track 1).
-_CLAIMS = ("affiliation", "tenant", "courses", "grant", "role")
+# the operator role (admin) for the governed-access console (Phase 9 Track 1);
+# `admin_scope` is the subtree a scoped admin governs (#70 RBAC).
+_CLAIMS = ("affiliation", "tenant", "courses", "grant", "role", "admin_scope")
 
 
 def handler(event: dict, context: object) -> dict:

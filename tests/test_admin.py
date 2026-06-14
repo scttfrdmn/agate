@@ -124,6 +124,31 @@ def test_role_absent_is_forbidden(admin_token):
     assert resp["statusCode"] == 403
 
 
+def test_scoped_admin_sees_only_their_tenant(admin_token):
+    # A scoped admin (admin_scope set) in tenant 'chem' sees only chem, not kempner.
+    resp = admin_handler.handler(
+        _event(
+            {"sub": "u", "tenant": "chem", "role": "admin", "admin_scope": "arts-sci/chemistry"},
+            period="2026-06",
+        ),
+        None,
+    )
+    assert resp["statusCode"] == 200
+    body = json.loads(resp["body"])
+    tenants = {t["tenant"] for t in body["tenants"]}
+    assert tenants == {"chem"}  # kempner is NOT visible to a chem-scoped admin
+    assert body["grand_total_usd"] == 2.0  # only chem's 1.5 + 0.5
+
+
+def test_global_admin_sees_all_tenants(admin_token):
+    # A tenant-wide admin (no admin_scope) sees every tenant.
+    resp = admin_handler.handler(
+        _event({"sub": "u", "tenant": "chem", "role": "admin"}, period="2026-06"), None
+    )
+    body = json.loads(resp["body"])
+    assert {t["tenant"] for t in body["tenants"]} == {"chem", "kempner"}
+
+
 def test_missing_spend_table_degrades_to_empty(admin_token, monkeypatch):
     # agate-audit not deployed -> table scan raises ResourceNotFoundException ->
     # admin returns empty analytics (200), not a 500.

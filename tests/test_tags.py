@@ -170,6 +170,29 @@ def test_role_absent_defaults_to_member():
     assert _tags(tenant="t").role == "member"
 
 
+# --- admin_scope (RBAC subtree, #70) — fail-closed --------------------------
+
+
+def test_admin_scope_only_for_admin():
+    # A member with an admin_scope claim gets NO scope (forged claim is inert).
+    assert _tags(tenant="t", role="student", admin_scope="arts-sci/chemistry").admin_scope == ()
+
+
+def test_admin_scope_for_admin_is_normalised():
+    tags = _tags(tenant="t", role="admin", admin_scope="arts-sci/chemistry, arts-sci/physics")
+    assert tags.admin_scope == ("arts-sci/chemistry", "arts-sci/physics")
+
+
+def test_admin_with_no_scope_is_tenant_wide():
+    # An admin with no admin_scope claim governs the whole tenant -> ().
+    assert _tags(tenant="t", role="admin").admin_scope == ()
+
+
+def test_admin_scope_sanitises_and_dedupes():
+    tags = _tags(tenant="t", role="admin", admin_scope=["/a/b/", "a/b", "x y!"])
+    assert tags.admin_scope == ("a/b", "xy")  # dedup + stripped + sanitised
+
+
 def test_all_tag_values_within_aws_limit():
     t = _tags(
         affiliation="researcher",

@@ -167,6 +167,14 @@ def test_retrieval_nodes_dedupes_course_already_in_subtree():
     assert retrieval_nodes("chemistry", ("chemistry", "bio-200")) == ["chemistry", "bio-200"]
 
 
+def test_mm_index_name_is_text_index_plus_mm_suffix():
+    from agate.rag import index_name_for_tenant, mm_index_name_for_tenant
+
+    assert mm_index_name_for_tenant("chem") == "agate-chem-mm"
+    # distinct from the 1024-dim text index
+    assert mm_index_name_for_tenant("chem") != index_name_for_tenant("chem")
+
+
 # --- chunking ---------------------------------------------------------------
 
 

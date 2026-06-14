@@ -1,28 +1,26 @@
-// Multimodal retriever (§10.2.7) — query-by-image and visual retrieval against the
-// tenant's multimodal S3 Vectors index. Embeds with the Nova multimodal model
-// (3072-dim) and queries the `<index>-mm` index. SigV4-signed with the broker-vended
-// scoped credentials, so the credential bounds which index is readable — cross-tenant
-// retrieval is denied at the resource, exactly as for the text path.
+// Multimodal retriever (§10.2.7) — query-by-image and visual retrieval. Like the
+// text path (#84), retrieval goes through the broker-proxied retrieval Lambda, NOT
+// a direct S3 Vectors call: the proxy embeds with Nova server-side, queries the
+// `agate-{tenant}-mm` index, and injects the scope filter from the VERIFIED token
+// (#94). The browser holds no s3vectors grant, so sub-tenant scope is a real
+// boundary here too — a modified client can't omit the filter or pick another index.
 
-import {
-  BedrockRuntimeClient,
-  InvokeModelCommand,
-} from "@aws-sdk/client-bedrock-runtime";
-import { QueryVectorsCommand, S3VectorsClient } from "@aws-sdk/client-s3vectors";
+import { Sha256 } from "@aws-crypto/sha256-js";
+import { SignatureV4 } from "@smithy/signature-v4";
 
 import type { ScopedCredentials } from "../auth";
 import { toSdkCredentials as sdkCreds } from "../auth/sdkCreds";
 import { elementFromMetadata, type VisualElement } from "./citation";
 
-// Must match the gate-verified contract (agate/multimodal.py, issue #17).
+// Must match the gate-verified contract (agate/multimodal.py, issue #17). The model
+// id is used SERVER-SIDE now; kept exported for the pure body-builder tests.
 export const MM_EMBED_MODEL_ID = "amazon.nova-2-multimodal-embeddings-v1:0";
 export const MM_EMBED_DIMENSION = 3072;
 
 export interface MultimodalConfig {
   region: string;
-  vectorBucketName: string;
-  // The tenant's MULTIMODAL index, e.g. `agate-chem-mm` (the 3072-dim index).
-  indexName: string;
+  // The broker-proxied retrieval endpoint (same as the text Retriever, #84/#94).
+  endpoint: string;
   topK?: number;
 }
 
@@ -65,50 +63,66 @@ export class MultimodalRetriever {
   constructor(
     private readonly cfg: MultimodalConfig,
     private readonly creds: () => Promise<ScopedCredentials>,
+    // The campus IdP token — the proxy verifies it to derive tenant/scope. The query
+    // CONTENT (text/image) is client-supplied; the access boundary is not.
+    private readonly idpToken: () => string,
   ) {}
 
-  private async embed(body: Record<string, unknown>): Promise<number[]> {
-    const client = new BedrockRuntimeClient({
-      region: this.cfg.region,
-      credentials: async () => sdkCreds(await this.creds()),
+  // POST to the retrieval proxy with index_kind="mm". Returns visual matches mapped
+  // from the proxy's scope-filtered results.
+  private async query(payload: Record<string, unknown>): Promise<VisualMatch[]> {
+    // payload carries only the query CONTENT (query/image_*); spread it FIRST so the
+    // fixed fields below can't be overridden by a caller-supplied key.
+    const body = JSON.stringify({
+      ...payload,
+      idp_token: this.idpToken(),
+      index_kind: "mm",
+      top_k: this.cfg.topK ?? 5,
     });
-    const res = await client.send(
-      new InvokeModelCommand({ modelId: MM_EMBED_MODEL_ID, body: JSON.stringify(body) }),
-    );
-    return parseNovaEmbedding(JSON.parse(new TextDecoder().decode(res.body)));
-  }
-
-  private async query(vector: number[]): Promise<VisualMatch[]> {
-    const client = new S3VectorsClient({
+    const url = new URL(this.cfg.endpoint);
+    // service "execute-api" — the endpoint is an IAM-authed API Gateway HTTP API.
+    const signer = new SignatureV4({
+      service: "execute-api",
       region: this.cfg.region,
-      credentials: async () => sdkCreds(await this.creds()),
+      credentials: sdkCreds(await this.creds()),
+      sha256: Sha256,
     });
-    const res = await client.send(
-      new QueryVectorsCommand({
-        vectorBucketName: this.cfg.vectorBucketName,
-        indexName: this.cfg.indexName,
-        topK: this.cfg.topK ?? 5,
-        queryVector: { float32: vector },
-        returnMetadata: true,
-        returnDistance: true,
-      }),
-    );
-    return (res.vectors ?? []).map((v) => {
-      const md = (v.metadata ?? {}) as Record<string, unknown>;
-      const sourceId = typeof md.source_key === "string" ? md.source_key : (v.key ?? "");
-      return { element: elementFromMetadata(sourceId, md), distance: v.distance };
+    const signed = await signer.sign({
+      method: "POST",
+      protocol: url.protocol,
+      hostname: url.hostname,
+      path: url.pathname,
+      headers: { host: url.hostname, "content-type": "application/json" },
+      body,
+    });
+    const resp = await fetch(this.cfg.endpoint, {
+      method: "POST",
+      headers: signed.headers as Record<string, string>,
+      body,
+    });
+    if (!resp.ok) return []; // fail closed: no matches rather than an error
+    const data = (await resp.json()) as { matches?: unknown };
+    const matches = Array.isArray(data.matches) ? data.matches : [];
+    return matches.map((m) => {
+      const o = (m ?? {}) as Record<string, unknown>;
+      const sourceId = typeof o.sourceId === "string" ? o.sourceId : "";
+      // Reuse the pure metadata mapper for modality/ref/thumb consistency.
+      const element = elementFromMetadata(sourceId, {
+        modality: o.modality,
+        ref: o.ref,
+        thumb: o.thumb,
+      });
+      return { element, distance: typeof o.distance === "number" ? o.distance : undefined };
     });
   }
 
   // Query-by-image: retrieve visually similar figures across the corpus.
   async retrieveByImage(imageB64: string, imageFormat: string): Promise<VisualMatch[]> {
-    const vector = await this.embed(novaEmbedBody({ imageB64, imageFormat }));
-    return this.query(vector);
+    return this.query({ image_b64: imageB64, image_format: imageFormat });
   }
 
   // Figure-aware text query against the multimodal index.
   async retrieveByText(text: string): Promise<VisualMatch[]> {
-    const vector = await this.embed(novaEmbedBody({ text }));
-    return this.query(vector);
+    return this.query({ query: text });
   }
 }

@@ -36,13 +36,16 @@ class _FakeSts:
 
 
 class _FakeVectors:
-    """Captures the query_vectors call and returns one in-scope chunk."""
+    """Captures the query_vectors call; returns canned text chunks (or custom vectors)."""
 
-    def __init__(self):
+    def __init__(self, vectors=None):
         self.last_query = None
+        self._vectors = vectors
 
     def query_vectors(self, **kwargs):
         self.last_query = kwargs
+        if self._vectors is not None:
+            return {"vectors": self._vectors}
         return {
             "vectors": [
                 {
@@ -79,6 +82,9 @@ def stub(monkeypatch):
     monkeypatch.setattr(retrieval, "verify_token", fake_verify)
     # Assume-role returns our capturing vectors client; embedding is a fixed vector.
     monkeypatch.setattr(retrieval, "embed_query", lambda q: [0.1, 0.2, 0.3])
+    monkeypatch.setattr(
+        retrieval, "embed_mm_query", lambda t, i, f: [0.4, 0.5, 0.6], raising=True
+    )
     monkeypatch.setattr(retrieval.boto3, "client", lambda *a, **k: vectors, raising=False)
     return sts, vectors
 
@@ -179,3 +185,76 @@ def test_top_k_clamped(stub):
     claims = {"sub": "u1", "tenant": "chem", "role": "member"}
     retrieval.handler(_event(claims, query="x", top_k=9999), None)
     assert vectors.last_query["topK"] == retrieval.MAX_TOP_K
+
+
+# --- #94: multimodal index path (same scope boundary as text) ----------------
+
+
+def test_mm_text_query_hits_mm_index_with_injected_filter(stub):
+    _sts, vectors = stub
+    claims = {"sub": "u1", "tenant": "chem", "role": "member", "data_scope": "chemistry/chem-101"}
+    resp = retrieval.handler(_event(claims, index_kind="mm", query="diagram of a cell"), None)
+    assert resp["statusCode"] == 200
+    # The MULTIMODAL index, and the SAME token-derived scope filter as the text path.
+    assert vectors.last_query["indexName"] == "agate-chem-mm"
+    assert vectors.last_query["filter"] == scope_filter(
+        retrieval_nodes("chemistry/chem-101", ())
+    )
+
+
+def test_mm_image_query_embeds_and_queries_mm_index(stub):
+    _sts, vectors = stub
+    claims = {"sub": "u1", "tenant": "chem", "role": "member"}
+    resp = retrieval.handler(
+        _event(claims, index_kind="mm", image_b64="aGVsbG8=", image_format="png"), None
+    )
+    assert resp["statusCode"] == 200
+    assert vectors.last_query["indexName"] == "agate-chem-mm"
+
+
+def test_mm_returns_visual_matches_shape(monkeypatch, stub):
+    # Map mm metadata (modality/ref/thumb/source_key) into the SPA VisualMatch shape.
+    sts, _ = stub
+    vectors = retrieval.boto3.client()  # the stubbed _FakeVectors
+    vectors._vectors = [
+        {
+            "key": "chem/fig#3",
+            "metadata": {
+                "source_key": "chem/chemistry/chem-101/lecture.pdf",
+                "modality": "image",
+                "ref": "figure-3",
+                "thumb": "data:image/png;base64,Zm9v",
+            },
+            "distance": 0.2,
+        }
+    ]
+    claims = {"sub": "u1", "tenant": "chem", "role": "member"}
+    resp = retrieval.handler(_event(claims, index_kind="mm", query="cell"), None)
+    body = json.loads(resp["body"])
+    assert "matches" in body and "chunks" not in body
+    m = body["matches"][0]
+    assert m["sourceId"] == "chem/chemistry/chem-101/lecture.pdf"
+    assert m["modality"] == "image" and m["ref"] == "figure-3"
+    assert m["thumb"].startswith("data:image/png")
+
+
+def test_mm_query_needs_exactly_one_of_text_or_image(stub):
+    _sts, vectors = stub
+    claims = {"sub": "u1", "tenant": "chem", "role": "member"}
+    # Neither query nor image -> 403, no query ran.
+    resp = retrieval.handler(_event(claims, index_kind="mm"), None)
+    assert resp["statusCode"] == 403
+    assert vectors.last_query is None
+    # Both -> also rejected.
+    resp2 = retrieval.handler(
+        _event(claims, index_kind="mm", query="x", image_b64="aGk=", image_format="png"), None
+    )
+    assert resp2["statusCode"] == 403
+
+
+def test_unknown_index_kind_rejected(stub):
+    _sts, vectors = stub
+    claims = {"sub": "u1", "tenant": "chem", "role": "member"}
+    resp = retrieval.handler(_event(claims, query="x", index_kind="evil"), None)
+    assert resp["statusCode"] == 403
+    assert vectors.last_query is None

@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Multimodal retrieval now goes through the scope-enforcing proxy too (#94, closes
+  the bypass #84 left).** #84 routed *text* vector retrieval through the proxy; the
+  *multimodal* path (`MultimodalRetriever`) still queried the `agate-{tenant}-mm`
+  index directly from the browser with no scope filter (tenant-fenced only). The
+  `agate-retrieval` proxy now serves both indexes, selected by an `index_kind`
+  (`"text"`|`"mm"`) body field: for `mm` it embeds with Nova server-side
+  (`agate.multimodal.nova_embed_request`), resolves `mm_index_name_for_tenant(tenant)`,
+  and injects the **same** `scope_filter(retrieval_nodes(...))` derived from the
+  verified token. The proxy's `bedrock:InvokeModel` grant is scoped to exactly the two
+  embed models (Titan + Nova). The SPA's `MultimodalRetriever` SigV4-POSTs to the
+  proxy (`index_kind:"mm"`) instead of calling S3 Vectors directly; the query content
+  (text or image) is client-supplied (it's what the user searches for), but tenant,
+  scope, and index are token-derived. With this, no browser path reaches `QueryVectors`
+  for either index — vector sub-tenant scope is a real boundary across the board.
 - **Vector sub-tenant scope is now a REAL boundary — broker-proxied retrieval (#84,
   completes #70 phase 4).** #80 made hierarchical scope IAM-enforced for S3 documents,
   but vectors stayed advisory: the browser signed `QueryVectors` directly and supplied

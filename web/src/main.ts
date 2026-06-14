@@ -254,7 +254,13 @@ async function runAsk(
       const tenant = creds.scope?.tenant;
       if (!tenant) return [];
       const retriever = new Retriever(
-        { region: config.region, vectorBucketName: config.vectorBucketName, indexName: `agate-${tenant}` },
+        {
+          region: config.region,
+          vectorBucketName: config.vectorBucketName,
+          indexName: `agate-${tenant}`,
+          // Scope retrieval to the session's enrolled courses (+ tenant-wide docs).
+          courses: creds.scope?.courses,
+        },
         () => creds.get(),
       );
       return withContext([], await retriever.retrieve(query));

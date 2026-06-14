@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import pytest
 from agate.rag import (
+    COURSE_META_KEY,
     ChunkRecord,
     TenantKeyError,
     build_chunk_records,
     chunk_text,
+    course_filter,
+    course_from_s3_key,
     index_name_for_tenant,
     tenant_from_s3_key,
     vector_key,
@@ -37,6 +40,51 @@ def test_tenant_from_s3_key_fails_closed(key):
 
 def test_index_name_per_tenant():
     assert index_name_for_tenant("chem") == "agate-chem"
+
+
+# --- course derivation (per-enrollment scope) -------------------------------
+
+
+@pytest.mark.parametrize(
+    "key,course",
+    [
+        ("chem/chem-101/week3.pdf", "chem-101"),  # 2nd segment is a course id
+        ("chem/cs50/notes.txt", "cs50"),
+        ("chem/BIO_220/x.md", "BIO_220"),
+        ("chem/handbook.pdf", None),  # directly under tenant -> tenant-wide
+        ("chem/syllabus/notes.pdf", None),  # plain folder, not a course id
+        ("chem/", None),  # no third segment
+    ],
+)
+def test_course_from_s3_key(key, course):
+    assert course_from_s3_key(key) == course
+
+
+def test_build_chunk_records_tags_course_when_present():
+    recs = build_chunk_records("chem/chem-101/w.txt", "Some content about acids.")
+    assert recs and recs[0].metadata[COURSE_META_KEY] == "chem-101"
+
+
+def test_build_chunk_records_omits_course_for_tenant_wide_doc():
+    recs = build_chunk_records("chem/handbook.txt", "General policy text.")
+    assert recs and COURSE_META_KEY not in recs[0].metadata
+
+
+# --- course filter (retrieval scope) ----------------------------------------
+
+
+def test_course_filter_no_courses_only_tenant_wide():
+    # No enrollment -> only docs WITHOUT a course are visible (fail-closed).
+    f = course_filter([])
+    assert f == {COURSE_META_KEY: {"$exists": False}}
+
+
+def test_course_filter_enrolled_includes_tenant_wide_or_enrolled():
+    f = course_filter(["chem-101", "chem-102"])
+    assert "$or" in f
+    branches = f["$or"]
+    assert {COURSE_META_KEY: {"$exists": False}} in branches
+    assert {COURSE_META_KEY: {"$in": ["chem-101", "chem-102"]}} in branches
 
 
 # --- chunking ---------------------------------------------------------------

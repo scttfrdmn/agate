@@ -27,6 +27,21 @@ export interface RetrieverConfig {
   // credential can only read the index its agate:tenant tag matches.
   indexName: string;
   topK?: number;
+  // The session's enrolled courses (agate:courses). Retrieval narrows to these
+  // courses' material plus tenant-wide docs; omitting it (or []) hides course
+  // material and returns only tenant-wide docs (fail-closed on enrollment).
+  courses?: string[];
+}
+
+// Build the S3 Vectors metadata filter scoping retrieval to enrolled courses.
+// A chunk is in scope when it has no `course` metadata (tenant-wide) OR its course
+// is one the session is enrolled in. Mirrors agate.rag.course_filter (Python) so the
+// browser and any server-side retriever scope identically.
+export function courseFilter(courses?: string[]): Record<string, unknown> {
+  const enrolled = (courses ?? []).filter(Boolean);
+  const tenantWide = { course: { $exists: false } };
+  if (!enrolled.length) return tenantWide;
+  return { $or: [tenantWide, { course: { $in: enrolled } }] };
 }
 
 
@@ -67,6 +82,10 @@ export class Retriever {
         indexName: this.cfg.indexName,
         topK: this.cfg.topK ?? 5,
         queryVector: { float32: vector },
+        // Narrow to the session's enrolled courses + tenant-wide docs. The tenant
+        // index already bounds what the credential can read; this scopes by course.
+        // (Cast: the SDK types `filter` as the loose DocumentType.)
+        filter: courseFilter(this.cfg.courses) as unknown as Record<string, never>,
         returnMetadata: true,
         returnDistance: true,
       }),

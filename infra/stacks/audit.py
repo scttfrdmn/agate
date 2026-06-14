@@ -113,7 +113,7 @@ class AuditStack(Stack):
             timeout=cdk.Duration.minutes(2),
             memory_size=256,
             environment={"AGATE_SPEND_TABLE": spend_table.table_name},
-            description="agate: authoritative spend — invocation logs -> spend table",
+            description="agate: authoritative spend - invocation logs -> spend table",
         )
         log_bucket.grant_read(spend_fn)
         spend_table.grant_read_write_data(spend_fn)

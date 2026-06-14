@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Agent path (Panel/Analyze) is live end-to-end.** The reference agent container
+  is built (linux/arm64, as AgentCore requires) and pushed to ECR, and `agate-agent`
+  deploys the AgentCore Runtime + Code Interpreter against it. `agate-identity` now
+  grants the authenticated session role `bedrock-agentcore:InvokeAgentRuntime` on the
+  agate agent runtimes (bounded by a matching permissions-boundary ceiling), so the
+  SPA's SigV4-signed call (with broker-vended scoped creds) reaches the Runtime; the
+  container still re-derives the caller's tier from the verified JWT (SEC-4b). The
+  SPA's Panel/Analyze modes light up once `VITE_AGENT_RUNTIME_ARN` is set.
+- `agent/server.py` `_resolve_models()`: when an invocation omits the roster /
+  generator / router (the SPA sends only `{question, idp_token, mode}`), the
+  container materialises concrete **entitled** Bedrock model ids from the verified
+  tier — so a bare payload never sends a logical label like `oss` as a `modelId`
+  (which Bedrock rejects). Caller-supplied config is left untouched. Unit-tested.
 - **Click-to-demo login via Cognito Hosted UI** (`web/src/auth/login.ts`). The SPA
   now shows a *Log in* / *Log out* button and gates chat on auth: an unauthenticated
   visitor is redirected to the demo pool's Hosted UI (OIDC implicit flow), comes back
@@ -39,6 +52,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than applied by hand post-deploy.
 
 ### Fixed
+- Agent container Dockerfile was missing `COPY cost/` — `agent/server.py` imports
+  `cost.CostMeter`, so the Runtime crashed at startup with `ModuleNotFoundError:
+  No module named 'cost'`. Now copies the `cost` package alongside `agate`/`agent`.
+- `agate-agent` deploy hardening (all found deploying live): the Runtime execution
+  role now carries the **ECR pull** permissions AgentCore validates at create time
+  (`ecr:GetAuthorizationToken` + scoped `BatchGetImage`/`GetDownloadUrlForLayer`)
+  and **CloudWatch Logs** write on the agent log group; the Runtime + Code
+  Interpreter now `DependsOn` the role's inline policy so creation doesn't race the
+  policy attach (which previously failed "Access denied while validating ECR URI").
+- IAM role descriptions can't contain non-ASCII: an em-dash in the agent runtime
+  role description failed role creation. Normalised em-dashes to `-` in all stack
+  resource descriptions.
 - Broker endpoint moved from a Lambda **Function URL** to an **API Gateway HTTP
   API**. Public (`AuthType NONE`) Function URLs are blocked at the edge by an
   account/org guardrail (Lambda Block Public Access) in some environments — they

@@ -103,6 +103,42 @@ def test_verified_frontier_tier_allows_frontier_model(stub_backends, monkeypatch
     assert events[-1]["type"] == "receipt"
 
 
+def test_resolve_models_fills_defaults_with_real_ids():
+    # A bare SPA payload (no roster/generator/router) gets concrete entitled ids,
+    # never a bare logical label like "oss".
+    entitled = ["openai.gpt-oss-20b-1:0", "openai.gpt-oss-120b-1:0", "google.gemma-3-12b-it"]
+    out = server._resolve_models({"question": "q", "mode": "SYNTHESIS"}, entitled)
+    assert out["generator"]["tier"] == "openai.gpt-oss-20b-1:0"
+    assert out["router"]["tier"] == "openai.gpt-oss-20b-1:0"
+
+
+def test_resolve_models_builds_debate_roster_when_missing():
+    entitled = ["openai.gpt-oss-20b-1:0", "openai.gpt-oss-120b-1:0", "google.gemma-3-12b-it"]
+    out = server._resolve_models({"question": "q", "mode": "DEBATE"}, entitled)
+    assert len(out["roster"]) == 3
+    assert all(m["tier"] in entitled for m in out["roster"])
+    assert out["adjudicator"]["tier"] in entitled
+
+
+def test_resolve_models_leaves_caller_supplied_config_untouched():
+    entitled = ["openai.gpt-oss-20b-1:0"]
+    given = {
+        "question": "q",
+        "generator": {"tier": "openai.gpt-oss-120b-1:0", "label": "g", "max_tokens": 9},
+    }
+    out = server._resolve_models(given, entitled)
+    assert out["generator"]["tier"] == "openai.gpt-oss-120b-1:0"  # not overwritten
+
+
+def test_bare_spa_payload_runs_to_receipt(stub_backends):
+    # The exact shape the SPA sends: question + mode only, no roster/generator.
+    events = server.run_invocation({"question": "what is agate?", "mode": "SYNTHESIS"})
+    assert not any(e.get("title") == "error" for e in events if e["type"] == "answer")
+    assert events[-1]["type"] == "receipt"
+    # the generator model id actually used is a real entitled id, not "oss"
+    assert any(e["type"] == "answer" and e.get("text") for e in events)
+
+
 def test_events_to_blob_is_ndjson():
     blob = server._events_to_blob(
         [{"type": "answer", "text": "hi"}, {"type": "cost", "total": 1.0}]

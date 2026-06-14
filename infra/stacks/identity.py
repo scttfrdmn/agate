@@ -87,6 +87,17 @@ class IdentityStack(Stack):
                             "Resource": "*",
                         },
                         {
+                            # The agent path (Panel/Analyze) — the SPA SigV4-signs the
+                            # InvokeAgentRuntime call with these vended creds. Inside
+                            # the runtime, the container re-derives the caller's tier
+                            # from the verified JWT (SEC-4b), so this only gates "may
+                            # invoke the agent at all", not which models run.
+                            "Sid": "CeilingAgentInvoke",
+                            "Effect": "Allow",
+                            "Action": "bedrock-agentcore:InvokeAgentRuntime",
+                            "Resource": "*",
+                        },
+                        {
                             # Explicit deny of anything that could widen privilege
                             # or persist beyond the session.
                             "Sid": "CeilingDenyEscalation",
@@ -155,6 +166,34 @@ class IdentityStack(Stack):
                 self,
                 "DataScope",
                 document=iam.PolicyDocument.from_json(data_policy_doc),
+            )
+        )
+        # Agent path: let the session invoke the agate AgentCore Runtime (Panel/Analyze).
+        # Scoped to this account/region's agate agent runtimes by ARN pattern — the
+        # runtime's generated id lives in the agate-agent stack, so we match the family
+        # rather than create a cross-stack dependency. Per-tier model enforcement still
+        # happens inside the container against the verified JWT (SEC-4b); this is just
+        # the "may invoke" grant. Bounded by CeilingAgentInvoke above.
+        authenticated_role.attach_inline_policy(
+            iam.Policy(
+                self,
+                "AgentInvoke",
+                document=iam.PolicyDocument.from_json(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Sid": "InvokeAgateAgentRuntime",
+                                "Effect": "Allow",
+                                "Action": "bedrock-agentcore:InvokeAgentRuntime",
+                                "Resource": [
+                                    f"arn:aws:bedrock-agentcore:{region}:{account}:runtime/{HANDLE}_agent-*",
+                                    f"arn:aws:bedrock-agentcore:{region}:{account}:runtime/{HANDLE}_agent-*/*",
+                                ],
+                            }
+                        ],
+                    }
+                ),
             )
         )
 

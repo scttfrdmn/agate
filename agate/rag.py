@@ -70,6 +70,68 @@ def course_from_s3_key(key: str) -> str | None:
     return candidate if _COURSE_SEG.match(candidate) else None
 
 
+# --- Hierarchical scope (#70): school/dept/course (+ lab/project) -------------
+# Metadata key carrying a document's ancestor-path list (filterable). S3 Vectors
+# has no prefix operator, so subtree visibility is achieved by storing every
+# ancestor-or-self path on the doc and matching the session's node with $in
+# (validated live, #70). The scope path is the directory portion BETWEEN the
+# tenant and the filename: `chem/chemistry/chem-101/wk3.pdf` -> `chemistry/chem-101`.
+SCOPE_META_KEY = "scope_ancestors"
+
+
+def scope_path_from_s3_key(key: str) -> str | None:
+    """The hierarchical scope path (tenant excluded, filename excluded), or None.
+
+    `chem/chemistry/chem-101/wk3.pdf` -> `chemistry/chem-101`
+    `chem/chem-101/wk3.pdf`           -> `chem-101`         (flat = single segment)
+    `chem/handbook.pdf`               -> None               (tenant-wide, no scope)
+    The tenant is the hard ABAC fence; this path narrows WITHIN the tenant index.
+    """
+    parts = [p for p in key.lstrip("/").split("/") if p]
+    if len(parts) < 3:  # tenant + at least one scope segment + filename
+        return None
+    return "/".join(parts[1:-1])
+
+
+def ancestors(scope_path: str) -> list[str]:
+    """Every ancestor-or-self prefix of a scope path, broad -> specific.
+
+    `chemistry/chem-101` -> ["chemistry", "chemistry/chem-101"]. A doc stores this
+    list; a session sitting at any of these nodes (its own scope) matches via $in,
+    giving subtree visibility (a chair at `chemistry` sees every course under it).
+    """
+    segs = [s for s in scope_path.split("/") if s]
+    return ["/".join(segs[: i + 1]) for i in range(len(segs))]
+
+
+def scope_filter(scope_nodes: tuple[str, ...] | list[str]) -> dict:
+    """S3 Vectors filter scoping retrieval to a session's hierarchy node(s).
+
+    A chunk is visible when it is TRULY tenant-wide (neither `scope_ancestors` nor
+    `course` set) OR one of the session's scope nodes is in the chunk's ancestor
+    list (subtree visibility) OR — for docs written under the flat model — its
+    `course` matches a node (backward compat). Empty nodes -> only tenant-wide docs
+    (fail-closed). Generalises course_filter; a flat course is a single node.
+
+    Mirrors `scopeFilter` in web/src/rag/retriever.ts — keep the two in lockstep.
+    """
+    nodes = [n for n in scope_nodes if n]
+    # Truly tenant-wide: no scope AND no course (so a no-scope session can't see
+    # flat course material either — same fail-closed posture as course_filter).
+    tenant_wide = {
+        "$and": [{SCOPE_META_KEY: {"$exists": False}}, {COURSE_META_KEY: {"$exists": False}}]
+    }
+    if not nodes:
+        return tenant_wide
+    return {
+        "$or": [
+            tenant_wide,
+            {SCOPE_META_KEY: {"$in": nodes}},
+            {COURSE_META_KEY: {"$in": nodes}},  # backward-compat with flat course docs
+        ]
+    }
+
+
 def index_name_for_tenant(tenant: str) -> str:
     """The per-tenant S3 Vectors index name (design §4: one index per tenant)."""
     return f"agate-{tenant}"
@@ -173,7 +235,7 @@ class ChunkRecord:
 
     key: str
     text: str
-    metadata: dict[str, str | int] = field(default_factory=dict)
+    metadata: dict[str, str | int | list[str]] = field(default_factory=dict)
 
 
 def build_chunk_records(s3_key: str, text: str, **chunk_kwargs) -> list[ChunkRecord]:
@@ -185,9 +247,11 @@ def build_chunk_records(s3_key: str, text: str, **chunk_kwargs) -> list[ChunkRec
     """
     tenant = tenant_from_s3_key(s3_key)
     course = course_from_s3_key(s3_key)
+    scope_path = scope_path_from_s3_key(s3_key)
+    scope_ancestors = ancestors(scope_path) if scope_path else []
     records: list[ChunkRecord] = []
     for i, chunk in enumerate(chunk_text(text, **chunk_kwargs)):
-        metadata: dict[str, str | int] = {
+        metadata: dict[str, str | int | list[str]] = {
             "source_key": s3_key,
             "tenant": tenant,
             "chunk": i,
@@ -195,9 +259,14 @@ def build_chunk_records(s3_key: str, text: str, **chunk_kwargs) -> list[ChunkRec
             # prompt injection without a second S3 fetch.
             "text": chunk,
         }
-        # Course is filterable: retrieval narrows to the session's enrolled courses
-        # (+ tenant-wide docs). Only set when the key actually names a course.
+        # Course is filterable (flat leaf, kept for backward compat): retrieval
+        # narrows to the session's enrolled courses + tenant-wide docs.
         if course is not None:
             metadata[COURSE_META_KEY] = course
+        # Hierarchical scope (#70): the ancestor-path list gives subtree visibility
+        # via $in against the session's node(s). Set only when the key has a scope
+        # path; a tenant-wide doc carries neither course nor scope.
+        if scope_ancestors:
+            metadata[SCOPE_META_KEY] = scope_ancestors
         records.append(ChunkRecord(key=vector_key(s3_key, i), text=chunk, metadata=metadata))
     return records

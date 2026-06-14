@@ -44,6 +44,28 @@ export function courseFilter(courses?: string[]): Record<string, unknown> {
   return { $or: [tenantWide, { course: { $in: enrolled } }] };
 }
 
+// Hierarchical scope filter (#70). A chunk is in scope when it is tenant-wide
+// (neither `course` nor `scope_ancestors` set) OR the session sits at/above it in
+// the tree (one of its scope nodes is in the chunk's `scope_ancestors` list) OR —
+// for docs written under the flat model — its `course` matches a node. Mirrors
+// agate.rag.scope_filter; tolerant of both old (course) and new (scope) docs.
+export function scopeFilter(nodes?: string[]): Record<string, unknown> {
+  const scope = (nodes ?? []).filter(Boolean);
+  const tenantWide = { scope_ancestors: { $exists: false } };
+  if (!scope.length) {
+    // No scope nodes -> only tenant-wide docs (fail-closed). Also exclude flat
+    // course docs by requiring no course either.
+    return { $and: [tenantWide, { course: { $exists: false } }] };
+  }
+  return {
+    $or: [
+      { $and: [tenantWide, { course: { $exists: false } }] },
+      { scope_ancestors: { $in: scope } },
+      { course: { $in: scope } }, // backward-compat with flat course docs
+    ],
+  };
+}
+
 
 export class Retriever {
   constructor(
@@ -82,10 +104,11 @@ export class Retriever {
         indexName: this.cfg.indexName,
         topK: this.cfg.topK ?? 5,
         queryVector: { float32: vector },
-        // Narrow to the session's enrolled courses + tenant-wide docs. The tenant
-        // index already bounds what the credential can read; this scopes by course.
+        // Narrow to the session's scope nodes (hierarchy #70) + tenant-wide docs.
+        // The tenant index already bounds what the credential can read; this scopes
+        // by subtree. courses are the session's scope nodes today (flat leaves).
         // (Cast: the SDK types `filter` as the loose DocumentType.)
-        filter: courseFilter(this.cfg.courses) as unknown as Record<string, never>,
+        filter: scopeFilter(this.cfg.courses) as unknown as Record<string, never>,
         returnMetadata: true,
         returnDistance: true,
       }),

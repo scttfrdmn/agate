@@ -5,13 +5,17 @@ from __future__ import annotations
 import pytest
 from agate.rag import (
     COURSE_META_KEY,
+    SCOPE_META_KEY,
     ChunkRecord,
     TenantKeyError,
+    ancestors,
     build_chunk_records,
     chunk_text,
     course_filter,
     course_from_s3_key,
     index_name_for_tenant,
+    scope_filter,
+    scope_path_from_s3_key,
     tenant_from_s3_key,
     vector_key,
 )
@@ -85,6 +89,56 @@ def test_course_filter_enrolled_includes_tenant_wide_or_enrolled():
     branches = f["$or"]
     assert {COURSE_META_KEY: {"$exists": False}} in branches
     assert {COURSE_META_KEY: {"$in": ["chem-101", "chem-102"]}} in branches
+
+
+# --- hierarchical scope (#70) -----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "key,scope",
+    [
+        ("chem/chemistry/chem-101/wk3.pdf", "chemistry/chem-101"),  # school/dept/course
+        ("chem/chem-101/wk3.pdf", "chem-101"),  # flat (single scope segment)
+        ("medicine/genetics/smith-lab/data.txt", "genetics/smith-lab"),  # research
+        ("chem/handbook.pdf", None),  # tenant-wide, no scope
+        ("chem/", None),
+    ],
+)
+def test_scope_path_from_s3_key(key, scope):
+    assert scope_path_from_s3_key(key) == scope
+
+
+def test_ancestors_broad_to_specific():
+    assert ancestors("chemistry/chem-101") == ["chemistry", "chemistry/chem-101"]
+    assert ancestors("a/b/c") == ["a", "a/b", "a/b/c"]
+    assert ancestors("solo") == ["solo"]
+
+
+def test_build_chunk_records_writes_ancestor_list_for_hierarchical_key():
+    recs = build_chunk_records("chem/chemistry/chem-101/wk.txt", "content here")
+    assert recs and recs[0].metadata[SCOPE_META_KEY] == ["chemistry", "chemistry/chem-101"]
+
+
+def test_build_chunk_records_no_scope_for_tenant_wide():
+    recs = build_chunk_records("chem/handbook.txt", "policy")
+    assert recs and SCOPE_META_KEY not in recs[0].metadata
+
+
+def test_scope_filter_no_nodes_only_tenant_wide():
+    # No scope -> only docs with neither scope nor course (true tenant-wide).
+    f = scope_filter([])
+    assert f == {
+        "$and": [{SCOPE_META_KEY: {"$exists": False}}, {COURSE_META_KEY: {"$exists": False}}]
+    }
+
+
+def test_scope_filter_subtree_membership_and_backward_compat():
+    # A chair at "chemistry" sees the subtree (scope_ancestors $in) AND flat course
+    # docs whose course matches a node (backward compat).
+    f = scope_filter(["chemistry", "chemistry/chem-101"])
+    branches = f["$or"]
+    assert {SCOPE_META_KEY: {"$in": ["chemistry", "chemistry/chem-101"]}} in branches
+    assert {COURSE_META_KEY: {"$in": ["chemistry", "chemistry/chem-101"]}} in branches
 
 
 # --- chunking ---------------------------------------------------------------

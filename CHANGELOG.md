@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `agate-audit`: the CloudTrail management-plane Trail is now **opt-in**
+  (`-c cloudtrail=true`, default off). Its create-time bucket-policy validation is
+  flaky against a fresh bucket even with the correct policy + an explicit dependency
+  (#75). The forensic trail is independent of the authoritative-spend path (spend
+  table + Bedrock invocation logging + meter), so gating it lets the spend path —
+  what the governed-access console needs — deploy cleanly. Found deploying live.
+
 ### Added
 - **Hierarchical scope — admin RBAC slice** (#70, phase 3, app-level). A *scoped*
   admin (a dean/chair) now sees only their own tenant's analytics in the console,

@@ -66,6 +66,7 @@ class DemoIdpStack(Stack):
                 "grant": _attr(),
                 "role": _attr(),  # operator role (admin) for the console
                 "admin_scope": _attr(),  # subtree a scoped admin governs (#70 RBAC)
+                "data_scope": _attr(),  # subtree a session is CONFINED to for S3 reads (#80)
             },
             lambda_triggers=cognito.UserPoolTriggers(pre_token_generation=pretoken_fn),
             removal_policy=cdk.RemovalPolicy.DESTROY,  # throwaway demo pool

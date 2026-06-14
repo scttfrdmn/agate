@@ -15,8 +15,9 @@ from __future__ import annotations
 
 # eduPerson-style claims the gateway's claims_to_tags understands. `role` carries
 # the operator role (admin) for the governed-access console (Phase 9 Track 1);
-# `admin_scope` is the subtree a scoped admin governs (#70 RBAC).
-_CLAIMS = ("affiliation", "tenant", "courses", "grant", "role", "admin_scope")
+# `admin_scope` is the subtree a scoped admin governs (#70 RBAC); `data_scope` is the
+# subtree a session is CONFINED to for S3 document reads (#80, IAM-enforced).
+_CLAIMS = ("affiliation", "tenant", "courses", "grant", "role", "admin_scope", "data_scope")
 
 
 def handler(event: dict, context: object) -> dict:

@@ -17,10 +17,19 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from agate.tags import subject_from_session_name, tenant_from_session_name
 from cost.pricing import PriceBook, default_pricebook
 
 # assumed-role ARN: arn:aws:sts::<acct>:assumed-role/<role>/<RoleSessionName>
 _ASSUMED_ROLE = re.compile(r"assumed-role/(?P<role>[^/]+)/(?P<session>.+)$")
+# The spend key is `tenant#user#period`; `#` (and whitespace) in a part would split
+# the key wrong and silently drop the row. Strip key-breaking chars defensively.
+_KEY_UNSAFE = re.compile(r"[#\s]")
+
+
+def _key_safe(part: str) -> str:
+    """Make a spend-key component safe: no `#` (the delimiter) or whitespace."""
+    return _KEY_UNSAFE.sub("-", part or "unknown") or "unknown"
 
 
 class RecordError(ValueError):
@@ -49,17 +58,22 @@ def _period_from_timestamp(ts: str) -> str:
     return m.group("ym")
 
 
-def _identity(record: dict) -> tuple[str, str]:
-    """Derive (user, tenant_hint) from the record's identity ARN.
+def _identity(record: dict) -> tuple[str, str | None]:
+    """Derive (user, tenant) from the record's assumed-role ARN — UNFORGEABLY.
 
-    The RoleSessionName (set by the broker to the federated subject) is the user.
-    The tenant is carried as the `agate:tenant` session tag, surfaced in the record's
-    requestMetadata when present; otherwise it must be supplied out-of-band.
+    The broker sets RoleSessionName to `<tenant>@<subject>` (`agate.tags.
+    role_session_name`), so both the user and the tenant are recoverable from the
+    ARN, which Bedrock records on every invocation. This is the authoritative source
+    (#79): it cannot be forged by a client choosing its own requestMetadata. Returns
+    (user, tenant); tenant is None for a legacy/un-encoded session name, so the
+    caller can fall back rather than mis-attribute.
     """
     arn = (record.get("identity") or {}).get("arn", "")
     m = _ASSUMED_ROLE.search(arn)
-    user = m.group("session") if m else "unknown"
-    return user, arn
+    if not m:
+        return "unknown", None
+    session = m.group("session")
+    return subject_from_session_name(session), tenant_from_session_name(session)
 
 
 def parse_invocation_record(
@@ -83,10 +97,17 @@ def parse_invocation_record(
         raise RecordError("record has no modelId")
 
     period = _period_from_timestamp(record.get("timestamp", ""))
-    user, _arn = _identity(record)
+    user, arn_tenant = _identity(record)
 
+    # Tenant precedence (#79): an explicit caller arg (tests) > the UNFORGEABLE tenant
+    # encoded in the assumed-role session name > a non-authoritative requestMetadata
+    # hint (client-controlled — kept only as a last resort for legacy/un-encoded
+    # sessions) > "unknown". A `#` in any value would corrupt the spend key, so we
+    # sanitise the resolved tenant to the key-safe grammar before use.
     metadata = record.get("requestMetadata") or {}
-    resolved_tenant = tenant or metadata.get("agate:tenant") or "unknown"
+    resolved_tenant = tenant or arn_tenant or metadata.get("agate:tenant") or "unknown"
+    resolved_tenant = _key_safe(resolved_tenant)
+    user = _key_safe(user)
 
     inp = record.get("input") or {}
     out = record.get("output") or {}

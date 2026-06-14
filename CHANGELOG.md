@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Spend attribution is now unforgeable (#79).** The broker encodes the tenant into
+  the STS RoleSessionName as `<tenant>@<subject>` (`agate.tags.role_session_name`), so
+  it appears in the assumed-role ARN of every Bedrock invocation-log line. The spend
+  meter recovers tenant + user from that ARN (`meter/parse.py`) instead of trusting
+  the client-supplied `requestMetadata['agate:tenant']` — which a Tier 0 caller could
+  set freely, enabling spend misattribution / soft-cap evasion. `requestMetadata` is
+  now only a last-resort fallback for legacy/un-encoded sessions, and spend-key parts
+  are sanitised so a `#` can't split the `tenant#user#period` key and silently drop a
+  row. Closes the one finding from the consolidation review (#38).
+
 ### Security
 - Consolidation security re-review of the Phase 9 / #70 session work (adversarial
   pass over the broker→scoped-STS path, the ABAC tag scheme, the admin gate, scope

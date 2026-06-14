@@ -193,6 +193,44 @@ def test_admin_scope_sanitises_and_dedupes():
     assert tags.admin_scope == ("a/b", "xy")  # dedup + stripped + sanitised
 
 
+# --- role-session-name tenant encoding (#79) --------------------------------
+
+from agate.tags import (  # noqa: E402
+    role_session_name,
+    subject_from_session_name,
+    tenant_from_session_name,
+)
+
+
+def test_role_session_name_encodes_tenant():
+    assert role_session_name("kempner", "u123") == "kempner@u123"
+
+
+def test_tenant_round_trips_through_session_name():
+    name = role_session_name("arts-sci", "64684478-b031-70ad-4ba0-8b3386c99b46")
+    assert tenant_from_session_name(name) == "arts-sci"
+    assert subject_from_session_name(name) == "64684478-b031-70ad-4ba0-8b3386c99b46"
+
+
+def test_legacy_session_name_without_at_has_no_tenant():
+    # An un-encoded (legacy) session name -> tenant None, subject is the whole name.
+    assert tenant_from_session_name("student-7") is None
+    assert subject_from_session_name("student-7") == "student-7"
+
+
+def test_session_name_within_sts_limit_and_charset():
+    name = role_session_name("a" * 50, "b" * 80)
+    assert len(name) <= 64
+    assert all(c.isalnum() or c in "+=,.@-_" for c in name)
+
+
+def test_session_name_sanitises_unsafe_chars():
+    # '@' in a subject can't smuggle a second separator that fakes a tenant: the
+    # tenant is taken from the FIRST '@', and the broker passes the verified tenant.
+    name = role_session_name("chem", "evil@x")
+    assert tenant_from_session_name(name) == "chem"
+
+
 def test_all_tag_values_within_aws_limit():
     t = _tags(
         affiliation="researcher",

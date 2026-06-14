@@ -29,7 +29,7 @@ import os
 
 import boto3
 from agate.jwt_verify import TokenError, config_from_env, verify_token
-from agate.tags import ClaimsError, claims_to_tags
+from agate.tags import ClaimsError, claims_to_tags, role_session_name
 
 # Resolved at deploy time (set as Lambda env vars by the identity stack).
 AUTHENTICATED_ROLE_ARN = os.environ.get("AGATE_AUTHENTICATED_ROLE_ARN", "")
@@ -103,8 +103,10 @@ def vend_credentials(claims: dict[str, object], *, subject: str) -> dict[str, ob
         raise BrokerError(f"cannot scope session: {exc}") from exc
 
     # RoleSessionName ties every downstream CloudTrail / Bedrock log line to the
-    # federated subject (security memo §4: fully attributable).
-    session_name = _safe_session_name(subject)
+    # federated subject (security memo §4: fully attributable) AND encodes the tenant
+    # as `<tenant>@<subject>` so the spend meter can attribute by tenant UNFORGEABLY
+    # from the ARN — not from client-supplied requestMetadata (#79).
+    session_name = role_session_name(tags.tenant, subject)
 
     resp = _sts.assume_role(
         RoleArn=AUTHENTICATED_ROLE_ARN,
@@ -130,14 +132,6 @@ def vend_credentials(claims: dict[str, object], *, subject: str) -> dict[str, ob
             "tier": tags.tier,
         },
     }
-
-
-def _safe_session_name(subject: str) -> str:
-    """STS RoleSessionName: <=64 chars, [\\w+=,.@-]."""
-    import re
-
-    name = re.sub(r"[^\w+=,.@-]", "-", subject or "agate-user")
-    return name[:64] or "agate-user"
 
 
 def handler(event: dict, context: object) -> dict:

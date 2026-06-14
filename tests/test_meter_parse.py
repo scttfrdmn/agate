@@ -44,6 +44,41 @@ def test_tenant_falls_back_to_unknown():
     assert parse_invocation_record(rec).tenant == "unknown"
 
 
+# --- #79: unforgeable tenant from the session-name-encoded ARN ---------------
+
+
+def _arn(session: str) -> str:
+    return f"arn:aws:sts::123:assumed-role/agate-authenticated/{session}"
+
+
+def test_arn_encoded_tenant_is_authoritative_over_requestmetadata():
+    # The broker encodes `<tenant>@<subject>` in the session name. Even a FORGED
+    # requestMetadata tenant must NOT win — the ARN tenant is authoritative (#79).
+    rec = record(
+        identity={"arn": _arn("chem@student-7")},
+        requestMetadata={"agate:tenant": "victim"},  # attacker-supplied
+    )
+    s = parse_invocation_record(rec)
+    assert s.tenant == "chem"  # NOT "victim"
+    assert s.user == "student-7"
+
+
+def test_requestmetadata_only_used_for_legacy_unencoded_session():
+    # No '@' in the session name -> fall back to the requestMetadata hint.
+    rec = record(identity={"arn": _arn("student-7")}, requestMetadata={"agate:tenant": "chem"})
+    assert parse_invocation_record(rec).tenant == "chem"
+
+
+def test_hash_in_tenant_is_sanitised_so_spend_key_cannot_be_split():
+    # A '#' in a tenant value would corrupt the `tenant#user#period` key and silently
+    # drop the row. The meter strips '#' from key parts defensively.
+    rec = record(identity={"arn": _arn("a#b@student-7")})
+    s = parse_invocation_record(rec)
+    assert "#" not in s.tenant and "#" not in s.user
+    # spend_key still splits to exactly 3 parts
+    assert spend_key(s.tenant, s.user, s.period).count("#") == 2
+
+
 def test_user_unknown_when_arn_not_assumed_role():
     s = parse_invocation_record(record(identity={"arn": "arn:aws:iam::123:user/admin"}))
     assert s.user == "unknown"

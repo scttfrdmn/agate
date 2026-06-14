@@ -31,6 +31,20 @@ _TENANT_RE = re.compile(r"[^a-zA-Z0-9._-]")
 _COURSE_RE = re.compile(r"[^a-zA-Z0-9._-]")
 COURSE_SEP = ","
 
+# --- Role-session-name tenant encoding (#79) --------------------------------
+# Session tags do NOT appear in Bedrock invocation logs — only the assumed-role
+# ARN does, carrying the RoleSessionName. To attribute spend to a tenant UNFORGEABLY
+# (rather than trusting client-supplied requestMetadata), the broker encodes the
+# tenant INTO the session name as `<tenant>@<subject>`. The meter then recovers the
+# tenant from the ARN. `@` is a valid STS session-name char and is NOT in the tenant
+# grammar (`[a-zA-Z0-9._-]`), so it can't collide with a tenant value. STS
+# RoleSessionName is <=64 chars over [\w+=,.@-]; we budget the tenant to a prefix and
+# let the subject take the rest (the subject — a sub/UUID — is what must stay unique).
+SESSION_TENANT_SEP = "@"
+_SESSION_NAME_RE = re.compile(r"[^\w+=,.@-]")
+_MAX_SESSION_NAME = 64
+_MAX_SESSION_TENANT = 24  # prefix budget for the tenant; subject gets the remainder
+
 # eduPersonAffiliation synonyms we fold into our normalised set.
 _AFFILIATION_ALIASES: dict[str, Affiliation] = {
     "student": "student",
@@ -91,6 +105,50 @@ class SessionTags:
             {"Key": tag_key("tier"), "Value": self.tier},
             {"Key": tag_key("role"), "Value": self.role},
         ]
+
+
+def role_session_name(tenant: str, subject: str) -> str:
+    """The STS RoleSessionName the broker uses: `<tenant>@<subject>`.
+
+    Encoding the tenant here makes it UNFORGEABLE downstream: it appears in the
+    assumed-role ARN of every Bedrock/CloudTrail log line, so the spend meter can
+    attribute by tenant without trusting client-supplied requestMetadata (#79).
+
+    Sanitised to the STS session-name grammar (`[\\w+=,.@-]`, <=64). The tenant is
+    budgeted to a short prefix so the subject (the uniqueness-bearing part) is never
+    crowded out; both are sanitised, and a missing/empty part degrades safely.
+    """
+    t = _SESSION_NAME_RE.sub("-", str(tenant or "").strip())[:_MAX_SESSION_TENANT]
+    # Reserve room for the separator; subject takes whatever remains of the 64.
+    remaining = _MAX_SESSION_NAME - len(t) - len(SESSION_TENANT_SEP)
+    s = _SESSION_NAME_RE.sub("-", str(subject or "agate-user").strip())[: max(1, remaining)]
+    name = f"{t}{SESSION_TENANT_SEP}{s}" if t else s
+    return name[:_MAX_SESSION_NAME] or "agate-user"
+
+
+def tenant_from_session_name(session_name: str) -> str | None:
+    """Recover the tenant the broker encoded into a RoleSessionName, or None.
+
+    The meter calls this on the `<tenant>@<subject>` RoleSessionName parsed out of
+    the invocation log's assumed-role ARN. Returns None when there's no encoded
+    tenant (legacy/un-encoded session), so the caller can fall back rather than
+    mis-attribute. `@` cannot appear in a tenant value, so a split on the FIRST `@`
+    cleanly separates tenant from subject.
+    """
+    if not session_name or SESSION_TENANT_SEP not in session_name:
+        return None
+    tenant, _, _subject = session_name.partition(SESSION_TENANT_SEP)
+    return tenant or None
+
+
+def subject_from_session_name(session_name: str) -> str:
+    """The subject (user) part of a `<tenant>@<subject>` RoleSessionName.
+
+    Falls back to the whole name for a legacy/un-encoded session (no `@`)."""
+    if SESSION_TENANT_SEP not in (session_name or ""):
+        return session_name or "unknown"
+    _tenant, _, subject = session_name.partition(SESSION_TENANT_SEP)
+    return subject or "unknown"
 
 
 def _normalise_role(raw: object) -> Role:

@@ -6,6 +6,8 @@ interface ImportMetaEnv {
   readonly VITE_DEFAULT_MODEL_ID?: string;
   readonly VITE_VECTOR_BUCKET?: string;
   readonly VITE_AGENT_RUNTIME_ARN?: string;
+  readonly VITE_COGNITO_DOMAIN?: string;
+  readonly VITE_COGNITO_CLIENT_ID?: string;
 }
 
 interface ImportMeta {

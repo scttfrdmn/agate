@@ -75,7 +75,7 @@ def role_to_tier(role: str) -> Tier:
 # can only list a capability that exists here; the compiler emits a grant ONLY for the
 # capabilities the spec lists (undeclared = denied by absence).
 
-ResourceKind = Literal["docs-scope", "drafts-queue", "vector-read"]
+ResourceKind = Literal["docs-scope", "drafts-queue", "vector-read", "gateway-tool"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +138,55 @@ register_capability(
         grant=CapabilityGrant(
             actions=("s3:PutObject",), resource_kind="drafts-queue", write=True
         ),
+    )
+)
+
+# --- Campus MCP tools (#113/#114) -------------------------------------------
+# Real campus systems as first-class tools, each reached via AgentCore Gateway. The
+# `gateway-tool` grant fences WHICH tools an agent may invoke (IAM, via the Gateway invoke
+# action on the tool's ARN — an undeclared tool is denied by absence). The tool's EFFECT
+# is bounded by the agent's `agate:scope` + the budget cascade (#81 — a write/submit) +
+# user-delegated OAuth (the agent acts AS the verified user, so the source's own ACL
+# composes with agate's scope). This is the §5 split: IAM = which, scope/OAuth = effect.
+# (These are the action plane; content systems that ingest INTO agate are connectors,
+# governed by the #80/#84 data fence — a separate concern, #133.)
+_GATEWAY_INVOKE = ("bedrock-agentcore:InvokeGateway",)
+
+register_capability(
+    Capability(
+        name="library-search",
+        title="Search the library catalog / discovery service (read-only)",
+        grant=CapabilityGrant(actions=_GATEWAY_INVOKE, resource_kind="gateway-tool"),
+    )
+)
+register_capability(
+    Capability(
+        name="lms-read",
+        title="Read LMS roster/assignments (read-only; the draft-feedback write is "
+        "the separate gradebook-drafts capability)",
+        grant=CapabilityGrant(actions=_GATEWAY_INVOKE, resource_kind="gateway-tool"),
+    )
+)
+register_capability(
+    Capability(
+        name="sis-self-read",
+        title="Read the caller's OWN student records from the SIS (read-only)",
+        grant=CapabilityGrant(actions=_GATEWAY_INVOKE, resource_kind="gateway-tool"),
+    )
+)
+register_capability(
+    Capability(
+        name="hpc-submit",
+        title="Submit an HPC job to the scheduler (the flagship 'agent that acts'); the "
+        "submit is gated at run time on the caller's scope/allocation + budget cascade",
+        grant=CapabilityGrant(actions=_GATEWAY_INVOKE, resource_kind="gateway-tool", write=True),
+    )
+)
+register_capability(
+    Capability(
+        name="hpc-monitor",
+        title="Read HPC job status / summarise the caller's own jobs (read-only)",
+        grant=CapabilityGrant(actions=_GATEWAY_INVOKE, resource_kind="gateway-tool"),
     )
 )
 

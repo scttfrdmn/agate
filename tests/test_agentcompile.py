@@ -72,6 +72,47 @@ def test_write_tool_targets_a_draft_path():
     assert "_drafts/" in allow["Resource"][0]  # never a live system (vision §5)
 
 
+# --- campus MCP / gateway tools (#113/#114) ---------------------------------
+
+
+def test_gateway_tool_compiles_to_an_invoke_allow():
+    c = compile_agent(_spec(tools=["hpc-submit", "hpc-monitor"]))
+    sids = _sids(c.tool_policy)
+    assert "ToolHpcSubmit" in sids and "ToolHpcMonitor" in sids
+    submit = next(s for s in c.tool_policy["Statement"] if s["Sid"] == "ToolHpcSubmit")
+    assert submit["Action"] == ["bedrock-agentcore:InvokeGateway"]
+
+
+def test_gateway_tool_default_resource_is_tenant_fenced_not_wildcard():
+    # SECURITY (#113 review): the DEFAULT gateway ARN must be tenant-interpolated, never
+    # `*` — else a compiled template could invoke another tenant's gateway. (S3 tools are
+    # tenant-fenced by interpolation; gateway tools must be too.)
+    c = compile_agent(_spec(tools=["hpc-submit"]))  # no gateway_arn supplied -> default
+    res = next(s for s in c.tool_policy["Statement"] if s["Sid"] == "ToolHpcSubmit")["Resource"][0]
+    assert res != "*"
+    assert "${aws:PrincipalTag/agate:tenant}" in res  # fenced to THIS tenant's gateways
+
+
+def test_undeclared_tool_yields_no_allow():
+    # An agent only gets the tools its spec declares — others are denied by absence.
+    c = compile_agent(_spec(tools=["hpc-monitor"]))
+    sids = _sids(c.tool_policy)
+    assert "ToolHpcMonitor" in sids
+    assert "ToolHpcSubmit" not in sids  # not declared -> no Allow -> implicit deny
+
+
+def test_gateway_tool_resource_is_the_gateway_arn():
+    # With a deploy-supplied gateway ARN, the tool is fenced to that ARN family.
+    from policy.generate import agent_tool_policy
+
+    arn = "arn:aws:bedrock-agentcore:us-east-1:123:gateway/agate-*"
+    grants = [{"sid": "ToolHpcSubmit", "actions": ["bedrock-agentcore:InvokeGateway"],
+               "resource_kind": "gateway-tool", "write": True}]
+    doc = agent_tool_policy(grants, gateway_arn=arn)
+    allow = next(s for s in doc["Statement"] if s["Sid"] == "ToolHpcSubmit")
+    assert allow["Resource"] == [arn]
+
+
 def test_dispatch_payload_equals_compile_pattern_composition():
     # The compiler COMPOSES compile_pattern, it doesn't reimplement it.
     spec = _spec()

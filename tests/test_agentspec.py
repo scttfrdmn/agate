@@ -189,6 +189,29 @@ def test_gradebook_drafts_is_a_write_capability():
     assert get_capability("course-materials-reader").grant.write is False
 
 
+# --- campus MCP tools (#113/#114) -------------------------------------------
+
+
+def test_catalog_includes_campus_tools():
+    names = {c["name"] for c in capability_catalog()}
+    assert {"library-search", "lms-read", "sis-self-read", "hpc-submit", "hpc-monitor"} <= names
+
+
+def test_campus_tools_are_gateway_tools():
+    for name in ("library-search", "lms-read", "sis-self-read", "hpc-submit", "hpc-monitor"):
+        assert get_capability(name).grant.resource_kind == "gateway-tool"
+
+
+def test_hpc_submit_is_a_write_monitor_is_read():
+    assert get_capability("hpc-submit").grant.write is True  # the flagship "agent that acts"
+    assert get_capability("hpc-monitor").grant.write is False
+
+
+def test_spec_can_declare_hpc_tools():
+    spec = parse_spec(_base(role="researcher", tools=["hpc-submit", "hpc-monitor"]))
+    assert spec.tools == ("hpc-submit", "hpc-monitor")
+
+
 # --- YAML edge --------------------------------------------------------------
 
 

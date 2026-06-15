@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **MCP tool catalog + HPC scheduler tool (#113 + #114, Phase 11 / tracking #102).**
+  Campus systems become first-class **MCP tools** (the action plane — distinct from
+  connectors/#133, the data plane). Extends the #105 capability catalog + IAM emitter with
+  a `gateway-tool` resource_kind (`bedrock-agentcore:InvokeGateway` via AgentCore Gateway)
+  and the real campus tools: `library-search`, `lms-read`, `sis-self-read`, `hpc-monitor`
+  (read) and **`hpc-submit`** (write) — the flagship "agent that acts" (#114), tying to the
+  Gauss/Slurm work. The governance model is the §5 split: **IAM fences WHICH tools** an
+  agent may invoke (only those its spec declares — undeclared is denied by absence, and
+  only catalog tools can be declared); the tool's **EFFECT** is bounded by the agent's
+  `agate:scope` + the budget cascade (#81, for a submit) + user-delegated OAuth (the agent
+  acts AS the verified user, so the source's ACL composes with agate's scope). A live
+  `iam:SimulateCustomPolicy` proof shows a declared gateway tool is invocable, an undeclared
+  action denied, and a no-tenant-tag call denied; a pure cascade proof shows an HPC submit
+  over the lab's allocation budget is rejected (the breaching node named, reusing #81). A
+  pre-merge security review caught that the default `gateway_arn` was `*` — unlike S3 tools,
+  gateway ARNs aren't scope-interpolated, so `*` would let an agent invoke another tenant's
+  gateway; fixed to a **tenant-tag-interpolated** default ARN so even the pure template keeps
+  the IAM tenant fence. The live Gateway wiring + the Slurm MCP server are a follow-up.
 - **Agent graphs + cascade budget/attribution (#111 + #112, Phase 11 / tracking #102).**
   Generalizes the Panel/Analyze roster into a **governed agent graph** — a node may be a
   model OR another agent — with the three rules that make "agents calling agents" safe

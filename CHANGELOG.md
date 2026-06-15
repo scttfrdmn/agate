@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Bounded delegation — a spawned agent's credential narrows the spawner's (#106,
+  Phase 10 / tracking #101).** The other half of the keystone (with the #105 compiler):
+  when a principal spawns an agent, the agent runs under the **intersection** of the
+  spawner's verified authority and the spec — `tier = min(spawner, spec)`, `scope =`
+  subtree-containment intersection (the more-specific of the two; a disjoint conflict
+  **refuses to spawn**, fail-closed), tenant held verbatim (cross-tenant is structurally
+  impossible — a spec has no tenant field), courses inherited, and `role` forced to
+  member (an agent is never an admin, even if the spawner is). So a spawned/triggered/
+  collaborating agent is **never more privileged than the principal it acts for**, and
+  it holds transitively across hops (`delegate(delegate(root, A), B)` only narrows —
+  the basis for agent graphs, #111). `agate/delegate.py` is pure (`delegate`,
+  `scope_intersect`, `delegate_budget`); the one AWS edge (`spawn_child`) takes its STS
+  client as a param, so even it is fake-testable — same verify→tags→assume pattern as
+  the broker, with `<tenant>@<subject>` attribution (#79) and transitive tags. A live
+  `iam:SimulateCustomPolicy` proof (`tests/test_proof_delegation.py`) confirms the
+  headline guarantee: a chemistry-scoped frontier spawner produces a child that cannot
+  read physics, cannot read a sibling course it was narrowed below, and cannot invoke
+  above its (min) tier. A pre-merge security review found no escalation path on any
+  axis. The live spawn Lambda/CDK + real budget-row authorization are deferred (#107 /
+  follow-up); this is the pure narrowing core + assume helper + proof.
 - **Agent-spec schema + compiler — the keystone of the agent platform (#104, #105,
   Phase 10 / tracking #101).** An agent is now a declarative artifact that **compiles
   to a scoped identity** — the spec IS the agent's IAM, so a compiled agent cannot

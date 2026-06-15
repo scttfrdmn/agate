@@ -235,3 +235,41 @@ def test_scoped_list_confined_to_subtree_prefix(iam_client):
     )
     assert allowed == "allowed"
     assert denied == "explicitDeny"
+
+
+# --- Saved sessions (#109): resume is fenced by the SAME #80 policy ----------
+# A saved session lives at {tenant}/{scope}/_sessions/{id}.json, so resume/share inherits
+# the data-scope GetObject fence with NO new policy. These prove a session resumes only
+# within its scope; cross-scope / cross-tenant resume is denied. Keys come from the real
+# `session_object_key`, so the test tracks whatever that derives.
+
+from agate.session_record import session_object_key  # noqa: E402
+
+
+@pytest.mark.aws
+def test_saved_session_resumes_within_its_scope(iam_client):
+    # -> chem/chemistry/chem-101/_sessions/sess-1.json
+    key = session_object_key("chem", "chemistry/chem-101", "sess-1")
+    d = _simulate_s3_get(
+        iam_client, session_tenant="chem", session_scope="chemistry/chem-101", object_key=key
+    )
+    assert d == "allowed"
+
+
+@pytest.mark.aws
+def test_saved_session_sibling_scope_resume_denied(iam_client):
+    # A chem-101-scoped session cannot resume a session saved under chem-202.
+    other = session_object_key("chem", "chemistry/chem-202", "sess-9")
+    d = _simulate_s3_get(
+        iam_client, session_tenant="chem", session_scope="chemistry/chem-101", object_key=other
+    )
+    assert d == "explicitDeny"
+
+
+@pytest.mark.aws
+def test_saved_session_cross_tenant_resume_denied(iam_client):
+    other = session_object_key("psych", "chemistry/chem-101", "sess-1")
+    d = _simulate_s3_get(
+        iam_client, session_tenant="chem", session_scope="chemistry/chem-101", object_key=other
+    )
+    assert d in ("implicitDeny", "explicitDeny")

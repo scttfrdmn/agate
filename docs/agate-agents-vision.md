@@ -196,6 +196,41 @@ app-layer multi-tenancy check you'd have to *trust*; agate makes the cross-stude
 
 ---
 
+## 2.5 Agent identity & on-behalf-of — *who · on whose authority · what remit*
+
+**[seam → vision]** Every agent action must answer three questions, and they are
+distinct. AgentCore Identity gives the native vocabulary; agate already *encodes* the
+answers (implicitly) and #137 makes them explicit.
+
+- **WHO is the agent?** An agent is a **workload identity** — it authenticates *as
+  itself*, not by impersonating the user. (AWS: agents authenticate as themselves,
+  registered in an *agent identity directory*.) agate today: the spec `name` + its
+  compiled credential; #137 promotes that to a registered, governed agent identity, so
+  "who is this agent" is an auditable principal, not an anonymous narrowed role.
+- **ON WHOSE authority is it acting?** The **on-behalf-of (OBO)** binding. AWS expresses
+  it as an **Agent access token** — AWS-signed, carrying *both* the workload (agent)
+  identity *and* the user identity, so a downstream system authorizes on **both**, and
+  identity propagates through a call chain. agate already encodes this: the
+  `<tenant>@<subject>` RoleSessionName (#79) records the human; **bounded delegation**
+  (§2, #106) makes the agent's authority a *narrowing of that user's* (so "on whose
+  authority" is provable — the agent can only do what the user could); the agent-graph
+  **attribution chain** (#112) carries `user → agent → sub-agent` per hop. #137
+  formalizes these into one canonical **"acting-as" record** (`agent X · on behalf of
+  user U · remit R · chain`), surfaced in the saved-session audit (§3), the admin
+  console, and the effective-boundary view (§8.5).
+- **WHAT remit does it have?** Already controlled: the compiled scoped credential
+  (§1, #105/#106) — which models, which data scope, which tools, which budget — rendered
+  in plain language by the effective-boundary view (§8.5, #108).
+
+The connector/tool corollary (§5): **user-delegated OAuth (3LO)** is the mode that carries
+*agent-as-user* to an external system (Drive, Box, Teams, Slack), so the source's own ACL
+composes with agate's scope — defense in depth. *Autonomous* (2LO, M2M) is for the agent's
+own service identity. The invariant (§10): **every action records both the acting agent
+AND the authorizing user (OBO), unforgeably** — "prove who did this, as themselves, on
+whose authority, within what remit" is a first-class, auditable answer.
+
+---
+
 ## 3. Saved sessions & cross-session memory
 
 **[built today]** A session is synchronous and ephemeral — closing the tab forgets it.
@@ -543,16 +578,19 @@ ship:
    *propose* — authority still originates from the author's real entitlement.
 2. **Delegation only narrows.** A spawned/triggered/collaborating agent is never more
    privileged than the principal it acts for.
-3. **Memory and sessions are ABAC-namespaced.** Persistence is just another fenced
+3. **Every action is attributable: who · on whose authority (OBO).** The acting agent is
+   a workload identity (as itself, not impersonating); every action records both that
+   agent AND the authorizing user, unforgeably (§2.5, #137) — provable, not asserted.
+4. **Memory and sessions are ABAC-namespaced.** Persistence is just another fenced
    resource; it never becomes a cross-tenant/cross-principal leak.
-4. **Everything is attributed and metered, server-side — including money.** The call
+5. **Everything is attributed and metered, server-side — including money.** The call
    graph is the audit graph; budgets cascade; nothing is client-claimed (#79). When an
    agent *pays* (AP2 / x402, §8.6), the budget cascade is the spending mandate: every
    priced action is pre-authorized against remaining budget and debited up the tree, so
    bounded spend has the same guarantee as bounded access.
-5. **Open standards in, narrowed credential under.** agate speaks the open agent stack
+6. **Open standards in, narrowed credential under.** agate speaks the open agent stack
    (MCP, Skills, A2A, AG-UI, A2UI, AP2, x402) for interop, but a protocol message is
    only ever a *request* — authority resolves to scoped IAM (§8.6). agate adds the
    governance layer the standards deliberately leave open; it never forks them.
-6. **NO CLOCKS.** Standing agents are still per-event; "always available" must not mean
+7. **NO CLOCKS.** Standing agents are still per-event; "always available" must not mean
    "always billing."

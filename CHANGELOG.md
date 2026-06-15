@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Agent graphs + cascade budget/attribution (#111 + #112, Phase 11 / tracking #102).**
+  Generalizes the Panel/Analyze roster into a **governed agent graph** — a node may be a
+  model OR another agent — with the three rules that make "agents calling agents" safe
+  rather than a privilege-escalation / runaway-cost engine: (1) **monotonic narrowing** —
+  every node's credential is `delegate`d from its parent (#106), so a grandchild's
+  authority ⊆ child ⊆ root on tier and scope, transitively (a disjoint-scope child refuses
+  to build); (2) **family budget** — `graph.cascade_nodes` builds the ancestry node-list
+  `cost.evaluate_cascade` (#81) gates on, so a call must fit under EVERY ancestor's
+  remaining budget (rejected with the breaching node named); (3) **attribution** — each
+  node carries an unforgeable `<tenant>@<subject>/root/…/node` chain (#79), so the call
+  graph is the audit graph. An `AgentSpec` is now recursive (`agents: tuple[AgentSpec,…]`
+  + `max_depth`/`max_fanout` caps, the ROOT's caps as the single family ceiling — a
+  sub-agent can't widen them). `agate/graph.py` is pure (`build_graph`/`flatten`/
+  `cascade_nodes`/`attribution_chain`); it reuses `delegate` (#106), `evaluate_cascade`
+  (#81), and `subject_key`/`role_session_name` (#79/#107) rather than rebuilding them. A
+  live `iam:SimulateCustomPolicy` proof shows a frontier-root → student-grandchild yields
+  an oss+narrowed-scope credential that's denied a frontier model, a sibling subtree, and
+  cross-tenant. A pre-merge security review verified all four guarantees and caught a real
+  **parse-time DoS** class (an unbounded-depth chain stack-overflowed, a wide tree
+  exhausted memory — *before* the build-time caps fired); fixed by a parse-time depth
+  guard + a total-node budget (1024) + lowering the fanout ceiling, so parsing itself is
+  bounded. The live graph executor is a follow-up; this is the pure structure + the two
+  proven invariants.
 - **Saved sessions — first-class, scope-tagged objects (#109, Phase 11 / tracking #102).**
   A session becomes a persisted object — transcript + a **server-authoritative** receipt
   (every model call's cost, citations, the scope it ran under) — that can be resumed,

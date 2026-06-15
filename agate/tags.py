@@ -242,7 +242,10 @@ def _normalise_data_scope(raw: object) -> str:
     seen: set[str] = set()
     for item in items:
         node = _SCOPE_RE.sub("", item.strip()).strip("/")
-        if node and node not in seen:
+        # Reject `.`/`..`/empty path segments — match budget.normalise_scope so the two
+        # scope normalisers agree (a `..` segment would be a confusing/garbled path; the
+        # IAM resource match is literal so it's not a traversal, but fail-closed anyway).
+        if node and not any(seg in ("", ".", "..") for seg in node.split("/")) and node not in seen:
             seen.add(node)
             nodes.append(node)
     if len(nodes) != 1:  # zero OR multiple -> unconfined (tenant-wide), fail-closed

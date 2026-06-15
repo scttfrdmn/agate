@@ -16,11 +16,21 @@ a scope conflict refuses to spawn rather than widening.
 Transitivity is free: `delegate` maps `SessionTags -> SessionTags`, so a chain
 `delegate(delegate(root, specA), specB)` only ever narrows — the basis for agent graphs
 (#111).
+
+Per-invoker instantiation (#107) builds straight on this: one authored agent shared to a
+course `instantiate_for_invoker`s under EACH invoker's own verified tags, so invoker A and
+invoker B get disjoint, own-scope-only credentials by construction — same agent, N
+students, each confined to their own data, with no trusted roster list (eligibility is
+read from the invoker's OWN verified courses/scope).
 """
 
 from __future__ import annotations
 
+import hashlib
+from dataclasses import dataclass
+
 from agate.agentspec import AgentSpec, BudgetSpec
+from agate.budget import _clean_id
 from agate.entitlements import TIER_RANK, Tier
 from agate.tags import ROLE_MEMBER, SessionTags, role_session_name
 
@@ -144,3 +154,96 @@ def spawn_child(
         DurationSeconds=duration_seconds,
     )
     return resp["Credentials"]
+
+
+# --- per-invoker instantiation (#107) ---------------------------------------
+# One authored agent, instantiated under each invoker's OWN verified credential. The
+# isolation is structural: the child is delegate(invoker_tags, spec), so invoker A's
+# child is bounded by A and invoker B's by B — disjoint by construction, no shared
+# scope, no roster list to trust or forge.
+
+
+def is_eligible_invoker(invoker: SessionTags, spec: AgentSpec) -> bool:
+    """May this verified session instantiate `spec`? Answered from the invoker's OWN
+    tags — never a live roster enumeration, never a client-supplied list.
+
+    `spec.invokers` declares who may run the agent:
+      * None        -> no restriction (eligible).
+      * tenant      -> any session in the agent's tenant (always true: the broker only
+                       vends same-tenant tags, so cross-tenant is already impossible).
+      * roster:<c>  -> eligible iff course `<c>` is in the invoker's verified courses
+                       (the LTI/broker-vended `agate:courses`). "On the roster" == the
+                       invoker's OWN verified enrollment says so.
+      * scope:<p>   -> eligible iff the invoker's scope and `<p>` OVERLAP (one contains
+                       the other): a chair GOVERNING the subtree may run it, AND a
+                       student WITHIN it may too (their instantiation narrows to their
+                       own leaf). A sibling/disjoint scope cannot. This is exactly
+                       `scope_intersect(...) is not None`.
+    Anything else / unmatched -> False (fail closed)."""
+    inv = spec.invokers
+    if inv is None:
+        return True
+    if inv.kind == "tenant":
+        return True  # same-tenant is structurally guaranteed; cross-tenant impossible
+    if inv.kind == "roster":
+        return inv.ref in invoker.courses
+    if inv.kind == "scope":
+        return scope_intersect(invoker.scope, inv.ref) is not None
+    return False  # unknown kind — fail closed
+
+
+def invoker_namespace(tenant: str, subject: str) -> str:
+    """Stable, INJECTIVE per-invoker namespace key for memory/session isolation
+    (#109/#110 consume it — two invokers must NEVER share one).
+
+    `<clean_tenant>/<clean_subject>-<hash>`. The readable prefix is sanitised to the id
+    grammar, but `_clean_id` is LOSSY (it strips `/`,`|`,`:` etc., so distinct subjects
+    like `a/b` and `ab` would clean to the same string and collide). The 12-hex digest
+    of the RAW `tenant\\0subject` makes the key injective — different invokers get
+    different keys regardless of how their ids clean. Load-bearing: a collision here
+    would be a cross-invoker memory/session leak."""
+    digest = hashlib.sha256(f"{tenant}\x00{subject}".encode()).hexdigest()[:12]
+    return f"{_clean_id(tenant)}/{_clean_id(subject)}-{digest}"
+
+
+@dataclass(frozen=True, slots=True)
+class InstantiatedAgent:
+    """One authored agent, bound to one invoker. The per-invoker analogue of #105's
+    `CompiledAgent`: `child_tags` (the invoker∩spec credential) feed
+    `agentcompile.compile_agent` / `spawn_child`, and `namespace` isolates this
+    invoker's memory/sessions from every other invoker of the same agent."""
+
+    spec: AgentSpec
+    invoker_subject: str
+    child_tags: SessionTags
+    namespace: str
+
+
+def instantiate_for_invoker(
+    invoker: SessionTags, spec: AgentSpec, *, subject: str
+) -> InstantiatedAgent:
+    """Instantiate `spec` for one verified invoker. Fail-closed: an ineligible invoker
+    is refused (no credential), and the child credential is `delegate(invoker, spec)` —
+    bounded by THIS invoker's verified authority ∩ the spec, never a classmate's.
+
+    SECURITY: `invoker` MUST be a VERIFIED `SessionTags` (from `claims_to_tags` over a
+    broker/LTI-validated token) — eligibility reads `invoker.courses`/`invoker.scope`,
+    which must be unforgeable. Even if eligibility were too lax, the child is still
+    `delegate(invoker, spec)`, so it stays bounded to the invoker's real scope (a student
+    can't reach `physics` by claiming eligibility — `delegate` would raise on the disjoint
+    scope). Eligibility is a gate on WHO may run; the credential narrowing is the boundary.
+
+    Pure (no STS/DDB): returns the bound credential template + namespace. The live
+    assume happens via `spawn_child` at the deferred instantiation endpoint."""
+    if not is_eligible_invoker(invoker, spec):
+        raise DelegationError(
+            f"invoker is not eligible to run agent {spec.name!r} "
+            f"(invokers={spec.invokers})"
+        )
+    child = delegate(invoker, spec, subject=subject)
+    return InstantiatedAgent(
+        spec=spec,
+        invoker_subject=subject,
+        child_tags=child,
+        namespace=invoker_namespace(child.tenant, subject),
+    )

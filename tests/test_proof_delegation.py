@@ -18,7 +18,7 @@ import json
 
 import pytest
 from agate.agentspec import parse_spec
-from agate.delegate import delegate
+from agate.delegate import delegate, instantiate_for_invoker
 from agate.entitlements import foundation_model_arn
 from agate.names import tag_key
 from agate.tags import SessionTags
@@ -168,3 +168,67 @@ def test_child_cross_tenant_still_denied(iam_client):
         resource=f"arn:aws:s3:::{DOCS_BUCKET}/psych/chemistry/chem-101/wk.pdf",
     )
     assert d in ("implicitDeny", "explicitDeny")
+
+
+# --- #107: per-invoker instantiation — disjoint own-scope-only credentials ---
+
+
+def _tags_for(child) -> list[dict]:
+    return [
+        {
+            "ContextKeyName": f"aws:PrincipalTag/{tag_key(k)}",
+            "ContextKeyType": "string",
+            "ContextKeyValues": [v],
+        }
+        for k, v in (("tenant", child.tenant), ("tier", child.tier), ("scope", child.scope))
+    ]
+
+
+def _get_object(iam_client, child, key: str) -> str:
+    resp = iam_client.simulate_custom_policy(
+        PolicyInputList=[json.dumps(data_scope_policy(bucket=DOCS_BUCKET))],
+        ActionNames=["s3:GetObject"],
+        ResourceArns=[f"arn:aws:s3:::{DOCS_BUCKET}/{key}"],
+        ContextEntries=_tags_for(child),
+    )
+    return resp["EvaluationResults"][0]["EvalDecision"]
+
+
+# One agent shared to the chemistry subtree; two students in different courses.
+_AGENT = parse_spec(
+    {
+        "agent": "chem-ta",
+        "description": "d",
+        "role": "ta",
+        "scope": "chemistry",
+        "reasoning": "lit-review",
+        "invokers": "scope:chemistry",
+    }
+)
+_ALICE = instantiate_for_invoker(
+    SessionTags(affiliation="student", tenant="chem", courses=("chem-101",), tier="oss",
+                scope="chemistry/chem-101"),
+    _AGENT, subject="alice",
+)
+_BOB = instantiate_for_invoker(
+    SessionTags(affiliation="student", tenant="chem", courses=("chem-202",), tier="oss",
+                scope="chemistry/chem-202"),
+    _AGENT, subject="bob",
+)
+
+
+@pytest.mark.aws
+def test_invoker_reads_own_subtree(iam_client):
+    assert _get_object(iam_client, _ALICE.child_tags, "chem/chemistry/chem-101/wk.pdf") == "allowed"
+    assert _get_object(iam_client, _BOB.child_tags, "chem/chemistry/chem-202/wk.pdf") == "allowed"
+
+
+@pytest.mark.aws
+def test_invoker_cannot_read_other_invokers_subtree(iam_client):
+    # The §2 headline: same agent, two students, neither can reach the other's data.
+    assert _get_object(iam_client, _ALICE.child_tags, "chem/chemistry/chem-202/wk.pdf") == (
+        "explicitDeny"
+    )
+    assert _get_object(iam_client, _BOB.child_tags, "chem/chemistry/chem-101/wk.pdf") == (
+        "explicitDeny"
+    )

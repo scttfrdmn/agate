@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Per-invoker instantiation — one authored agent, scoped per invoker (#107, Phase 10
+  / tracking #101).** The payoff of bounded delegation (#106): a professor authors **one**
+  `chem101-ta` agent shared to a course; it instantiates per-invoker under each invoker's
+  OWN verified credential — same agent, N students, each confined to *their own* data,
+  with no app-layer "is this your submission?" check. The isolation is structural:
+  `instantiate_for_invoker(invoker, spec)` returns `delegate(invoker, spec)` (#106), so
+  invoker A's child is bounded by A and invoker B's by B — **disjoint by construction**.
+  Eligibility (`is_eligible_invoker`) — "may this verified session run this agent?" — is
+  read from the invoker's OWN verified tags (`roster:<course>` ⟺ course ∈
+  `invoker.courses`; `scope:<path>` ⟺ scopes overlap), never a trusted/enumerated roster
+  list, and fails closed. A live `iam:SimulateCustomPolicy` proof shows Alice (chem-101)
+  and Bob (chem-202) running the same agent each read only their own course subtree and
+  are `explicitDeny`'d on the other's. A pre-merge security review caught two issues,
+  both fixed: the per-invoker memory/session namespace key was non-injective (`_clean_id`
+  strips `/`, so subjects `a/b` and `ab` collided) — now disambiguated by a digest of the
+  raw ids (load-bearing before #109/#110 persist memory by that key); and
+  `tags._normalise_data_scope` now rejects `.`/`..` segments to match
+  `budget.normalise_scope` (defense-in-depth). Pure core + proof; the live instantiation
+  Lambda is deferred with the #106 spawn endpoint.
 - **Bounded delegation — a spawned agent's credential narrows the spawner's (#106,
   Phase 10 / tracking #101).** The other half of the keystone (with the #105 compiler):
   when a principal spawns an agent, the agent runs under the **intersection** of the

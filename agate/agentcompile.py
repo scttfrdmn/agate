@@ -104,6 +104,7 @@ def compile_agent(
     account: str = "",
     question: str = "",
     bucket: str | None = None,
+    gateway_arn: str | None = None,
 ) -> CompiledAgent:
     """Compile a validated `AgentSpec` into its bounding artifacts. Pure: no STS, no
     DynamoDB — see the module docstring for what #106 fills in at spawn."""
@@ -136,7 +137,7 @@ def compile_agent(
         tags_template=tags_template,
         model_access_policy=model_access_policy(region=region, account=account),
         data_scope_policy=data_scope_policy(bucket=bucket),
-        tool_policy=agent_tool_policy(_tool_grants(spec), bucket=bucket),
+        tool_policy=agent_tool_policy(_tool_grants(spec), bucket=bucket, gateway_arn=gateway_arn),
         budget_rows=_budget_rows(spec),
         dispatch_payload=dispatch_payload,
         triggers=tuple({"on": t.on, "then": t.then} for t in spec.triggers),

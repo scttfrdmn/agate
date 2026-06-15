@@ -14,7 +14,7 @@ statements, and an explicit Deny guards the data path against a missing tenant t
 from __future__ import annotations
 
 from agate.entitlements import TIERS, model_arns_for_tier
-from agate.names import DOCS_BUCKET_PREFIX, tag_key
+from agate.names import DOCS_BUCKET_PREFIX, HANDLE, tag_key
 
 BEDROCK_INVOKE_ACTIONS = [
     "bedrock:InvokeModel",
@@ -183,7 +183,7 @@ def vector_query_policy() -> dict:
 # the other emitters) so policy JSON has ONE source. The compiler (agate.agentcompile)
 # resolves a spec's declared tools to (sid, actions, resource_kind, write) tuples and
 # passes them in — policy.generate stays free of any agate.agentspec import.
-def _tool_resource(resource_kind: str, bucket: str) -> str:
+def _tool_resource(resource_kind: str, bucket: str, gateway_arn: str) -> str:
     tenant_tag = f"${{aws:PrincipalTag/{tag_key('tenant')}}}"
     scope_tag = f"${{aws:PrincipalTag/{tag_key('scope')}}}"
     if resource_kind == "docs-scope":
@@ -194,25 +194,50 @@ def _tool_resource(resource_kind: str, bucket: str) -> str:
         return f"arn:aws:s3:::{bucket}/{tenant_tag}/{scope_tag}/_drafts/*"
     if resource_kind == "vector-read":
         return "*"  # vectors fenced by tenant ResourceTag, not ARN (see vector_query_policy)
+    if resource_kind == "gateway-tool":
+        # A campus MCP tool reached via AgentCore Gateway (#113). IAM fences WHICH tools
+        # the agent may invoke (the Gateway ARN family); the call still carries the
+        # agent's agate:scope tag, and the tool's effect is bounded by that scope + the
+        # budget cascade (a write/submit) + user-delegated OAuth — IAM=which, scope/OAuth
+        # =effect (§5). An undeclared tool produces no Allow → denied by absence.
+        return gateway_arn
     raise ValueError(f"unknown tool resource_kind: {resource_kind!r}")
 
 
-def agent_tool_policy(grants: list[dict], bucket: str | None = None) -> dict:
+# Default gateway-tool ARN family — tenant-fenced by INTERPOLATION (not `*`), so even the
+# pure template keeps the IAM tenant boundary the way the S3 kinds do (a too-broad default
+# would let an agent invoke another tenant's gateway, since gateway ARNs aren't scope-
+# interpolated like S3 keys). The deploy passes a concrete region/account ARN; this
+# default at least confines invocation to THIS tenant's gateway family by principal tag.
+_DEFAULT_GATEWAY_ARN = (
+    f"arn:aws:bedrock-agentcore:*:*:gateway/{HANDLE}-"
+    f"${{aws:PrincipalTag/{tag_key('tenant')}}}-*"
+)
+
+
+def agent_tool_policy(
+    grants: list[dict], bucket: str | None = None, gateway_arn: str | None = None
+) -> dict:
     """The tool grants for a compiled agent (#105). One Allow per declared capability;
     EVERY resource is interpolated with the agent's `agate:tenant` + `agate:scope`
-    principal tags, so a tool can never reach beyond the agent's scope. An undeclared
-    tool produces no statement → implicit deny (tools are denied by absence).
+    principal tags (S3 tools) or fenced to the gateway ARN family (campus MCP tools,
+    #113), so a tool can never reach beyond what the agent declared. An undeclared tool
+    produces no statement → implicit deny (tools are denied by absence).
 
     `grants` is a list of `{sid, actions, resource_kind, write}` dicts the compiler
-    builds from the spec's tools (resolved against `agentspec` capabilities). Returns a
-    deny-only fail-closed doc when there are no tools."""
+    builds from the spec's tools (resolved against `agentspec` capabilities). `gateway_arn`
+    is the AgentCore Gateway ARN family campus tools resolve to; the default is
+    `_DEFAULT_GATEWAY_ARN` — **tenant-fenced by principal-tag interpolation, never `*`** —
+    so even the pure template keeps the IAM tenant boundary (the deploy supplies a concrete
+    region/account ARN). Returns a deny-only fail-closed doc when there are no tools."""
     docs_bucket = bucket or f"{DOCS_BUCKET_PREFIX}-*"
+    gw_arn = gateway_arn or _DEFAULT_GATEWAY_ARN
     statements = [
         {
             "Sid": g["sid"],
             "Effect": "Allow",
             "Action": list(g["actions"]),
-            "Resource": [_tool_resource(g["resource_kind"], docs_bucket)],
+            "Resource": [_tool_resource(g["resource_kind"], docs_bucket, gw_arn)],
         }
         for g in grants
     ]

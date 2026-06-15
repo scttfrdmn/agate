@@ -184,6 +184,19 @@ class TriggerSpec:
     then: str  # an action/handler name resolved by the triggers phase
 
 
+# Graph caps (#111): bounded defaults so an agent graph can't recurse or fan out without
+# limit. A spec may lower them; values above these ceilings are rejected (fail-closed).
+DEFAULT_MAX_DEPTH = 3
+DEFAULT_MAX_FANOUT = 5
+_CEILING_MAX_DEPTH = 8
+_CEILING_MAX_FANOUT = 8
+# Total nodes a single spec tree may contain. parse_spec recurses into ALL children, so
+# without a parse-time bound a deep chain stack-overflows and a wide tree (fanout^depth)
+# hangs BEFORE the graph builder's caps fire (security review #111). This hard ceiling
+# (and the per-call depth guard) makes parsing itself bounded — fail-closed.
+_CEILING_TOTAL_NODES = 1024
+
+
 @dataclass(frozen=True, slots=True)
 class AgentSpec:
     """A validated agent definition, ready for the compiler (#105). The `reasoning`
@@ -201,6 +214,13 @@ class AgentSpec:
     invokers: InvokerSpec | None = None
     triggers: tuple[TriggerSpec, ...] = ()
     visibility: Visibility = "private"
+    # Agent graph (#111): sub-agents this node may invoke. Each is a full AgentSpec, so a
+    # graph is just a spec whose nodes can themselves be specs — the graph executor
+    # delegates each child's credential from this node's (monotonic narrowing, #106).
+    agents: tuple[AgentSpec, ...] = ()
+    # Caps that bound the graph (no infinite recursion / fan-out bomb), validated at parse.
+    max_depth: int = DEFAULT_MAX_DEPTH
+    max_fanout: int = DEFAULT_MAX_FANOUT
 
     @property
     def tier(self) -> Tier:
@@ -223,8 +243,24 @@ _KNOWN_KEYS: frozenset[str] = frozenset(
         "invokers",
         "triggers",
         "visibility",
+        "agents",
+        "max_depth",
+        "max_fanout",
     )
 )
+
+
+def _parse_cap(raw: object, default: int, ceiling: int, name: str) -> int:
+    """Parse a graph cap (max_depth/max_fanout): a positive int, default if absent,
+    rejected if above the hard ceiling (fail-closed — a spec can lower a cap, never
+    raise it past the platform limit)."""
+    if raw is None:
+        return default
+    if not isinstance(raw, int) or isinstance(raw, bool) or raw < 1:
+        raise SpecError(f"{name} must be a positive integer")
+    if raw > ceiling:
+        raise SpecError(f"{name} exceeds the ceiling ({raw} > {ceiling})")
+    return raw
 
 
 def _require_str(data: dict, key: str, *, aliases: tuple[str, ...] = ()) -> str:
@@ -338,13 +374,26 @@ def _parse_triggers(raw: object) -> tuple[TriggerSpec, ...]:
     return tuple(out)
 
 
-def parse_spec(data: dict[str, Any]) -> AgentSpec:
+def parse_spec(
+    data: dict[str, Any], *, _depth: int = 0, _budget: list[int] | None = None
+) -> AgentSpec:
     """Validate a spec dict into an AgentSpec. Fail-closed: unknown keys, malformed or
     over-broad fields, unknown tools, and bad budgets all raise SpecError.
 
     Dict-in keeps the validated core dependency-light (no YAML import); `load_spec` is
     the thin YAML edge.
+
+    `_depth`/`_budget` bound the RECURSION itself (a spec tree's nodes are parsed before
+    the graph builder's caps could fire), so a maliciously deep chain can't stack-overflow
+    and a maliciously wide tree can't exhaust memory — both are rejected at parse time.
     """
+    if _budget is None:
+        _budget = [_CEILING_TOTAL_NODES]
+    if _depth > _CEILING_MAX_DEPTH:
+        raise SpecError(f"spec nesting exceeds maximum depth ({_CEILING_MAX_DEPTH})")
+    _budget[0] -= 1
+    if _budget[0] < 0:
+        raise SpecError(f"spec exceeds the maximum total node count ({_CEILING_TOTAL_NODES})")
     if not isinstance(data, dict):
         raise SpecError("spec must be a mapping")
     unknown = set(data) - _KNOWN_KEYS
@@ -386,6 +435,21 @@ def parse_spec(data: dict[str, Any]) -> AgentSpec:
     invokers = _parse_invokers(data["invokers"]) if data.get("invokers") is not None else None
     triggers = _parse_triggers(data.get("triggers"))
 
+    max_depth = _parse_cap(
+        data.get("max_depth"), DEFAULT_MAX_DEPTH, _CEILING_MAX_DEPTH, "max_depth"
+    )
+    max_fanout = _parse_cap(
+        data.get("max_fanout"), DEFAULT_MAX_FANOUT, _CEILING_MAX_FANOUT, "max_fanout"
+    )
+    # Agent-graph children (#111): each is a full, recursively-validated AgentSpec. Fanout
+    # is capped here; depth is enforced by the graph builder (which knows the whole chain).
+    raw_agents = data.get("agents") or ()
+    if not isinstance(raw_agents, (list, tuple)):
+        raise SpecError("agents must be a list")
+    if len(raw_agents) > max_fanout:
+        raise SpecError(f"agents exceeds max_fanout ({len(raw_agents)} > {max_fanout})")
+    agents = tuple(parse_spec(a, _depth=_depth + 1, _budget=_budget) for a in raw_agents)
+
     return AgentSpec(
         name=name,
         description=description,
@@ -398,6 +462,9 @@ def parse_spec(data: dict[str, Any]) -> AgentSpec:
         invokers=invokers,
         triggers=triggers,
         visibility=visibility,  # type: ignore[arg-type]
+        agents=agents,
+        max_depth=max_depth,
+        max_fanout=max_fanout,
     )
 
 

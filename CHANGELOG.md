@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Saved sessions — first-class, scope-tagged objects (#109, Phase 11 / tracking #102).**
+  A session becomes a persisted object — transcript + a **server-authoritative** receipt
+  (every model call's cost, citations, the scope it ran under) — that can be resumed,
+  forked, or replayed, and is the honest **audit record** ("prove what happened, under
+  whose authority") because the receipt is server-computed (#79), never client-claimed.
+  The load-bearing simplification: a saved session is **just another scope-tagged S3
+  object** at `{tenant}/{scope}/_sessions/{id}.json`, so resume/share is fenced by the
+  **existing #80 `data_scope_policy`** with no new IAM — a session resumes only if the
+  resumer's credential authorizes that scope; cross-scope/cross-tenant is denied (the
+  same boundary, already proven). `agate/session_record.py` (pure) builds/serialises the
+  record and derives the scope-confined key (`_clean_id`/`normalise_scope`-sanitised so a
+  crafted scope/id can't escape the `{tenant}/{scope}/` prefix; a `..` scope falls back to
+  the tenant root, never climbs). The `Receipt` **self-validates** `total == sum(rows)` on
+  every construction path (`__post_init__`), so a forged/tampered total can't become the
+  audit record — caught by a pre-merge security review, along with a float-precision fix
+  (both sides rounded to 6dp so a legitimate `0.1+0.2` receipt isn't wrongly rejected). A
+  live `iam:SimulateCustomPolicy` proof extends the #80 suite: a scoped session resumes its
+  own `_sessions/` object, a sibling scope's and another tenant's are denied. The live
+  persist/resume Lambda + SPA UI are a follow-up; this is the pure record + key + proof.
 - **Cross-session memory — 3-tier, ABAC-namespaced (#110, Phase 11 / tracking #102).**
   Memory is where chatbots get privacy *dangerously* wrong (one global blob); agate gets
   it right by construction — a record lives under a namespace derived from the session's

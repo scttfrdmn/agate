@@ -192,18 +192,23 @@ def is_eligible_invoker(invoker: SessionTags, spec: AgentSpec) -> bool:
     return False  # unknown kind — fail closed
 
 
+def subject_key(subject: str) -> str:
+    """An INJECTIVE, namespace-safe single segment for a subject id.
+
+    `_clean_id` is LOSSY (it strips `/`,`|`,`:` etc., so distinct subjects like `a/b`
+    and `ab` would clean to the same string and collide). Appending a 12-hex digest of
+    the RAW subject makes the segment injective — different subjects get different keys
+    regardless of how they clean. Load-bearing: a collision here would be a
+    cross-principal memory/session leak (#107/#110). Shared by `invoker_namespace`
+    (#107) and `agate.memory` (#110) so there is ONE definition."""
+    digest = hashlib.sha256(subject.encode()).hexdigest()[:12]
+    return f"{_clean_id(subject)}-{digest}"
+
+
 def invoker_namespace(tenant: str, subject: str) -> str:
     """Stable, INJECTIVE per-invoker namespace key for memory/session isolation
-    (#109/#110 consume it — two invokers must NEVER share one).
-
-    `<clean_tenant>/<clean_subject>-<hash>`. The readable prefix is sanitised to the id
-    grammar, but `_clean_id` is LOSSY (it strips `/`,`|`,`:` etc., so distinct subjects
-    like `a/b` and `ab` would clean to the same string and collide). The 12-hex digest
-    of the RAW `tenant\\0subject` makes the key injective — different invokers get
-    different keys regardless of how their ids clean. Load-bearing: a collision here
-    would be a cross-invoker memory/session leak."""
-    digest = hashlib.sha256(f"{tenant}\x00{subject}".encode()).hexdigest()[:12]
-    return f"{_clean_id(tenant)}/{_clean_id(subject)}-{digest}"
+    (#109/#110 consume it — two invokers must NEVER share one). `<clean_tenant>/<subject_key>`."""
+    return f"{_clean_id(tenant)}/{subject_key(subject)}"
 
 
 @dataclass(frozen=True, slots=True)

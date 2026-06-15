@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Cross-session memory — 3-tier, ABAC-namespaced (#110, Phase 11 / tracking #102).**
+  Memory is where chatbots get privacy *dangerously* wrong (one global blob); agate gets
+  it right by construction — a record lives under a namespace derived from the session's
+  VERIFIED `agate:` tags, and AgentCore Memory namespaces are IAM-enforceable (the
+  `bedrock-agentcore:namespacePath` condition key), so memory is fenced by the SAME
+  credential model as documents (#80) and vectors (#84) and can never leak across tenant,
+  principal, or scope (invariant §10.3). Three NESTED tiers: **personal**
+  (`agate/{tenant}/personal/{subject}/`, across sessions), **session** (a child:
+  `…/personal/{subject}/session/{sid}/`, this conversation's memory), and **shared**
+  (`agate/{tenant}/shared/{scope}/`, a lab/course's collective memory — `None` when
+  unscoped, fail-closed). `agate/memory.py` (pure) derives the namespaces from verified
+  tags + the RoleSessionName subject (never a request field); `policy.generate.memory_access_policy`
+  emits the IAM (tenant + scope fenced by principal-tag interpolation, like
+  `data_scope_policy`; a `DenyMemoryWhenNoTenantTag` guard + a `Null:false`-guarded
+  sibling-scope Deny). Boundary split (flagged, like #84): tenant + scope are
+  IAM-enforced; the per-principal `subject` segment is server-supplied + made injective
+  by the shared `delegate.subject_key` (so two principals can't collide — the #107
+  property, now factored out and reused). A live `iam:SimulateCustomPolicy` proof shows a
+  principal reads its own personal/session/shared namespaces but is denied another
+  tenant's and a sibling scope's. Research-informed (`memory/memory-research-2026.md`):
+  AgentCore Memory as the backing store; built-in semantic+summary strategies; graph/
+  temporal memory deferred (Mem0's 2026 retreat — start simple). Pure namespace core +
+  IAM + proof; the live AgentCore Memory resource + SDK read/write path is a follow-up.
 - **Entitlement-aware routing / auto mode — the Claude-Code-like interface (#122,
   completes Phase 10 / tracking #101).** Flips the default from "pick a model" to
   "state intent; the system routes" — multi-model by default. The agate twist: routing

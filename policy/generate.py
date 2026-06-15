@@ -228,3 +228,74 @@ def agent_tool_policy(grants: list[dict], bucket: str | None = None) -> dict:
         }
     )
     return {"Version": "2012-10-17", "Statement": statements}
+
+
+# AgentCore Memory actions a session uses: read its records + append conversation events.
+# (Verify exact action names against the target region before deploy.)
+MEMORY_READ_ACTIONS = ["bedrock-agentcore:RetrieveMemoryRecords"]
+MEMORY_WRITE_ACTIONS = ["bedrock-agentcore:CreateEvent"]
+
+
+def memory_access_policy(memory_arn: str = "*") -> dict:
+    """Cross-session memory scoped to the session's `agate:` tags (#110, vision §3).
+
+    Memory records live under a namespace; AgentCore enforces it via the
+    `bedrock-agentcore:namespacePath` condition key. We interpolate the principal tags
+    into that path, so the credential itself confines memory to the session's TENANT and
+    (for shared memory) its SCOPE — the same `${aws:PrincipalTag/...}` discipline as
+    `data_scope_policy`. A session can read/write only under `agate/{tenant}/...`.
+
+    Boundary split (like #84): tenant + scope are IAM-enforced here; the per-principal
+    `personal/{subject}` segment is NOT (subject isn't an STS principal tag) — the
+    server path supplies the exact `agate.memory.personal_namespace(tags, subject)` from
+    the verified RoleSessionName, with an injective `subject_key`. So IAM fences the
+    tenant; code fences the principal within it (never client-supplied).
+    """
+    tenant_tag = f"${{aws:PrincipalTag/{tag_key('tenant')}}}"
+    scope_tag = f"${{aws:PrincipalTag/{tag_key('scope')}}}"
+    return {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                # All of THIS tenant's memory (personal + session live under it; the
+                # subject segment is server-supplied). namespacePath is hierarchical, so
+                # this StringLike confines to the tenant subtree.
+                "Sid": "AccessOwnTenantMemory",
+                "Effect": "Allow",
+                "Action": MEMORY_READ_ACTIONS + MEMORY_WRITE_ACTIONS,
+                "Resource": memory_arn,
+                "Condition": {
+                    "StringLike": {"bedrock-agentcore:namespacePath": f"agate/{tenant_tag}/*"}
+                },
+            },
+            {
+                # Fail closed: no tenant tag -> no memory access at all.
+                "Sid": "DenyMemoryWhenNoTenantTag",
+                "Effect": "Deny",
+                "Action": ["bedrock-agentcore:*"],
+                "Resource": "*",
+                "Condition": {"Null": {f"aws:PrincipalTag/{tag_key('tenant')}": "true"}},
+            },
+            {
+                # Shared-tier confinement: when the session carries an `agate:scope` tag,
+                # deny any shared-memory access OUTSIDE `agate/{tenant}/shared/{scope}/`.
+                # Null:false-guarded so an unscoped session is unaffected (it has no
+                # shared tier — agate.memory returns None). Mirrors the #80 subtree Deny.
+                "Sid": "DenySharedMemoryOutsideScope",
+                "Effect": "Deny",
+                "Action": MEMORY_READ_ACTIONS + MEMORY_WRITE_ACTIONS,
+                "Resource": "*",
+                "Condition": {
+                    "Null": {f"aws:PrincipalTag/{tag_key('scope')}": "false"},
+                    "StringLike": {
+                        "bedrock-agentcore:namespacePath": f"agate/{tenant_tag}/shared/*"
+                    },
+                    "StringNotLike": {
+                        "bedrock-agentcore:namespacePath": (
+                            f"agate/{tenant_tag}/shared/{scope_tag}/*"
+                        )
+                    },
+                },
+            },
+        ],
+    }

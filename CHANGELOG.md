@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Effective-boundary view — render what an agent can touch / do / spend (#108, Phase
+  10 / tracking #101).** Because agate *generates* the credential, it can tell a
+  non-expert admin/author, in plain language, exactly what an agent is bounded to —
+  solving the classic IAM tragedy where nobody knows what a policy actually grants.
+  `agate/boundary.py` (pure) turns a `CompiledAgent` (or a per-invoker
+  `InstantiatedAgent`) into an `EffectiveBoundary`: the models it may invoke (its tier's
+  set), the `{tenant}/{scope}/` data path it can read, the tools it can use (read vs
+  draft-write), and its spend ceiling — **plus the explicit denials** (cannot invoke a
+  higher tier, cannot read outside its subtree, cannot use an undeclared tool). `summary()`
+  gives human lines; `to_dict()` feeds the admin API / authoring UI (#117). It derives
+  from the SAME compiled artifacts the credential is built from (tier/scope from the
+  tags template), so it cannot drift; the per-invoker variant reads the *narrowed*
+  `child_tags` so it never over-states a student's confined instance. A live
+  `iam:SimulateCustomPolicy` drift proof (`tests/test_proof_boundary.py`) asserts every
+  ALLOW the view claims is `allowed` in IAM and every DENIAL is denied — no gap between
+  the explanation and the enforcement. A pre-merge security review confirmed the cardinal
+  property: the view never *under*-states the boundary (no admin is surprised by an
+  omitted capability). This is the trust surface behind graphical authoring (§8.5).
 - **Per-invoker instantiation — one authored agent, scoped per invoker (#107, Phase 10
   / tracking #101).** The payoff of bounded delegation (#106): a professor authors **one**
   `chem101-ta` agent shared to a course; it instantiates per-invoker under each invoker's

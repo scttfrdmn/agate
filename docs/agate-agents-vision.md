@@ -261,13 +261,37 @@ composable, **governed** agent graphs, not a free-for-all.
 
 ---
 
-## 5. MCP connectivity — turning the campus into governed tools
+## 5. Tools & connectors — turning the campus into governed capabilities
 
 **[seam → vision]** AgentCore Gateway exposes MCP tools to the Runtime; the agent's
-*outbound* identity is its scoped execution role. The vision is to make **campus
-systems first-class MCP tools, each fronted by the same credential discipline:**
+*outbound* identity is its scoped execution role. Two distinct things hang off this, and
+agate governs them at **different layers** — conflating them mis-applies the wrong fence:
 
-- **Library catalog / discovery** → read-only search tool.
+- A **tool is a VERB** — a callable action the agent invokes mid-reasoning (submit an HPC
+  job, draft feedback, query an API). The **action plane**, governed by the spec's tool
+  grant (#105 `tool_policy`) + bounded delegation: a tool call inherits the caller's
+  narrowed credential and can only act *within* its scope.
+- A **connector is a NOUN** — a standing integration to a content system (Google Drive,
+  Box, MS Teams, Discord, NFS, S3) whose *content flows into agate*, primarily as
+  ingestion into the scoped corpus / vector index. The **data plane**, governed by the
+  #80/#84 `{tenant}/{scope}` fence (connector content lands under a scoped prefix/index,
+  fenced like every document). A connector answers *"what can the agent ground in"*; a
+  tool answers *"what can it do."*
+
+Both ride AgentCore Gateway's mechanics (targets: OpenAPI, Smithy, Lambda; 1-click
+Salesforce/Slack/Jira/etc.; outbound OAuth user-delegated|autonomous + API keys), and the
+agate contribution is identical to §8.6: Gateway gives the *connection*; agate supplies the
+*authority* under it. For SaaS content systems, **user-delegated OAuth** is the key mode —
+the agent acts AS the verified user, so the source's own ACL composes with agate's scope
+(defense in depth: both must allow it). S3 is direct via the scoped role (#80/#84, no
+Gateway); NFS isn't a managed target (wrap in a Lambda tool, or a Fargate sidecar — it
+doesn't fit the serverless microVM). NOTE on compute: AgentCore Runtime is a serverless
+microVM host with **no instance-type/GPU knob** (managed; good for NO CLOCKS) — a workload
+needing specific hardware would diverge onto Fargate/EC2/Batch.
+
+**Campus tools/connectors, each fronted by the same credential discipline:**
+
+- **Library catalog / discovery** → read-only search *tool*.
 - **The LMS** (LTI 1.3 + NRPS, already integrated) → roster, assignments, a
   *draft-only* feedback channel that requires human promotion to go live.
 - **The SIS / registrar** → read-scoped to the caller's own records.
@@ -278,11 +302,16 @@ systems first-class MCP tools, each fronted by the same credential discipline:**
   jobs against their own allocation** — bounded by their scope and budget. This is a
   concrete, non-chatbot capability that no commodity gateway offers.
 
-**The rule for every tool:** a tool call inherits the caller's bounded credential. A
-tool cannot widen reach; it can only act *within* the scope the agent already holds.
-"Connect any tool" is safe precisely because connection ≠ authority — authority is
-still the credential. Third-party MCP servers (a vendor's tool) run under a
-spec-declared, scoped egress identity, never the user's raw credential.
+- **Content systems** (Google Drive, Box, MS Teams, Discord) → *connectors*: their
+  content ingests into the tenant/scope corpus + vector index (fenced by #80/#84), via
+  Gateway's OpenAPI target + user-delegated OAuth (the agent reads only what the user can).
+
+**The rule for every tool AND connector:** it inherits the caller's bounded credential.
+A tool cannot widen reach (acts only within the agent's scope); a connector's content
+lands only under the agent's `{tenant}/{scope}` (read only via the fence). "Connect
+anything" is safe precisely because connection ≠ authority — authority is still the
+credential. Third-party MCP servers / SaaS connectors run under a spec-declared, scoped
+egress identity (user-delegated where possible), never the user's raw credential.
 
 ---
 

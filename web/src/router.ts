@@ -41,3 +41,60 @@ export const UI_MODES: ReadonlyArray<{ value: UiMode; label: string }> = [
   { value: "panel", label: "Panel" },
   { value: "analyze", label: "Analyze" },
 ];
+
+// --- model axis (#122): entitlement-aware auto mode -------------------------
+// The SPA's model picker. Default is "Auto" (the server-side router picks within the
+// session's entitled+affordable set); the user may PIN any ENTITLED model. A pin
+// outside entitlement is never offered (the picker only lists the tier's models) and
+// dropped defensively by resolveModelPin — fail-closed, mirrors agate.router.resolve_model.
+
+export type Tier = "oss" | "mid" | "frontier";
+export const AUTO = "auto";
+
+// Tier -> entitled model ids, cheapest-first. MUST stay in lockstep with
+// agate.entitlements.TIER_MODELS / models_for_tier (cumulative: a tier includes all
+// lower tiers). A parity test guards this against drift.
+const TIER_MODELS: Record<Tier, readonly string[]> = {
+  oss: [
+    "openai.gpt-oss-20b-1:0",
+    "openai.gpt-oss-120b-1:0",
+    "google.gemma-3-12b-it",
+    "google.gemma-3-4b-it",
+  ],
+  mid: [
+    "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+    "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+  ],
+  frontier: [
+    "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "us.anthropic.claude-opus-4-1-20250805-v1:0",
+  ],
+};
+
+const TIER_RANK: Record<Tier, number> = { oss: 0, mid: 1, frontier: 2 };
+
+// All models a session at `tier` may invoke (cumulative, cheapest-first) — the picker's
+// options and the allow-set resolveModelPin clamps a pin to.
+export function entitledModels(tier: Tier): string[] {
+  const rank = TIER_RANK[tier];
+  const out: string[] = [];
+  for (const t of ["oss", "mid", "frontier"] as Tier[]) {
+    if (TIER_RANK[t] <= rank) out.push(...TIER_MODELS[t]);
+  }
+  return out;
+}
+
+// A pin wins only if it's in the entitled set; "auto"/absent/unentitled -> no pin (the
+// server-side router decides). Mirrors agate.router.resolve_model precedence.
+export function resolveModelPin(pin: string | null | undefined, entitled: string[]): string | null {
+  if (pin && pin !== AUTO && entitled.includes(pin)) return pin;
+  return null;
+}
+
+// The selectable options for the model picker: "Auto" first, then each entitled model.
+export function modelOptions(tier: Tier): ReadonlyArray<{ value: string; label: string }> {
+  return [
+    { value: AUTO, label: "Auto (entitlement-aware)" },
+    ...entitledModels(tier).map((m) => ({ value: m, label: m })),
+  ];
+}

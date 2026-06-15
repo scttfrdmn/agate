@@ -27,8 +27,9 @@ from dataclasses import dataclass
 from agate.agentspec import AgentSpec, get_capability
 from agate.budget import BudgetWrite, _scope_pk, _tenant_pk, _user_pk
 from agate.entitlements import models_for_tier
+from agate.identity import ActingAs, acting_as_from_session, agent_id, spec_version
 from agate.patterns import compile_pattern
-from agate.tags import ROLE_MEMBER, SessionTags
+from agate.tags import ROLE_MEMBER, SessionTags, role_session_name
 
 # Placeholders the compiler stamps where a value is only known at SPAWN time (filled by
 # bounded delegation #106 from the verified spawner/invoker). The braces make them
@@ -53,6 +54,10 @@ class CompiledAgent:
     budget_rows: tuple[BudgetWrite, ...]
     dispatch_payload: dict
     triggers: tuple[dict, ...]
+    # Identity provenance (#137): which VERSION of the authored spec this is. The stable
+    # agent id is `{tenant}/{spec.name}` — derived at spawn, when the verified tenant is
+    # known (the tags template here carries a tenant placeholder).
+    agent_version: str = ""
 
 
 def _tool_grants(spec: AgentSpec) -> list[dict]:
@@ -141,4 +146,27 @@ def compile_agent(
         budget_rows=_budget_rows(spec),
         dispatch_payload=dispatch_payload,
         triggers=tuple({"on": t.on, "then": t.then} for t in spec.triggers),
+        agent_version=spec_version(spec),
+    )
+
+
+def _remit(compiled: CompiledAgent) -> dict:
+    """The compact 'what may it do' bound for the OBO record (the legible form is #108)."""
+    return {
+        "tier": compiled.tags_template.tier,
+        "scope": compiled.tags_template.scope,
+        "tools": list(compiled.spec.tools),
+    }
+
+
+def acting_as(compiled: CompiledAgent, *, tenant: str, subject: str) -> ActingAs:
+    """The OBO 'acting-as' record for a compiled agent run by a VERIFIED (tenant, subject)
+    — what an executor emits per action (#137). The agent id is `{tenant}/{spec.name}`
+    (the verified tenant); the OBO user is recovered from the RoleSessionName the broker
+    encodes, so it is never client-forged. 'agent X · on behalf of U · remit R.'"""
+    return acting_as_from_session(
+        role_session_name(tenant, subject),
+        agent=agent_id(tenant, compiled.spec.name),
+        agent_version=compiled.agent_version,
+        remit=_remit(compiled),
     )

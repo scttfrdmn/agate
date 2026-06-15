@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 
 from agate.agentspec import AgentSpec
 from agate.delegate import delegate
+from agate.identity import ActingAs, agent_id, spec_version
 from agate.tags import SessionTags, role_session_name
 
 
@@ -104,6 +105,22 @@ def attribution_chain(node: GraphNode, *, subject: str = "") -> str:
     the tenant + the chain that reached it (the call graph IS the audit graph)."""
     base = role_session_name(node.tags.tenant, subject or node.path[0])
     return base + "/" + "/".join(node.path)
+
+
+def node_acting_as(node: GraphNode, *, subject: str) -> ActingAs:
+    """The OBO 'acting-as' record for one graph node's actions (#137). The agent is THIS
+    node (its own scoped identity), the chain is its full root→here ancestry, and the OBO
+    user is the verified subject — so a sub-agent's action records *agent X, on behalf of
+    user U, via root/.../X*. The whole graph acts on the one root user's authority, each
+    hop attributed to its own node."""
+    return ActingAs(
+        agent=agent_id(node.tags.tenant, node.path[-1]),
+        agent_version=spec_version(node.spec),
+        tenant=node.tags.tenant,
+        subject=subject,
+        remit={"tier": node.tags.tier, "scope": node.tags.scope, "tools": list(node.spec.tools)},
+        chain="/".join(node.path),
+    )
 
 
 def cascade_nodes(

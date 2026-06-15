@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Entitlement-aware routing / auto mode — the Claude-Code-like interface (#122,
+  completes Phase 10 / tracking #101).** Flips the default from "pick a model" to
+  "state intent; the system routes" — multi-model by default. The agate twist: routing
+  is **entitlement-and-budget-aware by construction**, so auto mode can NEVER select a
+  model above the session's tier or beyond its budget. `agate/router.py` gains a model
+  axis mirroring the existing mode axis: `select_model(...)` whose candidate set IS
+  `entitlements.models_for_tier(tier)` (so the search space is the credential's allow-set),
+  pre-checked against budget via `cost.estimate_call_cost` (#88) — `thrifty` picks the
+  cheapest model clearing a difficulty bar, `best` the most capable affordable; an
+  unaffordable budget degrades to the cheapest entitled model (flagged, never raises). A
+  tiny `classify_difficulty` call (the I/O edge, like the mode router) feeds the pure
+  selection; a valid pin short-circuits (no classifier spend); `resolve_model` honours a
+  pin ONLY if it's in the entitled set (fail-closed — a frontier pin from an oss session
+  is dropped). The SPA (`web/src/router.ts`/`main.ts`) gains a model picker: **Auto**
+  (default) + each entitled model, with a TS↔Python parity test guarding the entitled
+  table against drift. A pre-merge security review (NO ISSUES) verified exhaustively that
+  no combination of tier/difficulty/policy/budget/pin escapes the entitled+affordable set;
+  IAM (model-access policy) + the chokepoint budget gate remain the actual enforcement,
+  this is the UX layer that won't even offer an unentitled model. Wiring the live request
+  path + the #105 compiler's reasoning resolution onto this engine is a focused follow-up.
 - **Effective-boundary view — render what an agent can touch / do / spend (#108, Phase
   10 / tracking #101).** Because agate *generates* the credential, it can tell a
   non-expert admin/author, in plain language, exactly what an agent is bounded to —

@@ -29,7 +29,7 @@ import { withContext } from "./rag/context";
 import { Retriever } from "./rag/retriever";
 import { AgentCoreTransport } from "./transport/agentcore";
 import { BedrockTransport } from "./transport/bedrock";
-import { type UiMode, UI_MODES, uiToRoute } from "./router";
+import { AUTO, type Tier, type UiMode, UI_MODES, modelOptions, uiToRoute } from "./router";
 
 // IdP token provider. With the demo Hosted UI wired (VITE_COGNITO_*), this is the
 // id_token captured from the login redirect (stored in sessionStorage, scrubbed
@@ -72,6 +72,12 @@ function render(app: HTMLElement): void {
                 <option value="pattern:lit-review">Pattern · Literature synthesis</option>
                 <option value="pattern:red-team">Pattern · Steel-man / red-team</option>
               </optgroup>
+            </select>
+          </div>
+          <div class="field">
+            <label for="model">Model</label>
+            <select id="model" title="Auto routes within your entitlement + budget; or pin a model">
+              <option value="auto">Auto (entitlement-aware)</option>
             </select>
           </div>
           <div class="field" style="flex:1">
@@ -205,6 +211,26 @@ function main(): void {
   const out = document.getElementById("out")!;
   const input = document.getElementById("q") as HTMLInputElement;
   const modeSel = document.getElementById("mode") as HTMLSelectElement;
+  const modelSel = document.getElementById("model") as HTMLSelectElement;
+
+  // Populate the model picker with the session's ENTITLED models (Auto + each model the
+  // tier permits). The picker never lists an unentitled model, so a user can't pin past
+  // their tier; the server-side router (#122) clamps to entitlement + budget regardless.
+  function populateModels(tier: Tier | undefined): void {
+    if (!tier) return;
+    const opts = modelOptions(tier);
+    modelSel.replaceChildren(
+      ...opts.map((o) => {
+        const el = document.createElement("option");
+        el.value = o.value;
+        el.textContent = o.label;
+        return el;
+      }),
+    );
+  }
+  populateModels(creds.scope?.tier);
+  // creds.scope is filled after the first vend; refresh the picker once available.
+  void creds.get().then(() => populateModels(creds.scope?.tier)).catch(() => {});
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -219,8 +245,12 @@ function main(): void {
 
     try {
       const pattern = selected.startsWith("pattern:") ? selected.slice("pattern:".length) : null;
+      // Resolve the model pin: a chosen entitled model wins; "auto" (or anything not
+      // in the picker's entitled list) falls back to routing/default. The picker only
+      // ever lists entitled models, so this can't escape the tier.
+      const pin = modelSel.value === AUTO ? undefined : modelSel.value;
       if (!pattern && selected === "ask") {
-        await runAsk(q, bedrock, creds, out);
+        await runAsk(q, bedrock, creds, out, pin);
       } else {
         if (!agent) {
           renderError(out, "Panel/Analyze/patterns need VITE_AGENT_RUNTIME_ARN (the deployed agent).");
@@ -250,6 +280,7 @@ async function runAsk(
   bedrock: BedrockTransport,
   creds: CredentialManager,
   out: HTMLElement,
+  modelId?: string,
 ): Promise<void> {
   const log = document.createElement("div");
   log.className = "answer-log";
@@ -268,7 +299,11 @@ async function runAsk(
     );
     contextProvider = async (query: string) => withContext([], await retriever.retrieve(query));
   }
-  const session = new ChatSession(bedrock, config.defaultModelId, undefined, undefined, contextProvider);
+  // A pinned (entitled) model wins; else the configured default (the server-side
+  // entitlement-aware router, #122, will refine this once wired into the live path).
+  const session = new ChatSession(
+    bedrock, modelId ?? config.defaultModelId, undefined, undefined, contextProvider,
+  );
   await session.send(q, {
     onReasoning: () => (log.textContent += log.textContent.includes("[thinking…]") ? "" : "[thinking…] "),
     onDelta: (d) => (log.textContent += d),

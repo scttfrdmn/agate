@@ -125,6 +125,15 @@ def test_negative_price_fails_closed():
     assert authorize_spend(m, price_usd=-1.0, spend_so_far=0.0).decision == "reject"
 
 
+def test_non_finite_price_cannot_bypass_the_gate():
+    # CRITICAL (security review): a NaN price compares False to every budget, so without a
+    # guard the money gate fails OPEN. NaN/inf must be rejected even when spend is already
+    # way over budget.
+    m = mandate_from_budget(_agent(), tenant="uni", subject="prof")  # $50
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        assert authorize_spend(m, price_usd=bad, spend_so_far=100.0).decision == "reject"
+
+
 def test_ceiling_not_price_is_the_authority():
     # Even a huge single price is fine if it fits; even a tiny one is rejected if over.
     m = mandate_from_budget(_agent(), tenant="uni", subject="prof")  # $50

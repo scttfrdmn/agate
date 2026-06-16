@@ -139,3 +139,24 @@ def test_priced_cascade_empty_nodes_and_none_budget_allow():
     assert (
         evaluate_priced_cascade(price_usd=1.0, nodes=[("t", 0.0, None)]).decision == "allow"
     )
+
+
+def test_non_finite_price_fails_closed_in_both_priced_gates():
+    # A NaN price compares False to every budget — without a guard the gate fails OPEN.
+    from cost import evaluate_priced_call, evaluate_priced_cascade
+
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        assert evaluate_priced_call(price_usd=bad, spend=0.0, budget=10.0).decision == "reject"
+        assert (
+            evaluate_priced_cascade(price_usd=bad, nodes=[("n", 0.0, 10.0)]).decision
+            == "reject"
+        )
+
+
+def test_node_decision_rejects_non_finite_spend():
+    # The shared guard also rejects a non-finite SPEND (a corrupt spend-table read), so no
+    # gate (token or priced) can be bypassed by NaN on either side.
+    from cost import evaluate_priced_cascade
+
+    r = evaluate_priced_cascade(price_usd=1.0, nodes=[("n", float("nan"), 10.0)])
+    assert r.decision == "reject"

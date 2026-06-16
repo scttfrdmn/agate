@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Natural-language agent drafting — the disposer core (#118, Phase 12 / tracking #103).**
+  The ultimate beginner authoring surface (§8.5): *"an agent that summarizes new papers in my
+  lab every Monday"* → an LLM **drafts** a spec → the compiler **clamps** it to what the author
+  actually holds → renders the bounded plan for human confirmation; nothing compiles without
+  it. The thesis — **the LLM proposes, the compiler disposes**: authority NEVER originates from
+  the model's suggestion, only from the author's verified entitlement. New pure
+  `agate/drafting.py`: `dispose_draft(draft_dict, author_tags, subject=…)` runs the existing
+  pure pipeline fail-closed at each step — `parse_spec` (#104: unsafe is unrepresentable —
+  unknown keys/tools/skills, a `..` scope, a bad budget all reject) → `delegate` (#106 clamp:
+  scope ∩ author, tier = min; a draft scope nested under the author's narrows DOWN, a disjoint
+  or cross-tenant scope is REJECTED, never silently widened) → `boundary.describe_instantiated`
+  (#108: renders the CLAMPED credential as the legible "reads X · may draft Y · ≤ $Z" plan the
+  human confirms). It returns a `DraftOutcome` (never raises for an expected failure — a bad or
+  over-reaching draft is an `ok=False` outcome with a reason) and performs **no assume-role and
+  no persistence** — the deploy-on-confirm step is deferred. `draft_system_prompt` builds the
+  catalog-driven prompt (the real `capability_catalog`/`skill_catalog`/`patterns.catalog` menus
+  + the author's tier/scope ceiling) so the model drafts within the menu — but a hallucination
+  past it is caught by the disposer regardless. Pure + AWS-free — no new STS/policy surface (it
+  composes #104/#106/#108, all proven live). The live entitled-model draft call + the confirm
+  UI are named follow-ups; the graphical builder (#117) funnels through the SAME disposer.
 - **Agent payments — the governance core (#120, Phase 12 / tracking #103).** Turns agate from
   "governs what an agent can *read and run*" into "…read, run, **and pay for**" — same single
   boundary. The unsolved problem in agent payments is **bounded autonomy**; agate already

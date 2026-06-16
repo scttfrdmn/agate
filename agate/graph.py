@@ -23,7 +23,13 @@ from dataclasses import dataclass, field
 
 from agate.agentspec import AgentSpec
 from agate.delegate import delegate
-from agate.tags import SessionTags, role_session_name
+from agate.identity import UNATTRIBUTED, ActingAs, agent_id, spec_version
+from agate.tags import (
+    SessionTags,
+    role_session_name,
+    subject_from_session_name,
+    tenant_from_session_name,
+)
 
 
 class GraphError(ValueError):
@@ -104,6 +110,31 @@ def attribution_chain(node: GraphNode, *, subject: str = "") -> str:
     the tenant + the chain that reached it (the call graph IS the audit graph)."""
     base = role_session_name(node.tags.tenant, subject or node.path[0])
     return base + "/" + "/".join(node.path)
+
+
+def node_acting_as(node: GraphNode, *, session_name: str) -> ActingAs:
+    """The OBO 'acting-as' record for one graph node's actions (#137). The agent is THIS
+    node (its own scoped identity), the chain is its full root→here ancestry, and the OBO
+    user is recovered from the VERIFIED root `session_name` (`<tenant>@<subject>`, #79) —
+    never a client-supplied subject — so a sub-agent's action records *agent X, on behalf of
+    user U, via root/.../X*. The whole graph acts on the one root user's authority, each hop
+    attributed to its own node.
+
+    Fail-closed: the OBO user's tenant (from the session) must match the node's verified
+    tenant (delegated transitively from the root credential). A mismatch — or a legacy
+    un-encoded session — yields an UNATTRIBUTED record rather than a cross-tenant or
+    fabricated binding."""
+    sess_tenant = tenant_from_session_name(session_name)
+    attributed = sess_tenant is not None and sess_tenant == node.tags.tenant
+    subject = subject_from_session_name(session_name) if attributed else UNATTRIBUTED
+    return ActingAs(
+        agent=agent_id(node.tags.tenant, node.path[-1]),
+        agent_version=spec_version(node.spec),
+        tenant=node.tags.tenant if attributed else "",
+        subject=subject,
+        remit={"tier": node.tags.tier, "scope": node.tags.scope, "tools": list(node.spec.tools)},
+        chain="/".join(node.path),
+    )
 
 
 def cascade_nodes(

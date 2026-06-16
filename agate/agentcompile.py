@@ -27,8 +27,15 @@ from dataclasses import dataclass
 from agate.agentspec import AgentSpec, get_capability
 from agate.budget import BudgetWrite, _scope_pk, _tenant_pk, _user_pk
 from agate.entitlements import models_for_tier
+from agate.identity import (
+    UNATTRIBUTED,
+    ActingAs,
+    acting_as_from_session,
+    agent_id,
+    spec_version,
+)
 from agate.patterns import compile_pattern
-from agate.tags import ROLE_MEMBER, SessionTags
+from agate.tags import ROLE_MEMBER, SessionTags, tenant_from_session_name
 
 # Placeholders the compiler stamps where a value is only known at SPAWN time (filled by
 # bounded delegation #106 from the verified spawner/invoker). The braces make them
@@ -53,6 +60,10 @@ class CompiledAgent:
     budget_rows: tuple[BudgetWrite, ...]
     dispatch_payload: dict
     triggers: tuple[dict, ...]
+    # Identity provenance (#137): which VERSION of the authored spec this is. The stable
+    # agent id is `{tenant}/{spec.name}` — derived at spawn, when the verified tenant is
+    # known (the tags template here carries a tenant placeholder).
+    agent_version: str = ""
 
 
 def _tool_grants(spec: AgentSpec) -> list[dict]:
@@ -141,4 +152,31 @@ def compile_agent(
         budget_rows=_budget_rows(spec),
         dispatch_payload=dispatch_payload,
         triggers=tuple({"on": t.on, "then": t.then} for t in spec.triggers),
+        agent_version=spec_version(spec),
+    )
+
+
+def _remit(compiled: CompiledAgent) -> dict:
+    """The compact 'what may it do' bound for the OBO record (the legible form is #108)."""
+    return {
+        "tier": compiled.tags_template.tier,
+        "scope": compiled.tags_template.scope,
+        "tools": list(compiled.spec.tools),
+    }
+
+
+def acting_as(compiled: CompiledAgent, *, session_name: str) -> ActingAs:
+    """The OBO 'acting-as' record for a compiled agent run, emitted per action by an
+    executor (#137). `session_name` is the VERIFIED broker-minted RoleSessionName
+    (`<tenant>@<subject>`, #79) — the single source of both the OBO user AND the agent's
+    tenant, so the two can never disagree and neither is client-forgeable. The OBO user is
+    recovered from the session, never passed in; a legacy/un-encoded session degrades to an
+    unattributed agent (`{UNATTRIBUTED}/{spec.name}`) rather than fabricating a tenant.
+    'agent X · on behalf of U · remit R.'"""
+    tenant = tenant_from_session_name(session_name)
+    return acting_as_from_session(
+        session_name,
+        agent=agent_id(tenant or UNATTRIBUTED, compiled.spec.name),
+        agent_version=compiled.agent_version,
+        remit=_remit(compiled),
     )

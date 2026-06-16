@@ -242,3 +242,26 @@ def test_build_chunk_records_carries_provenance_and_tenant():
 def test_build_chunk_records_fails_closed_without_tenant():
     with pytest.raises(TenantKeyError):
         build_chunk_records("bare.txt", "hello")
+
+
+def test_build_chunk_records_attaches_connector_provenance():
+    # #133: a connector-ingested chunk cites its source SYSTEM + item.
+    recs = build_chunk_records(
+        "chem/chemistry/chem-101/_connectors/gdrive/notes.txt",
+        "hello world",
+        source_system="gdrive",
+        source_item="Shared/notes.gdoc",
+        max_chars=1000,
+    )
+    md = recs[0].metadata
+    assert md["source_system"] == "gdrive"
+    assert md["source_item"] == "Shared/notes.gdoc"
+    # tenant/scope are still derived from the KEY (the hard fence), not the provenance.
+    assert md["tenant"] == "chem"
+
+
+def test_build_chunk_records_omits_connector_provenance_by_default():
+    # An ordinary upload carries no connector provenance — no regression.
+    md = build_chunk_records("chem/syllabus.txt", "hello", max_chars=1000)[0].metadata
+    assert "source_system" not in md
+    assert "source_item" not in md

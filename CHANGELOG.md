@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Connectors — the bounded ingestion-target core (#133, Phase 11 / tracking #102).**
+  The **data plane** (split from #113's tool/action plane): a connector is a standing
+  integration to a content system (Google Drive / Box / MS Teams / Discord / S3 / NFS) whose
+  content flows **into** agate as ingestion under the `{tenant}/{scope}/` corpus + the
+  `agate-{tenant}` vector index. The governing property — a connector adds **NO new access
+  boundary**: ingested content is fenced **exactly like an uploaded document** by the #80
+  data-scope IAM Deny and the #84 retrieval scope-filter, both already proven against live
+  IAM / S3 Vectors. New pure `agate/connectors.py`: a **source registry** (separate from the
+  tool catalog, per the connector-noun/data vs tool-verb/action split) of the six sources,
+  each tagged with its `auth_mode` — `user-oauth` (Drive/Box/Teams/Discord — reads ONLY what
+  the verified user can, the source ACL composing with agate's scope = defense in depth),
+  `scoped-role` (S3, via the #80 role), `ingest-lambda` (NFS) — and `connector_dest_key`, the
+  security crux: it builds the destination S3 key `{tenant}/{scope}/_connectors/{kind}/...`
+  using the SAME normalisers the #80 tags use (`_clean_id`, `normalise_scope`) and sanitises
+  every source-supplied item-path segment, so **no adversarial filename or scope can escape
+  the connecting user's subtree** (`confine_dest_key` is the round-trip proof, reusing the
+  ingest parsers + `delegate._contains`). `agate/rag.py`'s `build_chunk_records` gains
+  optional `source_system`/`source_item` provenance so a retrieved chunk cites its source
+  system + item (additive; an upload is unchanged). Pure + AWS-free — no new STS/policy
+  surface; it reuses the #80/#84 boundary. The live OAuth vending, AgentCore Gateway targets,
+  per-source fetchers, NFS Lambda, and sync/refresh (a #115 `event:`/`schedule:` trigger) fold
+  into the #136 deploy follow-up. **Completes the Phase 11 milestone.**
 - **Triggered + durable runs — the bounded fire-time core (#115, Phase 11 / tracking #102).**
   An agent earns its name by working **unattended** — scheduled, event-driven, or durable
   multi-step (§6). This is the pure, provable core (the live EventBridge/Scheduler/S3/Step

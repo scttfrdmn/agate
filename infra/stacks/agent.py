@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import aws_cdk as cdk
 from agate.entitlements import model_arns_for_tier
-from agate.names import HANDLE
+from agate.names import HANDLE, tag_key
 from aws_cdk import (
     Stack,
 )
@@ -33,10 +33,17 @@ from aws_cdk import (
 from aws_cdk import (
     aws_iam as iam,
 )
+from aws_cdk import (
+    aws_lambda as lambda_,
+)
 from constructs import Construct
+from infra.assets import pip_bundled_code
 
 # Supplied at deploy time once the reference-agent image is built + pushed.
 PLACEHOLDER_IMAGE = "PLACEHOLDER_AGENT_CONTAINER_URI"
+# The single tenant this gateway instance serves (its ARN joins the tenant-fenced family the
+# #113 `_DEFAULT_GATEWAY_ARN` authorizes: `gateway/agate-{tenant}-*`). One gateway per tenant.
+PLACEHOLDER_TENANT = "demo"
 
 
 class AgentStack(Stack):
@@ -227,6 +234,160 @@ class AgentStack(Stack):
         )
         endpoint.add_dependency(runtime)
 
+        # --- AgentCore Gateway + Slurm MCP server (#136) -------------------
+        # The live integration surface for the #113/#114 tool catalog. The Gateway is the
+        # thing an agent's `bedrock-agentcore:InvokeGateway` grant resolves to; the Slurm
+        # Lambda is the MCP target behind hpc-submit/hpc-monitor (#114).
+        tenant = self.node.try_get_context("gateway_tenant") or PLACEHOLDER_TENANT
+
+        # The Slurm MCP server Lambda — the EFFECT half of §5. The pure scope→account map +
+        # budget gate live in `agate.slurm`; this Lambda is the AWS edge (verify token, read
+        # spend/budget, submit to the deploy-wired cluster). Mirrors the chokepoint's bundle.
+        spend_table = self.node.try_get_context("spend_table") or f"{HANDLE}-spend"
+        budget_table = self.node.try_get_context("budget_table") or f"{HANDLE}-budget"
+        slurm_fn = lambda_.Function(
+            self,
+            "SlurmTool",
+            function_name=f"{HANDLE}-slurm-tool",
+            runtime=lambda_.Runtime.PYTHON_3_13,
+            handler="infra.functions.slurm.handler.handler",
+            code=pip_bundled_code("agate", "infra", "cost", "meter"),
+            timeout=cdk.Duration.seconds(30),
+            memory_size=256,
+            environment={
+                "AGATE_SPEND_TABLE": spend_table,
+                "AGATE_BUDGET_TABLE": budget_table,
+                # The verified-token coordinates (same Cognito the Runtime trusts inbound).
+                "AGATE_OIDC_ISSUER": oidc_discovery_url or "",
+                "AGATE_OIDC_AUDIENCE": allowed_audience or "",
+            },
+            description="agate Slurm MCP server - scope->allocation + budget-gated hpc-submit",
+        )
+        # Read the authoritative spend + budget tables (the cascade gate's inputs). No write:
+        # the spend meter records the debit out-of-band, exactly as the chat path does.
+        slurm_fn.add_to_role_policy(
+            iam.PolicyStatement(
+                sid="ReadSpendAndBudget",
+                effect=iam.Effect.ALLOW,
+                actions=["dynamodb:GetItem", "dynamodb:Query"],
+                resources=[
+                    f"arn:aws:dynamodb:{region}:{account}:table/{spend_table}",
+                    f"arn:aws:dynamodb:{region}:{account}:table/{budget_table}",
+                ],
+            )
+        )
+
+        # The Gateway — MCP protocol, custom-JWT inbound auth (the verified campus user, the
+        # SAME discovery URL the Runtime uses). NAME is `agate-{tenant}` so its ARN joins the
+        # tenant-fenced family `_DEFAULT_GATEWAY_ARN` already authorizes (#113): a live ARN
+        # outside `gateway/agate-{tenant}-*` would miss every grant.
+        gateway_name = f"{HANDLE}-{tenant}"
+        gateway_authorizer = None
+        if oidc_discovery_url:
+            gateway_authorizer = agentcore.CfnGateway.AuthorizerConfigurationProperty(
+                custom_jwt_authorizer=agentcore.CfnGateway.CustomJWTAuthorizerConfigurationProperty(
+                    discovery_url=oidc_discovery_url,
+                    allowed_audience=[allowed_audience] if allowed_audience else None,
+                )
+            )
+        gateway = agentcore.CfnGateway(
+            self,
+            "ToolGateway",
+            name=gateway_name,
+            role_arn=execution_role.role_arn,
+            authorizer_type="CUSTOM_JWT",
+            protocol_type="MCP",
+            authorizer_configuration=gateway_authorizer,
+            description=f"agate campus-tool gateway (tenant {tenant}) - MCP, per-request",
+        )
+
+        # OAuth2 credential provider for USER-DELEGATED outbound auth (#136 / §5): the agent
+        # reaches an external system AS the verified user, so the source ACL composes with
+        # agate's scope. Slurm (an internal cluster) uses the scoped IAM role, not OAuth — so
+        # the Slurm target below uses the IAM credential path; this provider is here for the
+        # #133 connector targets (Drive/Box/Teams/Discord) to attach as they land.
+        google_client_id = self.node.try_get_context("google_oauth_client_id")
+        google_secret_arn = self.node.try_get_context("google_oauth_secret_arn")
+        oauth_provider = None
+        if google_client_id and google_secret_arn:
+            oauth_provider = agentcore.CfnOAuth2CredentialProvider(
+                self,
+                "UserDelegatedOAuth",
+                name=f"{HANDLE}-{tenant}-gdrive",
+                credential_provider_vendor="GoogleOauth2",
+                oauth2_provider_config_input=(
+                    agentcore.CfnOAuth2CredentialProvider.Oauth2ProviderConfigInputProperty(
+                        google_oauth2_provider_config=(
+                            agentcore.CfnOAuth2CredentialProvider.GoogleOauth2ProviderConfigInputProperty(
+                                client_id=google_client_id,
+                                client_secret=(
+                                    agentcore.CfnOAuth2CredentialProvider.ClientSecretArnProperty(
+                                        secret_arn=google_secret_arn
+                                    )
+                                ),
+                            )
+                        )
+                    )
+                ),
+            )
+
+        # The Slurm MCP target — wraps the Lambda, declaring the two #114 tools as a typed
+        # inline tool schema. Outbound auth is the gateway's own IAM identity (an internal
+        # cluster), not user-delegated OAuth.
+        _obj_schema = agentcore.CfnGatewayTarget.SchemaDefinitionProperty(type="object")
+
+        def _tool(name, desc, props):  # -> ToolDefinitionProperty
+            return agentcore.CfnGatewayTarget.ToolDefinitionProperty(
+                name=name,
+                description=desc,
+                input_schema=agentcore.CfnGatewayTarget.SchemaDefinitionProperty(
+                    type="object", properties=props
+                ),
+            )
+
+        slurm_target = agentcore.CfnGatewayTarget(
+            self,
+            "SlurmTarget",
+            gateway_identifier=gateway.attr_gateway_identifier,
+            name=f"{HANDLE}-slurm",
+            target_configuration=agentcore.CfnGatewayTarget.TargetConfigurationProperty(
+                mcp=agentcore.CfnGatewayTarget.McpTargetConfigurationProperty(
+                    lambda_=agentcore.CfnGatewayTarget.McpLambdaTargetConfigurationProperty(
+                        lambda_arn=slurm_fn.function_arn,
+                        tool_schema=agentcore.CfnGatewayTarget.ToolSchemaProperty(
+                            inline_payload=[
+                                _tool(
+                                    "hpc-monitor",
+                                    "Read the caller's own HPC jobs (read-only)",
+                                    {},
+                                ),
+                                _tool(
+                                    "hpc-submit",
+                                    "Submit an HPC job to the caller's allocation (budget-gated)",
+                                    {
+                                        "job_spec": _obj_schema,
+                                    },
+                                ),
+                            ]
+                        ),
+                    )
+                )
+            ),
+            credential_provider_configurations=[
+                agentcore.CfnGatewayTarget.CredentialProviderConfigurationProperty(
+                    credential_provider_type="GATEWAY_IAM_ROLE",
+                )
+            ],
+            description="agate Slurm MCP target (hpc-submit/hpc-monitor)",
+        )
+        slurm_target.add_dependency(gateway)
+        # The Gateway invokes the Slurm Lambda; grant it on the function.
+        slurm_fn.add_permission(
+            "AllowGatewayInvoke",
+            principal=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
+            action="lambda:InvokeFunction",
+        )
+
         # --- Outputs -------------------------------------------------------
         cdk.CfnOutput(self, "RuntimeArn", value=runtime.attr_agent_runtime_arn)
         cdk.CfnOutput(self, "RuntimeEndpointName", value="default")
@@ -244,5 +405,30 @@ class AgentStack(Stack):
         # Note the account/region the agent path runs in (used in follow-up wiring).
         cdk.CfnOutput(self, "AgentAccountRegion", value=f"{account}/{region}")
 
+        # Gateway + Slurm tool (#136).
+        cdk.CfnOutput(self, "GatewayArn", value=gateway.attr_gateway_arn)
+        cdk.CfnOutput(self, "GatewayId", value=gateway.attr_gateway_identifier)
+        cdk.CfnOutput(self, "SlurmLambdaArn", value=slurm_fn.function_arn)
+        cdk.CfnOutput(self, "SlurmTargetName", value=f"{HANDLE}-slurm")
+        # Confirm the live gateway NAME joins the tenant-fenced ARN family the #113 grant
+        # authorizes (`gateway/agate-{tenant}-*`). If this is ever false, every tool grant
+        # misses and the agent can invoke nothing — fail-loud at deploy review.
+        fenced = gateway_name.startswith(f"{HANDLE}-{tenant}")
+        cdk.CfnOutput(
+            self,
+            "GatewayArnPatternStatus",
+            value="tenant-fenced-ok" if fenced else "PATTERN-MISMATCH-grants-will-miss",
+        )
+        cdk.CfnOutput(
+            self,
+            "OutboundOAuthStatus",
+            value="google-configured" if oauth_provider is not None else "PLACEHOLDER-no-oauth",
+        )
+
         self.runtime = runtime
         self.execution_role = execution_role
+        self.gateway = gateway
+        self.slurm_fn = slurm_fn
+        self.gateway_name = gateway_name
+        # The tag-key constant is referenced by the synth test's fence assertion.
+        self._tenant_tag_key = tag_key("tenant")

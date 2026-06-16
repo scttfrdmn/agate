@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Live AgentCore Gateway wiring + Slurm MCP server (#136, follow-up to #113/#114).**
+  The deploy surface that makes the tool catalog real — **deploy-ready, not deployed** (no
+  `cdk deploy` this session; that's a human step once the agent container + cluster endpoint
+  are configured). Adds the real CDK L1s to `AgentStack`: a **`CfnGateway`** (MCP protocol,
+  custom-JWT inbound auth) named `agate-{tenant}` so its ARN joins the tenant-fenced family
+  the #113 grant already authorizes (`gateway/agate-{tenant}-*`) — a synth assertion + a live
+  IAM proof both pin this, since a mismatch would make every tool grant miss; a
+  **`CfnGatewayTarget`** wrapping the new Slurm Lambda as an MCP-Lambda target declaring the
+  `hpc-submit`/`hpc-monitor` tools; a **`CfnOAuth2CredentialProvider`** for the user-delegated
+  outbound auth the #133 connector targets will attach to; and the Slurm Lambda itself
+  (spend/budget read grants). New `agate/slurm.py` (pure) + `infra/functions/slurm/handler.py`
+  (the AWS edge): the EFFECT half of §5 — a caller's verified `agate:scope` maps to exactly
+  ONE Slurm allocation (`slurm_account_for_scope`, deterministic/injective/traversal-safe,
+  never a sibling lab's), and `hpc-submit` is **gated on the budget cascade (#81) before the
+  scheduler is touched** (`gate_submit` reuses `evaluate_cascade`; over-allocation is rejected
+  pre-call naming the breaching node). Identity/account derive ONLY from the verified
+  credential — a payload-injected account/scope has no effect — and every submit emits the
+  #137 `ActingAs` attribution (`agent · on behalf of the user · remit`). The actual scheduler
+  transport (`_submit_job`/`_list_jobs`) is an injected, deploy-wired boundary (agate hosts no
+  Slurm). Also surfaces the #133 `source_system`/`source_item` provenance in the retrieval
+  proxy response. Verified by the repo's FIRST CDK synth test (`assertions.Template`), pure
+  unit tests, and live `SimulateCustomPolicy` proofs that the concrete deployed-shape gateway
+  ARN is invocable by a declared agent and denied cross-tenant / no-tools / no-tenant-tag.
 - **Connectors — the bounded ingestion-target core (#133, Phase 11 / tracking #102).**
   The **data plane** (split from #113's tool/action plane): a connector is a standing
   integration to a content system (Google Drive / Box / MS Teams / Discord / S3 / NFS) whose

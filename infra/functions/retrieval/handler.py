@@ -202,10 +202,16 @@ def _text_chunk(v: dict) -> dict | None:
     if not isinstance(text, str) or not text.strip():
         return None
     src = md.get("source_key")
+    # Connector provenance (#133): a chunk ingested via a connector cites its source SYSTEM
+    # + item, not just the agate S3 key. Absent for ordinary uploads.
+    src_system = md.get("source_system")
+    src_item = md.get("source_item")
     return {
         "key": v.get("key", ""),
         "text": text,
         "sourceKey": src if isinstance(src, str) else None,
+        "sourceSystem": src_system if isinstance(src_system, str) else None,
+        "sourceItem": src_item if isinstance(src_item, str) else None,
         "distance": v.get("distance"),
     }
 

@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Collaborative scoped rooms — the security core (#116, Phase 12 / tracking #103).**
+  The social surface (§7): a **room is a scope-tagged object** where humans AND agents are
+  participants, each carrying its own bounded credential, and the room's reach is the
+  **INTERSECTION** of its members' authorities — adding a participant can only NARROW it,
+  never widen it (§10). This is the pure security core (the AppSync/WebSocket transport + the
+  collaboration UX — turn-taking, panes, presence — are deferred follow-ups, per the #116
+  design note that splits the two). New pure `agate/rooms.py`: `room_scope` folds
+  `delegate.scope_intersect` (#106) N-way with a **fail-closed twist** — a disjoint scoped
+  member RAISES `RoomError` rather than collapsing to `""` (tenant-wide), which would *widen*
+  the room (the cardinal sin); the room scope is `""` only when EVERY member is unscoped.
+  `room_tier` is the least-privileged tier across members. `Room`/`Member` derive
+  scope/tier on every membership change (`open_room`/`add_member`/`remove_member`) so the
+  never-widen invariant can't drift; `effective_member_tags` clamps even a broader member
+  DOWN to the room's reach ("an agent in a room can't read beyond it"); `room_message`
+  attributes every contribution with an `ActingAs` (#137) recovered from the verified session
+  (never client-forged), refusing non-members; and `room_to_saved_session` makes a room
+  transcript a `SavedSession` (#109) stored under the room's intersection scope — fenced by
+  the #80 policy + #84 filter like any session. Human-agent and agent-agent collaboration are
+  the SAME primitive: bounded participants in a scope-bounded space. Pure + AWS-free — no new
+  STS/policy surface (it composes #106/#109/#137/#80, all proven live).
 - **Live AgentCore Gateway wiring + Slurm MCP server (#136, follow-up to #113/#114).**
   The deploy surface that makes the tool catalog real — **deploy-ready, not deployed** (no
   `cdk deploy` this session; that's a human step once the agent container + cluster endpoint

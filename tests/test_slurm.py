@@ -43,6 +43,15 @@ def test_sibling_scopes_get_distinct_accounts():
     assert a != b
 
 
+def test_scope_to_account_is_injective_no_underscore_collision():
+    # The `/`->`_` mapping must be injective: a hierarchical scope `a/b` and a literal-
+    # underscore scope `a_b` must NOT collide onto one allocation (a sibling-scope breach).
+    assert slurm_account_for_scope("chem", "a/b") != slurm_account_for_scope("chem", "a_b")
+    assert slurm_account_for_scope("chem", "lab/x") != slurm_account_for_scope("chem", "lab_x")
+    # and the deeper case stays distinct too
+    assert slurm_account_for_scope("chem", "a/b/c") != slurm_account_for_scope("chem", "a_b/c")
+
+
 def test_traversal_scope_falls_to_tenant_default_never_sibling():
     # `..` is rejected by normalise_scope → the tenant-wide allocation, NOT the escaped path.
     acct = slurm_account_for_scope("chem", "lab/../physics")

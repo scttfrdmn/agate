@@ -50,9 +50,14 @@ def slurm_account_for_scope(tenant: str, scope: str) -> str:
     node = normalise_scope(scope)
     if not node:
         return f"{t}-default"
-    # `/` -> `_` for a single Slurm-safe token; the scope grammar already excludes other
-    # separators, so the result is injective per (tenant, scope).
-    return f"{t}-{node.replace('/', '_')}"
+    # `/` -> `_` for a single Slurm-safe token. The scope grammar ALSO permits a literal `_`,
+    # so a naive replace would be non-injective (`a/b` and `a_b` would collide onto one
+    # allocation — a sibling-scope budget/queue breach). Escape any existing `_` to `__`
+    # FIRST, then map the separator `/` to a single `_`: now `_` only ever appears doubled
+    # from input and singly from a separator, so the mapping is injective and two distinct
+    # scopes can never share an account.
+    token = node.replace("_", "__").replace("/", "_")
+    return f"{t}-{token}"
 
 
 @dataclass(frozen=True, slots=True)

@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **AG-UI — the event-stream governor (#119 slice, the last; Phase 12 / tracking #103).**
+  AG-UI is the open streaming protocol for agent state/events to a UI — "the event stream is
+  scope-tagged and attributed, so a live UI shows only what the credential authorized." New
+  pure `agate/agui.py`: `govern_event(event, *, tags, acting_as=…)` **stamps** every run event
+  with its scope + the #137 `ActingAs` (who · on whose authority) and **DROPS** any event whose
+  explicit `scope` tag the session doesn't contain (reusing `delegate._contains`, the #106
+  containment, tenant-fenced) — a cross-scope pane (e.g. a room peer's sub-scope a member
+  shouldn't see) is filtered before it reaches the wire. An event with no explicit scope is
+  in-scope by construction (the session's own run, already fenced by retrieval #84) → stamped
+  with the session scope, kept; a nested scope is kept + stamped with the deeper node; a parent/
+  sibling-prefix/`..`-garbled scope is dropped (fail-closed, no widening). `governed_emit(emit,
+  *, tags, acting_as=…)` wraps any existing `Emit` sink so the governor sits at the SINGLE emit
+  choke point — every orchestration (router/panel/analyze/dispatch) inherits it unchanged, no
+  rewrite of the scattered `emit({...})` sites. The original event dict is never mutated; the
+  `acting_as` comes from the verified session (never client-forged), the scope from the session
+  tags. Pure + AWS-free — an emit-time filter adding no new authority (the data was already
+  fenced at retrieval). Per §0.1 agenkit streams + renders; agate decides which events stream.
+  **Completes #119** (Skills + A2A + A2UI + AG-UI all merged — the open agent stack, governed).
 - **Deploy follow-ups: workload identity (#137) + connector Gateway targets (#133), deploy-ready.**
   Extends the #136 `AgentStack` with the live deploy bindings the pure cores were built
   against — still **deploy-ready, not deployed** (no `cdk deploy`). Adds a per-tenant

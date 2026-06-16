@@ -82,6 +82,16 @@ def test_sibling_prefix_scope_is_dropped():
     )
 
 
+def test_non_canonical_scope_segments_are_dropped():
+    # `.` and empty (`//`) segments are rejected so a stamped scope is always canonical
+    # (no audit ambiguity), matching the tags scope grammar.
+    assert govern_event({"type": "x", "scope": "chemistry/."}, tags=_tags("chemistry")) is None
+    assert (
+        govern_event({"type": "x", "scope": "chemistry//chem-101"}, tags=_tags("chemistry"))
+        is None
+    )
+
+
 def test_tenant_wide_session_keeps_any_scope():
     # an unscoped (tenant-wide) session contains every scope in its tenant
     e = govern_event({"type": "answer", "scope": "physics"}, tags=_tags(""))

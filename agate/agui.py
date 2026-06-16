@@ -41,9 +41,11 @@ def _event_scope_ok(event_scope: str, tags: SessionTags) -> bool:
     `..`/garbled event scope, or one the session doesn't contain, is out of scope (fail-closed,
     handled by the caller dropping it). An empty event scope is treated as 'no explicit tag'
     by the caller, not here."""
-    # `_contains` already strips `/` and is path-segment-wise; a `..` segment makes the event
-    # scope not equal-or-under the session scope, so it won't be contained -> dropped.
-    if ".." in event_scope.split("/"):
+    # Reject any non-canonical segment (empty/`.`/`..`) — matches the scope grammar
+    # `tags._normalise_data_scope` enforces, so a stamped scope is always canonical (no
+    # `chemistry/.` or `chemistry//x` audit ambiguity) and a `..` traversal fails closed.
+    # `_contains` is path-segment-wise (no string-prefix bug) for the containment itself.
+    if any(seg in ("", ".", "..") for seg in event_scope.split("/")):
         return False
     return _contains(tags.scope, event_scope)
 

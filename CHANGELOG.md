@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A2UI — the panel-action governor (#119 slice, Phase 12 / tracking #103).** A2UI is the
+  "beyond just another chatbot" payoff: an agent renders an **interactive** panel (a live
+  dataset profile, a budget gauge, a clickable citation graph) instead of a wall of text — but
+  rendered components are bounded by the same scope. The headline, enforced by new pure
+  `agate/a2ui.py`: **a panel action is INERT until it resolves to a capability the agent
+  actually holds.** A `PanelAction` (a control naming the #113 capability it would invoke, plus
+  inert display-only controls) is passed to `govern_panel(actions, tools, scope=…)`, which
+  partitions into allowed/denied: an action whose capability is NOT in the agent's effective
+  `tools` is **stripped (denied by absence, the same rule as an undeclared tool)**; an unknown
+  capability fails closed (caught, never surfaced); a held write capability is allowed but
+  **marked draft-bound** (`verdict.write` — so the renderer labels it "draft for review, never
+  live", §5, enforced by the #113 `drafts-queue` resource). `safe_actions()` is what the
+  renderer may surface; the payload is inert (a crafted payload can't widen the verdict). So a
+  "live panel" can surface only the data + actions the agent's credential already permits — it
+  can't become an exfiltration or privileged-action surface. Pure + AWS-free — a pre-render
+  filter over the agent's already-clamped, skill-expanded `tools` (composes over a disposed
+  draft #118 / instantiated agent #107 / room member #116 alike); the actual click still hits
+  the proven #113 IAM grant (defense in depth). Per §0.1 agenkit renders + wires the denied
+  event; agate decides what may be rendered. AG-UI is the last remaining #119 slice.
 - **A2A — external-peer admission, governed (#119 slice, Phase 12 / tracking #103).** The
   headline open-standard interop contribution and the agenkit/agate split (§0.1) made
   concrete: an external agent's **card** advertises capability, but **authority is the

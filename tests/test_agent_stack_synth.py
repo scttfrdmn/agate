@@ -75,3 +75,43 @@ def test_slurm_lambda_reads_spend_and_budget_tables(template):
             )
         },
     )
+
+
+# --- #137 workload identity + #133 connector targets (deploy follow-ups) ----
+
+
+def test_workload_identity_synthesizes_tenant_named(template):
+    # The #137 deploy binding: a per-tenant workload-identity directory entry.
+    t, stack = template
+    wis = list(t.find_resources("AWS::BedrockAgentCore::WorkloadIdentity").values())
+    assert len(wis) == 1
+    assert wis[0]["Properties"]["Name"] == stack.gateway_name  # agate-{tenant}
+
+
+def test_no_connector_targets_or_oauth_without_deploy_config(template):
+    # Default (no oauth/connector context): only the Slurm target, no OAuth provider — absent
+    # config produces no connector target (NO CLOCKS; a target is per-request).
+    t, _ = template
+    assert len(t.find_resources("AWS::BedrockAgentCore::GatewayTarget")) == 1  # slurm only
+    assert len(t.find_resources("AWS::BedrockAgentCore::OAuth2CredentialProvider")) == 0
+
+
+def test_connector_targets_wired_to_oauth_when_configured():
+    # With the OAuth provider + per-connector OpenAPI schemas supplied at deploy, each
+    # user-oauth connector becomes an OpenAPI Gateway target attached to the OAuth provider.
+    app = cdk.App(
+        context={
+            "google_oauth_client_id": "cid",
+            "google_oauth_secret_arn": "arn:aws:secretsmanager:us-east-1:111122223333:secret:x",
+            "connector_openapi_gdrive": '{"openapi": "3.0.0"}',
+            "connector_openapi_box": '{"openapi": "3.0.0"}',
+        }
+    )
+    stack = AgentStack(app, "agate-agent-conn", env=_ENV)
+    t = assertions.Template.from_stack(stack)
+    assert len(t.find_resources("AWS::BedrockAgentCore::OAuth2CredentialProvider")) == 1
+    names = sorted(
+        v["Properties"]["Name"]
+        for v in t.find_resources("AWS::BedrockAgentCore::GatewayTarget").values()
+    )
+    assert names == ["agate-connector-box", "agate-connector-gdrive", "agate-slurm"]

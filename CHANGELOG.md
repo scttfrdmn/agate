@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Deploy follow-ups: workload identity (#137) + connector Gateway targets (#133), deploy-ready.**
+  Extends the #136 `AgentStack` with the live deploy bindings the pure cores were built
+  against — still **deploy-ready, not deployed** (no `cdk deploy`). Adds a per-tenant
+  **`CfnWorkloadIdentity`** (`agate-{tenant}`): the live AgentCore workload-identity directory
+  entry the #137 `agate.identity` agent id binds to — an agent authenticates AS itself and an
+  `ActingAs` record names that identity + the OBO user (AWS's "Agent access token" model). And
+  the **#133 connector Gateway targets**: each `user-oauth` connector (Drive/Box/Teams/Discord)
+  becomes an OpenAPI Gateway target attached to the user-delegated OAuth provider — the agent
+  reaches the source AS the verified user (the source ACL composes with agate's scope, §5),
+  and a connector only ingests into the `{tenant}/{scope}/_connectors/…` corpus the #80/#84
+  fence governs. Both are **gated on deploy config**: a connector target appears only when its
+  `connector_openapi_{kind}` schema + the OAuth provider are supplied (absent config → no
+  target, NO CLOCKS). Also **fixes a latent #136 bug** the new synth coverage surfaced: the
+  Google OAuth provider passed a `ClientSecretArnProperty` where the L1 wants the secret ARN
+  string directly (the default path skipped it, so it was never exercised). Verified by 3 new
+  CDK synth assertions (workload identity present + tenant-named; no connector target/OAuth
+  without config; connectors wired to the OAuth provider when configured). No `cdk deploy`.
 - **A2UI — the panel-action governor (#119 slice, Phase 12 / tracking #103).** A2UI is the
   "beyond just another chatbot" payoff: an agent renders an **interactive** panel (a live
   dataset profile, a budget gauge, a clickable citation graph) instead of a wall of text — but

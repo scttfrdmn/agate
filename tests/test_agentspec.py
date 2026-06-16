@@ -197,6 +197,13 @@ def test_schedule_must_be_cron_or_rate():
         parse_spec(_base(triggers=[{"on": "schedule:every-monday", "then": "draft"}]))
 
 
+def test_schedule_with_trailing_junk_rejected():
+    # A complete expression is required — `cron(...)<trailing>` must fail at parse, not slip
+    # through to the deploy phase.
+    with pytest.raises(SpecError, match="cron.*rate|rate.*cron"):
+        parse_spec(_base(triggers=[{"on": "schedule:cron(0 9 ? * MON *) drop", "then": "x"}]))
+
+
 # --- capability catalog -----------------------------------------------------
 
 

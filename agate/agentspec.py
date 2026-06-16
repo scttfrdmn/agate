@@ -444,10 +444,12 @@ def _parse_triggers(raw: object) -> tuple[TriggerSpec, ...]:
         if not detail:
             raise SpecError(f"trigger {on!r} needs a detail after '{kind}:'")
         if kind == "schedule" and not (
-            detail.startswith("cron(") or detail.startswith("rate(")
+            (detail.startswith("cron(") or detail.startswith("rate(")) and detail.endswith(")")
         ):
-            # A schedule must be an EventBridge Scheduler expression — never a free-form
-            # string that could mean "run continuously" (NO CLOCKS: per-event only).
+            # A schedule must be a complete EventBridge Scheduler expression — never a
+            # free-form string that could mean "run continuously" (NO CLOCKS: per-event
+            # only). Require the closing ')' too, so `cron(...)<trailing>` fails at parse
+            # rather than slipping through to the deploy phase.
             raise SpecError(
                 f"schedule trigger must be a cron(...) or rate(...) expression (got {detail!r})"
             )

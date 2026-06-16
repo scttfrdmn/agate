@@ -167,5 +167,16 @@ def test_model_access_policy_is_tier_gated():
 
 
 def test_triggers_are_shape_only_descriptors():
-    c = compile_agent(_spec(triggers=[{"on": "lms:submitted", "then": "draft"}]))
-    assert c.triggers == ({"on": "lms:submitted", "then": "draft"},)
+    c = compile_agent(_spec(triggers=[{"on": "event:lms.submitted", "then": "draft"}]))
+    assert c.triggers == ({"on": "event:lms.submitted", "then": "draft"},)
+
+
+def test_compile_emits_typed_trigger_bindings():
+    c = compile_agent(
+        _spec(triggers=[{"on": "schedule:rate(1 day)", "then": "summarize"}])
+    )
+    assert len(c.trigger_bindings) == 1
+    b = c.trigger_bindings[0]
+    assert b.kind == "schedule" and b.expression == "rate(1 day)" and b.handler == "summarize"
+    # tenant is a placeholder at compile time, bound at deploy (like the tags template)
+    assert b.agent.endswith("/" + c.spec.name)

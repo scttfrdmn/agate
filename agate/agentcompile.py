@@ -36,6 +36,7 @@ from agate.identity import (
 )
 from agate.patterns import compile_pattern
 from agate.tags import ROLE_MEMBER, SessionTags, tenant_from_session_name
+from agate.triggers import TriggerBinding, compile_triggers
 
 # Placeholders the compiler stamps where a value is only known at SPAWN time (filled by
 # bounded delegation #106 from the verified spawner/invoker). The braces make them
@@ -60,6 +61,11 @@ class CompiledAgent:
     budget_rows: tuple[BudgetWrite, ...]
     dispatch_payload: dict
     triggers: tuple[dict, ...]
+    # Trigger bindings (#115): the typed, validated deploy descriptors for the spec's
+    # triggers (the deferred deploy phase maps each to a Scheduler schedule / event rule).
+    # The opaque `triggers` dict tuple above is kept for back-compat; this is the form the
+    # triggers core consumes. The agent id carries the tenant placeholder, bound at deploy.
+    trigger_bindings: tuple[TriggerBinding, ...] = ()
     # Identity provenance (#137): which VERSION of the authored spec this is. The stable
     # agent id is `{tenant}/{spec.name}` — derived at spawn, when the verified tenant is
     # known (the tags template here carries a tenant placeholder).
@@ -152,6 +158,7 @@ def compile_agent(
         budget_rows=_budget_rows(spec),
         dispatch_payload=dispatch_payload,
         triggers=tuple({"on": t.on, "then": t.then} for t in spec.triggers),
+        trigger_bindings=compile_triggers(spec, tenant=_TENANT_PLACEHOLDER),
         agent_version=spec_version(spec),
     )
 

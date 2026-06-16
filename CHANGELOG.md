@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Triggered + durable runs — the bounded fire-time core (#115, Phase 11 / tracking #102).**
+  An agent earns its name by working **unattended** — scheduled, event-driven, or durable
+  multi-step (§6). This is the pure, provable core (the live EventBridge/Scheduler/S3/Step
+  Functions CDK folds into the #136 deploy follow-up). The shape-only `TriggerSpec` becomes a
+  **classified** `kind:detail` grammar (like `invokers`): `schedule:cron(...)`/`rate(...)`
+  (EventBridge Scheduler) and `event:<source>` (an EventBridge/S3 source) — and DELIBERATELY
+  only those two, both per-event, so **NO CLOCKS** is structural in the grammar (there is no
+  `poll`/`daemon` kind a spec can declare). A typo'd kind or a non-cron/rate schedule fails
+  closed at parse, so a malformed trigger can't silently no-op on an autonomous agent. New
+  pure `agate/triggers.py`: `compile_triggers` emits the typed `TriggerBinding` deploy
+  descriptors (now on `CompiledAgent.trigger_bindings`); `plan_triggered_run` derives the
+  bounded run for one fire — the credential is `delegate(author, spec)` (#106), so an
+  unattended run is **never more privileged than the human who authored it** (§10.2), and a
+  spec scope disjoint from the author's raises rather than firing over-broad; the OBO record
+  (#137) names the **author** as on-behalf-of, recovered from the bound `<tenant>@<subject>`
+  session — there is no event-identity parameter, so an event payload (what file landed, who
+  submitted) can never set who the run acts as (the event is trigger DATA). `gate_triggered_run`
+  is a thin pass-through to the existing `evaluate_cascade` (#81), holding the unattended run
+  to the **author's own budget**. Durable multi-step needs no standing state: the run plan is
+  deterministic + re-evaluable, which is what lets Step Functions resume it across hours with
+  no always-on component. Pure + AWS-free — no new IAM boundary (it binds/derives the #106
+  boundary already proven against live IAM).
 - **Explicit agent identity + on-behalf-of "acting-as" record (#137, Phase 11 / tracking #102).**
   Makes the three identity questions every action must answer — *who is this agent · on
   whose authority · within what remit* — **one canonical, auditable record** (`ActingAs`)

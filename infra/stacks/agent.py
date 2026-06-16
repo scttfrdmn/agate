@@ -418,6 +418,11 @@ class AgentStack(Stack):
                 schema = self.node.try_get_context(f"connector_openapi_{kind}")
                 if not schema:
                     continue  # no schema supplied for this connector — skip (deploy-config)
+                # Per-connector OAuth scopes (deploy-config, comma-separated). Empty = inherit
+                # the provider's defaults; supplying them lets a vendor API that requires
+                # explicit scopes work. Fail-closed either way (a missing scope under-grants).
+                raw_scopes = self.node.try_get_context(f"connector_oauth_scopes_{kind}") or ""
+                conn_scopes = [s.strip() for s in str(raw_scopes).split(",") if s.strip()]
                 tgt = agentcore.CfnGatewayTarget(
                     self,
                     f"Connector{kind.capitalize()}Target",
@@ -437,7 +442,7 @@ class AgentStack(Stack):
                                 oauth_credential_provider=(
                                     agentcore.CfnGatewayTarget.OAuthCredentialProviderProperty(
                                         provider_arn=oauth_provider.attr_credential_provider_arn,
-                                        scopes=[],
+                                        scopes=conn_scopes,
                                     )
                                 )
                             ),

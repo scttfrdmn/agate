@@ -29,6 +29,7 @@ from agate.budget import normalise_scope
 from agate.entitlements import Affiliation, Tier, derive_tier
 from agate.patterns import Pattern, PatternError, Role
 from agate.patterns import get as pattern_get
+from agate.skills import SkillError, get_skill, skill_capabilities
 
 
 class SpecError(ValueError):
@@ -269,7 +270,11 @@ class AgentSpec:
     role: str
     reasoning: Pattern
     scope: str = ""  # a single agate:scope path ("" = tenant-wide, see parse rules)
-    tools: tuple[str, ...] = ()
+    tools: tuple[str, ...] = ()  # EFFECTIVE tools: authored `tools` ∪ each skill's bundle
+    # Skills declared by the spec (#119): portable capability packages. Kept for audit/UI;
+    # their capabilities are expanded into `tools` at parse, so the compiler sees the union
+    # and a skill grants exactly its (already-catalogued) capabilities — never more.
+    skills: tuple[str, ...] = ()
     memory: MemoryKind = "none"
     budget: BudgetSpec | None = None
     invokers: InvokerSpec | None = None
@@ -299,6 +304,7 @@ _KNOWN_KEYS: frozenset[str] = frozenset(
         "scope",
         "reasoning",
         "tools",
+        "skills",
         "memory",
         "budget",
         "invokers",
@@ -342,6 +348,10 @@ def _parse_reasoning(raw: object) -> Pattern:
             raise SpecError(str(exc)) from exc
     if isinstance(raw, dict):
         return _inline_pattern(raw)
+    if raw is None:
+        # Reached when a spec gives no `reasoning` AND no declared skill supplies a pattern
+        # (#119). Reasoning stays required — fail closed with a clear message.
+        raise SpecError("reasoning is required (a pattern key, an inline pattern, or a skill)")
     raise SpecError("reasoning must be a pattern key or an inline pattern definition")
 
 
@@ -488,7 +498,6 @@ def parse_spec(
     name = _require_str(data, "name", aliases=("agent",))
     description = _require_str(data, "description")
     role = _require_str(data, "role")
-    reasoning = _parse_reasoning(data.get("reasoning"))
 
     # Scope: a single path via the tags grammar (rejects `..`). A scope that is GIVEN
     # but garbles to empty is rejected — a malformed scope must NOT silently become
@@ -501,12 +510,43 @@ def parse_spec(
         if not scope:
             raise SpecError("scope did not normalise to a valid path")
 
+    # Skills (#119): portable capability packages. Each declared skill expands to its
+    # reviewed capabilities, UNIONED into the effective `tools` set — so a skill grants
+    # EXACTLY its (already-catalogued) capabilities and the compiler clamps them like any
+    # tool. A skill that names an uncatalogued capability fails closed (validate_skill).
+    raw_skills = data.get("skills") or ()
+    if not isinstance(raw_skills, (list, tuple)):
+        raise SpecError("skills must be a list")
+    skills = tuple(str(s) for s in raw_skills)
+
     raw_tools = data.get("tools") or ()
     if not isinstance(raw_tools, (list, tuple)):
         raise SpecError("tools must be a list")
-    tools = tuple(str(t) for t in raw_tools)
+    authored_tools = tuple(str(t) for t in raw_tools)
+    # Effective tools = authored ∪ each skill's capabilities, deduped, order-stable.
+    effective: list[str] = list(authored_tools)
+    for s in skills:
+        try:
+            caps = skill_capabilities(s)  # unknown skill / uncatalogued capability -> raises
+        except SkillError as exc:  # surface as a SpecError (the spec-parse contract)
+            raise SpecError(str(exc)) from exc
+        for cap in caps:
+            if cap not in effective:
+                effective.append(cap)
+    tools = tuple(effective)
     for t in tools:
-        get_capability(t)  # raises SpecError on an unknown tool
+        get_capability(t)  # raises SpecError on an unknown tool (covers authored + expanded)
+
+    # Reasoning: an explicit `reasoning` always wins (the author's choice is authoritative).
+    # Only when none is given may a declared skill's `pattern` supply it — fill, never
+    # override. With neither, `_parse_reasoning(None)` raises (reasoning stays required).
+    if data.get("reasoning") is not None:
+        reasoning = _parse_reasoning(data.get("reasoning"))
+    else:
+        skill_pattern = next(
+            (get_skill(s).pattern for s in skills if get_skill(s).pattern is not None), None
+        )
+        reasoning = _parse_reasoning(skill_pattern)
 
     memory = str(data.get("memory", "none")).lower()
     if memory not in _MEMORY_KINDS:
@@ -542,6 +582,7 @@ def parse_spec(
         reasoning=reasoning,
         scope=scope,
         tools=tools,
+        skills=skills,
         memory=memory,  # type: ignore[arg-type]
         budget=budget,
         invokers=invokers,

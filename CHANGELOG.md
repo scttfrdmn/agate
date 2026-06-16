@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Graphical agent authoring — the bounded-menu core (#117, Phase 12 / tracking #103).** The
+  beginner-first authoring ladder (§8.5): template gallery → visual builder → graph editor,
+  all rungs round-tripping to ONE spec dict. The load-bearing insight: graphical authoring is
+  the *safest* surface — **unsafe choices are UNREPRESENTABLE, not rejected** (the picker only
+  renders nodes the author holds; escalation = the absence of the button). New pure
+  `agate/authoring.py` with **two independent guarantees**: (1) `authoring_options(author_tags,
+  candidate_scope_nodes)` enumerates the bounded menu — only tiers ≤ the author's
+  (`TIER_RANK`), only scope nodes the author CONTAINS (`delegate._contains`, the candidate
+  tree injected from tenant data; the author's own scope always offerable), plus the
+  capability/skill/pattern catalogs + the budget/trigger grammar menus — so the builder
+  literally cannot render an over-broad button; and (2) `author_from_options` funnels every
+  selection through the same #118 `dispose_draft` (parse → clamp → render), so even a client
+  bypassing the UI is clamped/rejected exactly as an LLM draft — the menu is a UX convenience,
+  the compiler is the authority. Plus a `template_gallery`/`get_template` (fill-blanks
+  skeletons composing existing capabilities/skills) and a `build_spec` form→dict helper. Pure
+  + AWS-free — no new STS/policy surface (it enumerates a bounded menu and funnels through the
+  proven #106/#108/#118 path). The template gallery, visual builder, graph editor, and NL
+  drafting (#118) are now four front-ends to the one disposer — a beginner is exactly as
+  bounded as a YAML author. The SPA builder UI + the `/authoring` endpoint + the tenant
+  scope-tree data source are deferred consumers.
 - **Natural-language agent drafting — the disposer core (#118, Phase 12 / tracking #103).**
   The ultimate beginner authoring surface (§8.5): *"an agent that summarizes new papers in my
   lab every Monday"* → an LLM **drafts** a spec → the compiler **clamps** it to what the author

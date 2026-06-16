@@ -198,6 +198,11 @@ PeriodKind = Literal["term", "month"]
 MemoryKind = Literal["none", "per-invoker", "personal", "shared"]
 Visibility = Literal["private", "course", "tenant"]
 InvokerKind = Literal["roster", "scope", "tenant"]
+# How an unattended run fires (#115). DELIBERATELY only two kinds, both per-event:
+# `schedule` (EventBridge Scheduler cron/rate) and `event` (an EventBridge/S3 source).
+# There is no `poll`/`daemon` kind — the NO-CLOCKS invariant is structural in the grammar,
+# not a runtime check: nothing a spec can declare implies a standing/idle component.
+TriggerKind = Literal["schedule", "event"]
 
 ReasoningRef = str | Pattern
 
@@ -206,6 +211,7 @@ _VISIBILITIES: frozenset[str] = frozenset(("private", "course", "tenant"))
 _BUDGET_PER: frozenset[str] = frozenset(("student", "user", "scope", "tenant"))
 _PERIOD_KINDS: frozenset[str] = frozenset(("term", "month"))
 _INVOKER_KINDS: frozenset[str] = frozenset(("roster", "scope", "tenant"))
+_TRIGGER_KINDS: frozenset[str] = frozenset(("schedule", "event"))
 
 # "$20 / student / term"  ->  (20, student, term). Also accepts no leading $.
 _BUDGET_RE = re.compile(r"^\$?\s*([0-9]+(?:\.[0-9]+)?)\s*/\s*(\w+)\s*/\s*(\w+)$")
@@ -226,11 +232,17 @@ class InvokerSpec:
 
 @dataclass(frozen=True, slots=True)
 class TriggerSpec:
-    """A trigger binding — SHAPE only here. The actual EventBridge/S3/Step Functions
-    wiring is a later phase (§6); this validates the declaration is well-formed."""
+    """A trigger binding — a CLASSIFIED declaration (#115). `on` carries a `kind:detail`
+    grammar (like `InvokerSpec`): `schedule:cron(...)` / `schedule:rate(...)` for an
+    EventBridge Scheduler schedule, or `event:<source>` (e.g. `event:s3.object-created`) for
+    an EventBridge/S3 event source. The actual rule/schedule/Step-Functions wiring is the
+    deferred deploy phase (§6); `agate.triggers` turns this into the binding descriptor + the
+    bounded fire-time run. `kind`/`detail` are split + validated at parse (fail-closed)."""
 
-    on: str  # e.g. "lms:assignment-submitted"
+    on: str  # the raw `kind:detail`, e.g. "event:lms.assignment-submitted"
     then: str  # an action/handler name resolved by the triggers phase
+    kind: TriggerKind = "event"  # split from `on` at parse
+    detail: str = ""  # the part after `kind:` — the cron/rate expr or the event source
 
 
 # Graph caps (#111): bounded defaults so an agent graph can't recurse or fan out without
@@ -419,7 +431,31 @@ def _parse_triggers(raw: object) -> tuple[TriggerSpec, ...]:
     for t in raw:
         if not isinstance(t, dict) or not t.get("on") or not t.get("then"):
             raise SpecError("each trigger must have 'on' and 'then'")
-        out.append(TriggerSpec(on=str(t["on"]), then=str(t["then"])))
+        on = str(t["on"]).strip()
+        kind, sep, detail = on.partition(":")
+        kind = kind.lower()
+        detail = detail.strip()
+        if not sep or kind not in _TRIGGER_KINDS:
+            # Fail-closed: a typo'd kind on an autonomous agent must NOT silently no-op.
+            raise SpecError(
+                f"trigger 'on' must be '<kind>:<detail>' with kind in {sorted(_TRIGGER_KINDS)} "
+                f"(got {on!r})"
+            )
+        if not detail:
+            raise SpecError(f"trigger {on!r} needs a detail after '{kind}:'")
+        if kind == "schedule" and not (
+            (detail.startswith("cron(") or detail.startswith("rate(")) and detail.endswith(")")
+        ):
+            # A schedule must be a complete EventBridge Scheduler expression — never a
+            # free-form string that could mean "run continuously" (NO CLOCKS: per-event
+            # only). Require the closing ')' too, so `cron(...)<trailing>` fails at parse
+            # rather than slipping through to the deploy phase.
+            raise SpecError(
+                f"schedule trigger must be a cron(...) or rate(...) expression (got {detail!r})"
+            )
+        out.append(
+            TriggerSpec(on=on, then=str(t["then"]), kind=kind, detail=detail)  # type: ignore[arg-type]
+        )
     return tuple(out)
 
 

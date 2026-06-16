@@ -168,12 +168,40 @@ def test_bad_invoker_kind_rejected():
 
 def test_trigger_missing_fields_rejected():
     with pytest.raises(SpecError, match="on.*then|trigger"):
-        parse_spec(_base(triggers=[{"on": "lms:submitted"}]))
+        parse_spec(_base(triggers=[{"on": "event:lms.submitted"}]))
 
 
-def test_triggers_parsed():
-    spec = parse_spec(_base(triggers=[{"on": "lms:submitted", "then": "draft"}]))
-    assert spec.triggers[0].on == "lms:submitted" and spec.triggers[0].then == "draft"
+def test_triggers_parsed_and_classified():
+    spec = parse_spec(_base(triggers=[{"on": "event:lms.submitted", "then": "draft"}]))
+    t = spec.triggers[0]
+    assert t.on == "event:lms.submitted" and t.then == "draft"
+    assert t.kind == "event" and t.detail == "lms.submitted"
+
+
+def test_schedule_trigger_classified():
+    spec = parse_spec(
+        _base(triggers=[{"on": "schedule:cron(0 9 ? * MON *)", "then": "summarize"}])
+    )
+    t = spec.triggers[0]
+    assert t.kind == "schedule" and t.detail == "cron(0 9 ? * MON *)"
+
+
+def test_bad_trigger_kind_rejected():
+    # A typo'd kind must fail closed, not silently no-op on an autonomous agent.
+    with pytest.raises(SpecError, match="kind"):
+        parse_spec(_base(triggers=[{"on": "lms:submitted", "then": "draft"}]))
+
+
+def test_schedule_must_be_cron_or_rate():
+    with pytest.raises(SpecError, match="cron.*rate|rate.*cron"):
+        parse_spec(_base(triggers=[{"on": "schedule:every-monday", "then": "draft"}]))
+
+
+def test_schedule_with_trailing_junk_rejected():
+    # A complete expression is required — `cron(...)<trailing>` must fail at parse, not slip
+    # through to the deploy phase.
+    with pytest.raises(SpecError, match="cron.*rate|rate.*cron"):
+        parse_spec(_base(triggers=[{"on": "schedule:cron(0 9 ? * MON *) drop", "then": "x"}]))
 
 
 # --- capability catalog -----------------------------------------------------

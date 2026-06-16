@@ -21,12 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Mirrors **AgentCore Identity**: an agent is a *workload identity* (authenticates as itself,
   never impersonating the user), and the record binds *both* the agent AND the authorizing
   user — the portable equivalent of AWS's "Agent access token". Emitters compose, not
-  rebuild: `agentcompile.acting_as(compiled, tenant=…, subject=…)` (one per compiled agent
-  run) and `graph.node_acting_as(node, subject=…)` (one per graph hop — its own agent id, the
-  full root→here chain, the one root user's authority). **Fail-closed**: the OBO user comes
-  ONLY from the verified session name (never client-forged), and a legacy/un-encoded session
-  is marked `unattributed` rather than fabricating a user — there is no half-attributed action
-  (§10 invariant). Pure + AWS-free; the live AgentCore workload-identity-directory
+  rebuild, and take the **verified broker-minted RoleSessionName** (`<tenant>@<subject>`,
+  #79) — never bare strings — so the OBO user and the agent's tenant come from one parse and
+  neither is client-forgeable: `agentcompile.acting_as(compiled, session_name=…)` (one per
+  compiled agent run) and `graph.node_acting_as(node, session_name=…)` (one per graph hop —
+  its own agent id, the full root→here chain, the one root user's authority).
+  **Fail-closed**: the OBO user comes ONLY from the verified session name, and a
+  legacy/un-encoded session — or a session whose tenant doesn't match the node's verified
+  tenant — is marked `unattributed` rather than fabricating or cross-binding a user; there is
+  no half-attributed action (§10 invariant). Pure + AWS-free; the live AgentCore workload-identity-directory
   registration + Agent access token issuance fold into the #136 deploy follow-up.
 - **MCP tool catalog + HPC scheduler tool (#113 + #114, Phase 11 / tracking #102).**
   Campus systems become first-class **MCP tools** (the action plane — distinct from

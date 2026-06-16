@@ -27,9 +27,15 @@ from dataclasses import dataclass
 from agate.agentspec import AgentSpec, get_capability
 from agate.budget import BudgetWrite, _scope_pk, _tenant_pk, _user_pk
 from agate.entitlements import models_for_tier
-from agate.identity import ActingAs, acting_as_from_session, agent_id, spec_version
+from agate.identity import (
+    UNATTRIBUTED,
+    ActingAs,
+    acting_as_from_session,
+    agent_id,
+    spec_version,
+)
 from agate.patterns import compile_pattern
-from agate.tags import ROLE_MEMBER, SessionTags, role_session_name
+from agate.tags import ROLE_MEMBER, SessionTags, tenant_from_session_name
 
 # Placeholders the compiler stamps where a value is only known at SPAWN time (filled by
 # bounded delegation #106 from the verified spawner/invoker). The braces make them
@@ -159,14 +165,18 @@ def _remit(compiled: CompiledAgent) -> dict:
     }
 
 
-def acting_as(compiled: CompiledAgent, *, tenant: str, subject: str) -> ActingAs:
-    """The OBO 'acting-as' record for a compiled agent run by a VERIFIED (tenant, subject)
-    — what an executor emits per action (#137). The agent id is `{tenant}/{spec.name}`
-    (the verified tenant); the OBO user is recovered from the RoleSessionName the broker
-    encodes, so it is never client-forged. 'agent X · on behalf of U · remit R.'"""
+def acting_as(compiled: CompiledAgent, *, session_name: str) -> ActingAs:
+    """The OBO 'acting-as' record for a compiled agent run, emitted per action by an
+    executor (#137). `session_name` is the VERIFIED broker-minted RoleSessionName
+    (`<tenant>@<subject>`, #79) — the single source of both the OBO user AND the agent's
+    tenant, so the two can never disagree and neither is client-forgeable. The OBO user is
+    recovered from the session, never passed in; a legacy/un-encoded session degrades to an
+    unattributed agent (`{UNATTRIBUTED}/{spec.name}`) rather than fabricating a tenant.
+    'agent X · on behalf of U · remit R.'"""
+    tenant = tenant_from_session_name(session_name)
     return acting_as_from_session(
-        role_session_name(tenant, subject),
-        agent=agent_id(tenant, compiled.spec.name),
+        session_name,
+        agent=agent_id(tenant or UNATTRIBUTED, compiled.spec.name),
         agent_version=compiled.agent_version,
         remit=_remit(compiled),
     )

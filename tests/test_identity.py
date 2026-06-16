@@ -110,14 +110,23 @@ def test_attributed_requires_both_agent_and_user():
 # --- emitted by the compiler (#105) -----------------------------------------
 
 
-def test_compile_acting_as_binds_verified_user():
+def test_compile_acting_as_binds_user_from_verified_session():
     c = compile_agent(_spec())
-    aa = acting_as(c, tenant="chem", subject="alice")
-    assert aa.agent == "chem/chem101-ta"
+    aa = acting_as(c, session_name="chem@alice")  # the broker-minted RoleSessionName
+    assert aa.agent == "chem/chem101-ta"  # tenant from the SAME verified session
     assert aa.on_behalf_of == "chem@alice"
     assert aa.agent_version == c.agent_version  # provenance carried
     assert aa.remit["scope"] == "chemistry/chem-101"
     assert aa.attributed is True
+
+
+def test_compile_acting_as_legacy_session_is_unattributed():
+    # A legacy/un-encoded session (no `<tenant>@`) can't fabricate a tenant or user.
+    c = compile_agent(_spec())
+    aa = acting_as(c, session_name="legacy-no-at")
+    assert aa.agent == f"{UNATTRIBUTED}/chem101-ta"
+    assert aa.on_behalf_of == UNATTRIBUTED
+    assert aa.attributed is False
 
 
 def test_compiled_agent_carries_version():
@@ -150,9 +159,21 @@ def _graph():
 def test_graph_node_acting_as_carries_chain_and_one_root_user():
     g = _graph()
     grandchild = flatten(g)[2]  # root/lit/cite
-    aa = node_acting_as(grandchild, subject="prof")
+    aa = node_acting_as(grandchild, session_name="uni@prof")
     assert aa.agent == "uni/cite"  # this node's own identity
     assert aa.chain == "root/lit/cite"  # full ancestry
     assert aa.on_behalf_of == "uni@prof"  # the one authorizing user, every hop
     assert aa.remit["tier"] == "oss"  # the node's narrowed tier (student)
     assert aa.attributed is True
+
+
+def test_graph_node_acting_as_rejects_cross_tenant_session():
+    # A session whose tenant differs from the node's verified tenant must NOT bind:
+    # fail-closed to unattributed rather than forge a cross-tenant OBO record.
+    g = _graph()  # nodes are tenant "uni"
+    grandchild = flatten(g)[2]
+    aa = node_acting_as(grandchild, session_name="evil@mallory")
+    assert aa.on_behalf_of == UNATTRIBUTED
+    assert aa.subject == UNATTRIBUTED
+    assert aa.attributed is False
+    assert aa.agent == "uni/cite"  # the node's own identity is still recorded

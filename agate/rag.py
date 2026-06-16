@@ -269,12 +269,25 @@ class ChunkRecord:
     metadata: dict[str, str | int | list[str]] = field(default_factory=dict)
 
 
-def build_chunk_records(s3_key: str, text: str, **chunk_kwargs) -> list[ChunkRecord]:
+def build_chunk_records(
+    s3_key: str,
+    text: str,
+    *,
+    source_system: str | None = None,
+    source_item: str | None = None,
+    **chunk_kwargs,
+) -> list[ChunkRecord]:
     """Chunk a document and assemble per-chunk records with source metadata.
 
     Metadata carries provenance (source key, chunk index) so retrieval results can
     cite their origin. The tenant is intentionally NOT trusted from metadata — it is
     enforced by the index the vectors are written to (one index per tenant).
+
+    For connector-ingested content (#133), `source_system` (e.g. `"gdrive"`) and
+    `source_item` (the original source path/URL) attach non-filterable provenance so a
+    retrieved chunk cites its source SYSTEM + item, not just the agate S3 key. Both are
+    optional and additive: omitting them leaves the metadata exactly as an upload's. The
+    tenant/scope are STILL derived from `s3_key` (the hard fence), never from these.
     """
     tenant = tenant_from_s3_key(s3_key)
     course = course_from_s3_key(s3_key)
@@ -299,5 +312,10 @@ def build_chunk_records(s3_key: str, text: str, **chunk_kwargs) -> list[ChunkRec
         # path; a tenant-wide doc carries neither course nor scope.
         if scope_ancestors:
             metadata[SCOPE_META_KEY] = scope_ancestors
+        # Connector provenance (#133): the source system + item, non-filterable.
+        if source_system:
+            metadata["source_system"] = source_system
+        if source_item:
+            metadata["source_item"] = source_item
         records.append(ChunkRecord(key=vector_key(s3_key, i), text=chunk, metadata=metadata))
     return records

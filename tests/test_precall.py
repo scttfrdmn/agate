@@ -95,3 +95,47 @@ def test_precall_is_stricter_than_soft_cap():
         pricebook=PB,
     )
     assert pre.decision == "reject"
+
+
+# --- flat-USD priced-action gates (#120) ------------------------------------
+
+
+def test_priced_call_allows_within_budget():
+    from cost import evaluate_priced_call
+
+    r = evaluate_priced_call(price_usd=0.05, spend=1.0, budget=10.0)
+    assert r.decision == "allow"
+    assert r.estimated_cost == 0.05
+    assert r.projected_total == 1.05
+
+
+def test_priced_call_rejects_over_budget():
+    from cost import evaluate_priced_call
+
+    r = evaluate_priced_call(price_usd=5.0, spend=8.0, budget=10.0)  # 13 > 10
+    assert r.decision == "reject"
+
+
+def test_priced_call_no_budget_allows_and_negative_price_fails_closed():
+    from cost import evaluate_priced_call
+
+    assert evaluate_priced_call(price_usd=99.0, spend=0.0, budget=None).decision == "allow"
+    assert evaluate_priced_call(price_usd=-1.0, spend=0.0, budget=10.0).decision == "reject"
+
+
+def test_priced_cascade_names_first_breaching_node():
+    from cost import evaluate_priced_cascade
+
+    nodes = [("tenant", 0.0, 100.0), ("lab/photonics", 9.99, 10.0)]
+    r = evaluate_priced_cascade(price_usd=0.5, nodes=nodes)  # fits tenant, breaches lab
+    assert r.decision == "reject"
+    assert r.breaching_node == "lab/photonics"
+
+
+def test_priced_cascade_empty_nodes_and_none_budget_allow():
+    from cost import evaluate_priced_cascade
+
+    assert evaluate_priced_cascade(price_usd=1.0, nodes=[]).decision == "allow"
+    assert (
+        evaluate_priced_cascade(price_usd=1.0, nodes=[("t", 0.0, None)]).decision == "allow"
+    )

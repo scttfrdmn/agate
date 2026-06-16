@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A2A — external-peer admission, governed (#119 slice, Phase 12 / tracking #103).** The
+  headline open-standard interop contribution and the agenkit/agate split (§0.1) made
+  concrete: an external agent's **card** advertises capability, but **authority is the
+  narrowed assumed-role, never the card's claims**. New pure `agate/a2a.py`: a `PeerRequest`
+  is the UNTRUSTED ask derived from a received card (name, requested scope, requested role,
+  origin — every field a *claim*), and `admit_peer(caller_tags, peer_request, subject=)`
+  clamps it to the caller exactly like the #106 sub-agent narrowing — `child_tags.scope =
+  scope_intersect(caller, request)`, `tier = min(caller, requested)`, tenant fixed to the
+  caller's, role forced member, a disjoint request raising `A2AError` (fail-closed). **The
+  card's advertised tier/scope are irrelevant** — the admitted authority depends ONLY on
+  `(caller, requested_scope, requested_role)`; two peers with the same request but different
+  name/origin get the identical credential. The hop is attributed as external via a #137
+  `ActingAs` whose agent id is `{tenant}/external-{name}` (a hyphen marker that survives
+  `_clean_id`), on the verified ROOT user's authority (the peer acts on the caller's
+  authority, not its own), with the card's origin recorded as untrusted provenance in the
+  remit. `peer_cascade_nodes` gates the peer's spend against the caller's family budget (#112
+  — a runaway peer can't drain the caller's ceiling). Pure + AWS-free — no new STS/policy
+  surface (the clamp is `delegate`/#106, already proven live; the A2A wire — discovery, card
+  exchange, transport, the live remote assume-role — is agenkit's per §0.1). AG-UI / A2UI and
+  the graph integration remain as #119 follow-ups.
 - **Graphical agent authoring — the bounded-menu core (#117, Phase 12 / tracking #103).** The
   beginner-first authoring ladder (§8.5): template gallery → visual builder → graph editor,
   all rungs round-tripping to ONE spec dict. The load-bearing insight: graphical authoring is

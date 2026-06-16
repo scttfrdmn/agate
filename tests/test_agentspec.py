@@ -153,6 +153,25 @@ def test_nan_budget_rejected():
         parse_spec(_base(budget={"usd": float("nan"), "per": "student", "period": "term"}))
 
 
+# --- skills (#119): expand into effective tools, fail closed ----------------
+
+
+def test_skills_expand_into_tools():
+    spec = parse_spec(_base(skills=["lit-reviewer"]))
+    assert spec.skills == ("lit-reviewer",)
+    assert set(spec.tools) == {"library-search", "course-materials-reader"}
+
+
+def test_unknown_skill_rejected():
+    with pytest.raises(SpecError):
+        parse_spec(_base(skills=["nonesuch"]))
+
+
+def test_skills_must_be_a_list():
+    with pytest.raises(SpecError, match="skills must be a list"):
+        parse_spec(_base(skills="lit-reviewer"))
+
+
 # --- invokers + triggers (shape only) ---------------------------------------
 
 

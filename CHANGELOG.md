@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Skills — governed capability packages (#119 slice 1, Phase 12 / tracking #103).**
+  Adopts the open **Skills** idea (portable, model-agnostic capability packages) for interop,
+  keeping agate's boundary underneath (§8.6: *the open agent stack, governed*). A **Skill is a
+  reviewed bundle of capabilities** (a set of #113 capability names + an optional reasoning
+  `pattern`); listing it in a spec is **sugar for listing its capabilities**. New pure
+  `agate/skills.py` generalizes the proto-skill registry the vision points at
+  (`agate.patterns`): `Skill` + `register_skill`/`get_skill`/`skill_catalog`/
+  `skill_capabilities`/`validate_skill`, plus reference skills (`lit-reviewer`, `hpc-analyst`)
+  composing existing capabilities. `AgentSpec` gains a `skills` field (#KNOWN_KEYS); at parse,
+  each declared skill **expands into the effective `tools` set** (authored ∪ each skill's
+  bundle, deduped) — so the #105 compiler sees the union and clamps it to the agent's
+  scope/tier exactly as for a directly-listed tool. The headline invariant: **a Skill can
+  never grant a capability the agent couldn't declare directly** — every bundled capability
+  must already exist in the catalog (a skill that names an uncatalogued one fails closed at
+  parse), and a `skills`-only spec compiles to the **identical `tool_policy`** as the
+  equivalent explicit `tools` (proven, incl. live `SimulateCustomPolicy`). A skill's `pattern`
+  fills `reasoning` only when the spec gave none (an explicit `reasoning` always wins).
+  Pure + AWS-free — no new STS/policy surface (a skill is sugar over `tools`, which the
+  #105/#113 boundary already proves live). A2A / AG-UI / A2UI remain as #119 follow-ups.
 - **Collaborative scoped rooms — the security core (#116, Phase 12 / tracking #103).**
   The social surface (§7): a **room is a scope-tagged object** where humans AND agents are
   participants, each carrying its own bounded credential, and the room's reach is the

@@ -124,3 +124,43 @@ def test_no_tenant_tag_denies_tool_invocation(iam_client):
         ContextEntries=[],  # no tenant tag -> the DenyToolsWhenNoTenantTag guard fires
     )
     assert resp["EvaluationResults"][0]["EvalDecision"] in ("implicitDeny", "explicitDeny")
+
+
+# --- #119 Skills: a skill compiles to its capabilities' IAM, no more --------
+
+
+def _skill_spec(skills):
+    return parse_spec(
+        {
+            "agent": "lab-agent", "description": "d", "role": "researcher",
+            "scope": "lab/photonics", "reasoning": "lit-review", "skills": skills,
+        }
+    )
+
+
+@pytest.mark.aws
+def test_skill_granted_gateway_tool_is_invocable(iam_client):
+    # hpc-analyst bundles hpc-monitor + hpc-submit; a skills-only spec's compiled policy
+    # invokes the gateway exactly as if the tools were listed directly.
+    c = compile_agent(_skill_spec(["hpc-analyst"]), region=REGION, account=ACCOUNT,
+                      gateway_arn=GATEWAY_ARN)
+    d = _eval(
+        iam_client, c.tool_policy, action="bedrock-agentcore:InvokeGateway",
+        resource="arn:aws:bedrock-agentcore:us-east-1:111122223333:gateway/agate-hpc",
+        tags=_tags(),
+    )
+    assert d == "allowed"
+
+
+@pytest.mark.aws
+def test_skill_does_not_widen_beyond_its_capabilities(iam_client):
+    # An agent whose ONLY skill is hpc-analyst still can't invoke an undeclared agentcore
+    # action — the skill grants its bundle, never more.
+    c = compile_agent(_skill_spec(["hpc-analyst"]), region=REGION, account=ACCOUNT,
+                      gateway_arn=GATEWAY_ARN)
+    d = _eval(
+        iam_client, c.tool_policy, action="bedrock-agentcore:CreateGateway",  # not granted
+        resource="arn:aws:bedrock-agentcore:us-east-1:111122223333:gateway/agate-hpc",
+        tags=_tags(),
+    )
+    assert d in ("implicitDeny", "explicitDeny")

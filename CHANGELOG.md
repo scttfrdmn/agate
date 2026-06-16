@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Agent payments — the governance core (#120, Phase 12 / tracking #103).** Turns agate from
+  "governs what an agent can *read and run*" into "…read, run, **and pay for**" — same single
+  boundary. The unsolved problem in agent payments is **bounded autonomy**; agate already
+  solves it for tokens (metering #79, pre-call checks, cascade #81, monotonic delegation #106),
+  so #120 **generalizes "spend" from tokens to any priced action**. `cost/precall.py` gains
+  flat-USD gates — `evaluate_priced_call` / `evaluate_priced_cascade` — that reuse the SAME
+  `_node_decision` rule as the token gates (no drift): an x402-priced call is "another metered
+  action," pre-authorized against remaining budget before it fires, the first breaching cascade
+  node named. New pure `agate/payments.py`: a **`Mandate`** is the compiled `budget` made into
+  a scoped, delegatable spending authorization (the AP2 concept as agate data — the signature/
+  wire is agenkit's, per §0.1), carrying a #137 `ActingAs` so every payment is attributed (who ·
+  on whose authority · remit). `mandate_from_budget` derives it (None when the spec declares no
+  budget = no spending authority); `delegate_mandate` **narrows** a child's mandate by the EXACT
+  #106 rule (`delegate_budget` + `scope_intersect`) — a child can never out-spend its parent and
+  a disjoint child scope is refused, so "my agent may buy datasets up to $50/mo" can't become
+  "and so may every sub-agent, each up to $50"; `authorize_spend` gates one priced action; and
+  `priced_action_row` records a settled x402 call (`kind="x402"`, vendor, attribution) like any
+  cost row. The **budget ceiling — never the vendor's quoted price — is the authority**: an
+  over-budget call is rejected regardless of the quoted price, and a caller-supplied price is
+  used only to gate + debit. Pure + AWS-free — no new STS/policy surface (reuses the #81 cascade
+  + #106 delegation, already proven live). The x402 wire/settlement + AP2 JWS transport (agenkit)
+  and the live debit (the executor's meter call) are deferred follow-ups.
 - **Skills — governed capability packages (#119 slice 1, Phase 12 / tracking #103).**
   Adopts the open **Skills** idea (portable, model-agnostic capability packages) for interop,
   keeping agate's boundary underneath (§8.6: *the open agent stack, governed*). A **Skill is a

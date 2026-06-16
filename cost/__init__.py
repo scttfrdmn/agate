@@ -14,6 +14,8 @@ from cost.precall import (
     estimate_call_cost,
     evaluate_cascade,
     evaluate_precall,
+    evaluate_priced_call,
+    evaluate_priced_cascade,
 )
 from cost.pricelist import (
     BEDROCK_ALIASES,
@@ -44,6 +46,8 @@ __all__ = [
     "estimate_call_cost",
     "evaluate_cascade",
     "evaluate_precall",
+    "evaluate_priced_call",
+    "evaluate_priced_cascade",
     "evaluate_soft_cap",
     "load_baked_rates",
     "parse_price_list",

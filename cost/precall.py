@@ -16,6 +16,7 @@ spend table) and the budget.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Literal
 
@@ -46,9 +47,16 @@ def _node_decision(est: float, spend: float, budget: float | None) -> tuple[bool
     """The per-node allow/reject rule, shared by the single- and multi-budget gates.
 
     Mirrors the original evaluate_precall branches exactly so behaviour can't drift:
-    no budget -> ok (no cap); <=0 -> reject; negative spend -> reject (fail closed);
-    spend + worst-case > budget -> reject; else ok.
+    non-finite cost/spend -> reject (fail closed); no budget -> ok (no cap); <=0 -> reject;
+    negative spend -> reject; spend + worst-case > budget -> reject; else ok.
+
+    The non-finite guard is load-bearing for the #120 priced gates: a caller-supplied NaN
+    price would otherwise slip through every comparison (NaN compares False to everything),
+    making the money gate fail OPEN. Reject any non-finite cost or spend BEFORE the budget
+    check so NaN/inf can never be authorized (the #87 NaN-budget-bypass class, centralized).
     """
+    if not math.isfinite(est) or not math.isfinite(spend):
+        return False, "invalid amount"
     if budget is None:
         return True, "no budget configured"
     if budget <= 0:
@@ -137,3 +145,42 @@ def evaluate_cascade(
         if not ok:
             return CascadeResult("reject", est, label, reason)
     return CascadeResult("allow", est, None, "within budget")
+
+
+# --- flat-USD priced actions (#120) -----------------------------------------
+# An x402-priced tool/data call is "another metered action": instead of pricing tokens, the
+# (vendor-quoted, caller-supplied) flat USD price IS the worst-case estimate. These gates
+# reuse the SAME `_node_decision` rule as the token gates above, so there is no behavioural
+# drift — the budget ceiling is the authority, never the quoted price. A negative price fails
+# closed (mirrors the negative-spend guard). agate gates + debits; the x402 wire is agenkit's.
+
+
+def evaluate_priced_call(
+    *, price_usd: float, spend: float, budget: float | None
+) -> PrecallResult:
+    """Allow/reject ONE flat-priced action before it fires (the chokepoint pattern, for a
+    priced call instead of a model call). `price_usd` is the worst-case cost; a negative
+    price is rejected. Same allow/reject rule as `evaluate_precall`."""
+    if price_usd < 0 or not math.isfinite(price_usd):
+        # Negative OR non-finite (NaN/inf): a NaN would otherwise compare False to every
+        # budget and fail the money gate OPEN — reject up front (also caught by _node_decision).
+        return PrecallResult("reject", price_usd, round(spend, 6), "invalid price")
+    projected = round(spend + price_usd, 6)
+    ok, reason = _node_decision(price_usd, spend, budget)
+    return PrecallResult("allow" if ok else "reject", price_usd, projected, reason)
+
+
+def evaluate_priced_cascade(
+    *, price_usd: float, nodes: list[tuple[str, float, float | None]]
+) -> CascadeResult:
+    """Allow a flat-priced action only if it fits under EVERY node's budget (the hierarchical
+    cascade, #81/#112 — so a runaway sub-agent can't drain the family ceiling). Identical loop
+    to `evaluate_cascade`, with the quoted `price_usd` as the estimate. A negative price fails
+    closed; the FIRST breaching node is named."""
+    if price_usd < 0 or not math.isfinite(price_usd):
+        return CascadeResult("reject", price_usd, None, "invalid price")
+    for label, spend, budget in nodes:
+        ok, reason = _node_decision(price_usd, spend, budget)
+        if not ok:
+            return CascadeResult("reject", price_usd, label, reason)
+    return CascadeResult("allow", price_usd, None, "within budget")

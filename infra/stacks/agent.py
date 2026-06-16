@@ -301,11 +301,28 @@ class AgentStack(Stack):
             description=f"agate campus-tool gateway (tenant {tenant}) - MCP, per-request",
         )
 
+        # --- Workload identity (#137 deploy binding) ----------------------
+        # The live AgentCore workload-identity directory entry that the pure `agate.identity`
+        # agent id (`{tenant}/{spec.name}`) binds to at deploy: an agent authenticates AS
+        # ITSELF (a workload identity), and an action's ActingAs record names this identity +
+        # the OBO user (AWS's "Agent access token" model, security memo §6.1 / #137). One
+        # per-tenant directory entry here; per-agent ids live under it. The allowed OAuth
+        # return URLs are the deploy-config callback(s) the user-delegated providers below use.
+        oauth_return_url = self.node.try_get_context("oauth_return_url")
+        workload_identity = agentcore.CfnWorkloadIdentity(
+            self,
+            "WorkloadIdentity",
+            name=f"{HANDLE}-{tenant}",
+            allowed_resource_oauth2_return_urls=(
+                [oauth_return_url] if oauth_return_url else None
+            ),
+        )
+
         # OAuth2 credential provider for USER-DELEGATED outbound auth (#136 / §5): the agent
         # reaches an external system AS the verified user, so the source ACL composes with
         # agate's scope. Slurm (an internal cluster) uses the scoped IAM role, not OAuth — so
-        # the Slurm target below uses the IAM credential path; this provider is here for the
-        # #133 connector targets (Drive/Box/Teams/Discord) to attach as they land.
+        # the Slurm target below uses the IAM credential path; this provider is for the
+        # #133 connector targets (Drive/Box/Teams/Discord) wired below.
         google_client_id = self.node.try_get_context("google_oauth_client_id")
         google_secret_arn = self.node.try_get_context("google_oauth_secret_arn")
         oauth_provider = None
@@ -320,11 +337,7 @@ class AgentStack(Stack):
                         google_oauth2_provider_config=(
                             agentcore.CfnOAuth2CredentialProvider.GoogleOauth2ProviderConfigInputProperty(
                                 client_id=google_client_id,
-                                client_secret=(
-                                    agentcore.CfnOAuth2CredentialProvider.ClientSecretArnProperty(
-                                        secret_arn=google_secret_arn
-                                    )
-                                ),
+                                client_secret=google_secret_arn,  # the Secrets Manager ARN
                             )
                         )
                     )
@@ -388,6 +401,55 @@ class AgentStack(Stack):
             action="lambda:InvokeFunction",
         )
 
+        # --- Connector targets (#133 data plane, user-delegated OAuth) ----
+        # The user-oauth connectors (Drive/Box/Teams/Discord) reach their content APIs AS the
+        # verified user via the OAuth provider above — the source's own ACL composes with
+        # agate's scope (defense in depth, §5). Each is an OpenAPI Gateway target whose schema
+        # is deploy-config (a `connector_openapi_{kind}` context key, like the agent container
+        # URI is deploy-time), attached to the OAuth credential provider. A connector wired
+        # here only INGESTS into the `{tenant}/{scope}/_connectors/…` corpus (#133); the data
+        # fence (#80/#84) governs what's retrievable. Gated on the OAuth provider existing +
+        # a schema being supplied, so absent config simply produces no target (NO CLOCKS — a
+        # target is per-request, nothing idles).
+        connector_targets: list = []
+        connector_kinds: list[str] = []
+        if oauth_provider is not None:
+            for kind in ("gdrive", "box", "teams", "discord"):
+                schema = self.node.try_get_context(f"connector_openapi_{kind}")
+                if not schema:
+                    continue  # no schema supplied for this connector — skip (deploy-config)
+                tgt = agentcore.CfnGatewayTarget(
+                    self,
+                    f"Connector{kind.capitalize()}Target",
+                    gateway_identifier=gateway.attr_gateway_identifier,
+                    name=f"{HANDLE}-connector-{kind}",
+                    target_configuration=agentcore.CfnGatewayTarget.TargetConfigurationProperty(
+                        mcp=agentcore.CfnGatewayTarget.McpTargetConfigurationProperty(
+                            open_api_schema=agentcore.CfnGatewayTarget.ApiSchemaConfigurationProperty(
+                                inline_payload=schema,
+                            ),
+                        )
+                    ),
+                    credential_provider_configurations=[
+                        agentcore.CfnGatewayTarget.CredentialProviderConfigurationProperty(
+                            credential_provider_type="OAUTH",
+                            credential_provider=agentcore.CfnGatewayTarget.CredentialProviderProperty(
+                                oauth_credential_provider=(
+                                    agentcore.CfnGatewayTarget.OAuthCredentialProviderProperty(
+                                        provider_arn=oauth_provider.attr_credential_provider_arn,
+                                        scopes=[],
+                                    )
+                                )
+                            ),
+                        )
+                    ],
+                    description=f"agate {kind} connector (user-delegated OAuth, #133)",
+                )
+                tgt.add_dependency(gateway)
+                tgt.add_dependency(oauth_provider)
+                connector_targets.append(tgt)
+                connector_kinds.append(kind)
+
         # --- Outputs -------------------------------------------------------
         cdk.CfnOutput(self, "RuntimeArn", value=runtime.attr_agent_runtime_arn)
         cdk.CfnOutput(self, "RuntimeEndpointName", value="default")
@@ -424,11 +486,23 @@ class AgentStack(Stack):
             "OutboundOAuthStatus",
             value="google-configured" if oauth_provider is not None else "PLACEHOLDER-no-oauth",
         )
+        # Workload identity (#137 deploy binding) + connector targets (#133 live side).
+        cdk.CfnOutput(
+            self, "WorkloadIdentityArn", value=workload_identity.attr_workload_identity_arn
+        )
+        cdk.CfnOutput(
+            self,
+            "ConnectorTargets",
+            value=",".join(f"{HANDLE}-connector-{k}" for k in connector_kinds)
+            or "PLACEHOLDER-no-connectors",
+        )
 
         self.runtime = runtime
         self.execution_role = execution_role
         self.gateway = gateway
         self.slurm_fn = slurm_fn
         self.gateway_name = gateway_name
+        self.workload_identity = workload_identity
+        self.connector_targets = tuple(connector_targets)
         # The tag-key constant is referenced by the synth test's fence assertion.
         self._tenant_tag_key = tag_key("tenant")

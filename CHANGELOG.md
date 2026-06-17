@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Visual builder: the "Build an agent" SPA screen (#117 — UI, PR 2 of 2).** The graphical
+  authoring surface over the #117 endpoint. NEW `web/src/drafting/builder.ts`: an
+  `AuthoringClient` (SigV4-signs `options`/`dispose` to the authoring Function URL) + a pure
+  `buildSpecFromForm` (assembles a spec dict from form state, omitting empty optionals; role
+  fixed to `member` — the server derives + clamps tier). A new "Build an agent" nav item +
+  `showBuild`/`renderBuilderForm` in `web/src/main.ts`: fetches the bounded menu and renders a
+  form whose scope `<select>` offers ONLY nodes the author holds and whose capability checklist
+  is the catalogued tool set (unsafe is unrepresentable), plus an optional template prefill.
+  "Review" disposes the assembled spec through the endpoint (server re-clamps) and reuses the
+  #118 `renderDraft` + `DeployClient` confirm/create flow — so the builder shares the exact
+  bounded-plan → confirm → create path as the natural-language drafter. Gated on
+  `VITE_AUTHORING_URL` + login. 114 web tests pass, `tsc` + build clean. Completes #117.
 - **Graphical authoring endpoint: the bounded-menu surface (#117 — server, PR 1 of 2).** The
   live side of the visual builder / template gallery. NEW `infra/functions/authoring/` +
   `infra/stacks/authoring.py` (`AuthoringStack`): a Lambda behind an IAM-authed Function URL

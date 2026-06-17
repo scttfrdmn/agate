@@ -26,6 +26,7 @@ from infra.stacks.demo_idp import DemoIdpStack  # noqa: E402
 from infra.stacks.governance import GovernanceStack  # noqa: E402
 from infra.stacks.identity import IdentityStack  # noqa: E402
 from infra.stacks.lti import LtiStack  # noqa: E402
+from infra.stacks.memory import MemoryStack  # noqa: E402
 from infra.stacks.web import WebStack  # noqa: E402
 
 app = cdk.App()
@@ -48,6 +49,10 @@ AdminStack(app, "agate-admin", env=env)
 # Optional Tier 1 — only deploy when an institution requires exact pre-call caps,
 # centralized inspection, or non-Bedrock routing (design §2, §12 Phase 6).
 ChokepointStack(app, "agate-chokepoint", env=env)
+# Optional cross-session memory (#130) — only deploy when an institution wants persistent
+# agent memory. UNLIKE the rest of the fleet, managed AgentCore Memory is NOT $0-idle (it
+# stores + extracts continuously), so it is opt-in: `cdk deploy agate-memory`.
+MemoryStack(app, "agate-memory", env=env)
 # Demo-only OIDC IdP — a throwaway Cognito User Pool for showing the gateway
 # without a campus IdP. Production omits this and points the broker at the real IdP.
 DemoIdpStack(app, "agate-demo-idp", env=env)

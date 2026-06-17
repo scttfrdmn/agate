@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **AgentCore Memory: live resource + SDK read/write path (#130, follow-up to #110).** The
+  pure namespace core (`agate.memory.namespaces_for`) + the IAM fence
+  (`policy.generate.memory_access_policy`, live-proven) now have a real resource behind them.
+  NEW `infra/stacks/memory.py` (`MemoryStack`): a `CfnMemory` with the **semantic** +
+  **summary** strategies (graph/temporal deferred per the 2026 research), an AgentCore
+  extraction execution role, and a read/write Lambda (`infra/functions/memory/handler.py`).
+  The handler is the EFFECT half of the §5 split for memory: it derives EVERY namespace/actor
+  from the verified IdP token via `namespaces_for` — **never** from the tool payload. `record`
+  (`create_event`) uses a server-derived, tenant-qualified + injective (`subject_key`)
+  `actorId`; `recall` (`retrieve_memory_records`) reads an explicit `namespacePath` taken from
+  `namespaces_for[tier]`, and a tier the session lacks (e.g. `shared` when unscoped) is
+  rejected. Like the #84 retrieval proxy, the handler ASSUMES a separate tenant-fenced role
+  with the verified `agate:` session tags before touching AgentCore — the
+  `memory_access_policy(memory_arn)` fence lives on THAT role, so the principal that actually
+  calls AgentCore carries the `agate:tenant`/`agate:scope` tags the policy's `namespacePath`
+  condition interpolates (the Lambda's own role holds no memory data perms — only `sts:AssumeRole`
+  on the fenced role). So the same `agate:` tag fence guarding documents (#80) and vectors
+  (#84) guards memory — no leak across tenant, principal, or scope (§10.3). **OPT-IN cost posture:** unlike every other agate
+  resource (per-request / $0-idle), managed AgentCore Memory stores + extracts continuously, so
+  `agate-memory` is never in the default fleet — an institution stands it up explicitly
+  (`cdk deploy agate-memory`), exactly like the Tier-1 chokepoint. Deploy-ready, NOT
+  auto-deployed (it's billable). Unit + synth tests added; the live `SimulateCustomPolicy`
+  proof (`tests/test_proof_memory.py`) is unchanged and still green. The in-container runtime
+  record/recall hook (`agent/server.py`) is a separate follow-up (#130b — needs a container
+  rebuild).
+
 ### Fixed
 - **Cedar governance policies load as one statement per AgentCore `CfnPolicy` (#governance,
   surfaced by the first live deploy of `agate-governance`).** The stack passed the whole Cedar

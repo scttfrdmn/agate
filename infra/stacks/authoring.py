@@ -28,15 +28,12 @@ from aws_cdk import (
     aws_lambda as lambda_,
 )
 from constructs import Construct
-from infra.assets import pip_bundled_code
+from infra.assets import oidc_env_from_context, pip_bundled_code
 
 
 class AuthoringStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
-
-        oidc_discovery_url = self.node.try_get_context("cognito_discovery_url") or ""
-        allowed_audience = self.node.try_get_context("cognito_audience") or ""
 
         fn = lambda_.Function(
             self,
@@ -49,8 +46,8 @@ class AuthoringStack(Stack):
             memory_size=256,
             environment={
                 "AGATE_REGION": self.region,
-                "AGATE_OIDC_ISSUER": oidc_discovery_url,
-                "AGATE_OIDC_AUDIENCE": allowed_audience,
+                # The verified-token coords (issuer + JWKS + audience).
+                **oidc_env_from_context(self.node),
             },
             description="agate graphical authoring - bounded menu + compiler clamp (#117)",
         )

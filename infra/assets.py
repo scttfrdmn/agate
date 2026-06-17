@@ -132,3 +132,26 @@ def pip_bundled_code(*packages: str) -> lambda_.Code:
             local=_LocalPipBundler(packages),
         ),
     )
+
+
+def oidc_env_from_context(node) -> dict[str, str]:  # noqa: ANN001 — a constructs.Node
+    """The OIDC verifier env (`AGATE_OIDC_*`) for any handler that calls
+    `agate.jwt_verify.verify_token`, derived from the `cognito_discovery_url` + `cognito_audience`
+    deploy context. `verify_token` needs the **JWKS URL** (not just the discovery URL) and the
+    **issuer** — so this derives both from the Cognito discovery URL
+    (`{issuer}/.well-known/openid-configuration`): issuer = the discovery URL minus that suffix,
+    jwks = `{issuer}/.well-known/jwks.json`. Wiring only `AGATE_OIDC_ISSUER` (the bug this fixes)
+    left `jwks_url` empty, so `verify_token` failed closed and every request 403'd.
+
+    Returns all three keys empty when no discovery URL is configured (the handler then fails
+    closed by design). Centralised so the drafting/deploy/authoring/rooms/memory endpoints can't
+    drift from the broker's (identity stack) OIDC wiring."""
+    discovery = (node.try_get_context("cognito_discovery_url") or "").strip()
+    audience = node.try_get_context("cognito_audience") or ""
+    issuer = discovery.removesuffix("/.well-known/openid-configuration") if discovery else ""
+    jwks = f"{issuer}/.well-known/jwks.json" if issuer else ""
+    return {
+        "AGATE_OIDC_ISSUER": issuer,
+        "AGATE_OIDC_JWKS_URL": jwks,
+        "AGATE_OIDC_AUDIENCE": audience,
+    }

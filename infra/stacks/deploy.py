@@ -30,7 +30,7 @@ from aws_cdk import (
     aws_lambda as lambda_,
 )
 from constructs import Construct
-from infra.assets import pip_bundled_code
+from infra.assets import oidc_env_from_context, pip_bundled_code
 from policy.generate import agent_write_policy
 
 
@@ -41,9 +41,6 @@ class DeployStack(Stack):
         region = self.region
         account = self.account
         docs_bucket = f"{DOCS_BUCKET_PREFIX}-{account}-{region}"
-
-        oidc_discovery_url = self.node.try_get_context("cognito_discovery_url") or ""
-        allowed_audience = self.node.try_get_context("cognito_audience") or ""
 
         fn = lambda_.Function(
             self,
@@ -57,8 +54,8 @@ class DeployStack(Stack):
             environment={
                 "AGATE_REGION": region,
                 "AGATE_DOCS_BUCKET": docs_bucket,
-                "AGATE_OIDC_ISSUER": oidc_discovery_url,
-                "AGATE_OIDC_AUDIENCE": allowed_audience,
+                # The verified-token coords (issuer + JWKS + audience).
+                **oidc_env_from_context(self.node),
             },
             description="agate deploy-on-confirm - re-clamp + persist a created agent (#118)",
         )

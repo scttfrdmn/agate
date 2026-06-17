@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Deploy-on-confirm: create a confirmed agent as a governed spec record (#118, the last
+  authoring slice — server side).** When a user confirms a drafted plan, the agent is *created*
+  by persisting its governed spec — per §0.1 agate governs (records the spec + bound), the
+  runtime/agenkit re-instantiates + runs it; no standing credential is vended. NEW pure
+  `agate/agent_record.py` (`SavedAgent`, `build_agent_record`, `agent_object_key`): a created
+  agent is a scope-tagged S3 object at `{tenant}/{scope}/_agents/{name}.json`, so its access
+  control IS the `{tenant}/{scope}/` prefix fence (the SavedSession #109 pattern); the stored
+  spec is the validated draft dict (reload via `parse_spec`). NEW `infra/functions/deploy/`
+  endpoint + `infra/stacks/deploy.py` (`DeployStack`): **the #130 lesson applied** — it
+  RE-RUNS `dispose_draft` against the VERIFIED token (re-clamping server-side, so the echoed
+  spec is never trusted as authority — a tampered/over-broad one is clamped down or rejected),
+  keys the record under the re-clamped tenant/scope, and WRITES through a tenant-fenced role it
+  ASSUMES with the verified `agate:` tags (the broadly-vended browser role stays read-only).
+  NEW `policy.generate.agent_write_policy`: `PutObject` confined to `{tenant}/{scope}/_agents/*`
+  via `${aws:PrincipalTag/...}` (fail-closed on a missing tenant tag; `Null:false`-guarded
+  scope confinement). The #118b drafting endpoint now also returns the validated `spec` on
+  `ok` (the SPA echoes it to confirm). Default-fleet stack (S3 PUT is per-request / $0-idle).
+  Deploy-on-confirm UI wiring is PR 2 (#118c follow-up). 926 tests pass; deploy-ready, not yet
+  deployed.
 - **Drafting confirm UI: the "Draft an agent" SPA screen (#118c, follow-up to #118b).** The
   browser surface for natural-language authoring. NEW `web/src/drafting/draft.ts`: a
   `DraftClient` that SigV4-signs (service `lambda`) a POST to the #118b drafting Function URL

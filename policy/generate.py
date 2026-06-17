@@ -141,6 +141,66 @@ def data_scope_policy(bucket: str | None = None) -> dict:
     }
 
 
+def agent_write_policy(bucket: str | None = None) -> dict:
+    """PutObject for CREATED AGENTS, scoped to `{tenant}/{scope}/_agents/*` (#118 deploy).
+
+    The deploy-on-confirm endpoint assumes a role carrying this policy (with the verified
+    `agate:` session tags) to persist a created agent as a scope-tagged object — the same
+    `${aws:PrincipalTag/...}` discipline as `data_scope_policy`, but WRITE and confined to the
+    `_agents/` segment. So the writing credential can only create an agent UNDER its own
+    tenant (and, when scoped, its own subtree) — never another's. The broadly-vended browser
+    role is unaffected (it carries no write grant); this authority lives only on the deploy
+    role the endpoint assumes.
+
+    Confinement mirrors §80: a `Null:false`-guarded Deny confines a scoped session's writes to
+    `{tenant}/{scope}/_agents/*`; an unscoped session may write under any of its tenant's
+    `_agents/` prefixes. A missing tenant tag denies the write outright (fail closed)."""
+    docs_bucket = bucket or f"{DOCS_BUCKET_PREFIX}-*"
+    tenant_tag = f"${{aws:PrincipalTag/{tag_key('tenant')}}}"
+    scope_tag = f"${{aws:PrincipalTag/{tag_key('scope')}}}"
+    return {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                # Write a created-agent record only under the session's own tenant prefix,
+                # and only in the `_agents/` segment (not the document namespace). Two ARN
+                # forms: the SCOPED key `{tenant}/{scope}/_agents/*` (the `*` middle segment)
+                # AND the unscoped tenant-root key `{tenant}/_agents/*` — an unscoped
+                # (tenant-wide) author writes the latter, which the `*/_agents/*` form would
+                # NOT match (it requires a scope segment). The scope-confinement Deny below
+                # still fences a SCOPED session to its own subtree.
+                "Sid": "PutOwnTenantAgents",
+                "Effect": "Allow",
+                "Action": ["s3:PutObject"],
+                "Resource": [
+                    f"arn:aws:s3:::{docs_bucket}/{tenant_tag}/*/_agents/*",
+                    f"arn:aws:s3:::{docs_bucket}/{tenant_tag}/_agents/*",
+                ],
+            },
+            {
+                # Fail closed: no tenant tag -> no agent write at all.
+                "Sid": "DenyAgentWriteWhenNoTenantTag",
+                "Effect": "Deny",
+                "Action": ["s3:PutObject"],
+                "Resource": "*",
+                "Condition": {"Null": {f"aws:PrincipalTag/{tag_key('tenant')}": "true"}},
+            },
+            {
+                # Scope confinement (#80, write side): when the session carries an
+                # `agate:scope` tag, deny any agent write OUTSIDE `{tenant}/{scope}/_agents/*`.
+                # Null:false-guarded -> an unscoped session may write under any of its tenant's
+                # scope subtrees. The unscoped tenant-root form `{tenant}/_agents/*` is written
+                # only by an unscoped session, which this Deny doesn't constrain.
+                "Sid": "DenyAgentWriteOutsideScopeSubtree",
+                "Effect": "Deny",
+                "Action": ["s3:PutObject"],
+                "NotResource": [f"arn:aws:s3:::{docs_bucket}/{tenant_tag}/{scope_tag}/_agents/*"],
+                "Condition": {"Null": {f"aws:PrincipalTag/{tag_key('scope')}": "false"}},
+            },
+        ],
+    }
+
+
 def vector_query_policy() -> dict:
     """S3 Vectors query grant for the `agate-vector-reader` role (#84).
 
@@ -210,8 +270,7 @@ def _tool_resource(resource_kind: str, bucket: str, gateway_arn: str) -> str:
 # interpolated like S3 keys). The deploy passes a concrete region/account ARN; this
 # default at least confines invocation to THIS tenant's gateway family by principal tag.
 _DEFAULT_GATEWAY_ARN = (
-    f"arn:aws:bedrock-agentcore:*:*:gateway/{HANDLE}-"
-    f"${{aws:PrincipalTag/{tag_key('tenant')}}}-*"
+    f"arn:aws:bedrock-agentcore:*:*:gateway/{HANDLE}-${{aws:PrincipalTag/{tag_key('tenant')}}}-*"
 )
 
 

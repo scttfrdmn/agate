@@ -124,9 +124,15 @@ def process(req: dict) -> dict:
         return {"ok": False, "reason": "the model did not emit a valid spec; try rephrasing"}
 
     outcome = dispose_draft(draft, tags, subject=subject)
-    # Return ONLY the legible plan + outcome — never the InstantiatedAgent/credential (the
-    # deploy-on-confirm step is server-side + deferred; the client only confirms the plan).
-    return {"ok": outcome.ok, "reason": outcome.reason, "plan": outcome.summary()}
+    # Return the legible plan + the validated spec to confirm — never the InstantiatedAgent or
+    # credential. On confirm the SPA echoes `spec` to the deploy endpoint, which RE-RUNS
+    # dispose_draft against the verified token (re-clamping server-side) before persisting, so
+    # the echoed spec is a convenience, NOT a trusted authority input — a tampered spec is
+    # re-clamped or rejected exactly as a fresh draft would be (#118 deploy-on-confirm).
+    resp = {"ok": outcome.ok, "reason": outcome.reason, "plan": outcome.summary()}
+    if outcome.ok:
+        resp["spec"] = draft  # the validated draft dict (parse_spec accepted it inside dispose)
+    return resp
 
 
 def handler(event: dict, context: object) -> dict:

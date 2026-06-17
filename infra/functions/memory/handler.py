@@ -34,19 +34,53 @@ import boto3
 from agate.delegate import subject_key
 from agate.jwt_verify import TokenError, config_from_env, verify_token
 from agate.memory import MemoryTier, namespaces_for
-from agate.tags import ClaimsError, SessionTags, claims_to_tags
+from agate.tags import ClaimsError, SessionTags, claims_to_tags, role_session_name
 
 REGION = os.environ.get("AGATE_REGION") or os.environ.get("AWS_REGION") or "us-east-1"
 MEMORY_ID = os.environ.get("AGATE_MEMORY_ID", "")
+# The tenant-fenced role the handler ASSUMES (with the session's agate: tags) before touching
+# AgentCore — so the calling principal carries `agate:tenant`/`agate:scope` and the
+# `memory_access_policy` namespacePath fence is actually operative. Mirrors the #84 retrieval
+# proxy: the IAM fence depends on the principal CARRYING the tags, so the Lambda's own
+# (un-tagged) role must NOT be the one that calls AgentCore.
+MEMORY_ACCESS_ROLE_ARN = os.environ.get("AGATE_MEMORY_ACCESS_ROLE_ARN", "")
 
-# Module-level client (reused across warm invocations), like meter/chokepoint.
-_agentcore = boto3.client("bedrock-agentcore", region_name=REGION)
+# Module-level STS client (reused across warm invocations); the AgentCore client is built
+# per-request from the assumed, tag-scoped credentials (it cannot be a module singleton —
+# each request carries a different tenant/scope).
+_sts = boto3.client("sts", region_name=REGION)
 
 _VALID_TIERS: tuple[MemoryTier, ...] = ("session", "personal", "shared")
 
 
 class MemoryToolError(ValueError):
     """A memory call that cannot be served safely. Fail closed."""
+
+
+def assume_memory_client(tags: SessionTags, subject: str):
+    """Assume the tenant-fenced memory role, narrowed by the VERIFIED `agate:` session tags,
+    and return an AgentCore client built from those scoped credentials. The tenant + scope
+    tags travel on the assumed session, so `memory_access_policy`'s `${aws:PrincipalTag/...}`
+    `namespacePath` condition fences the credential itself (#110) — exactly the #84 pattern.
+    The RoleSessionName ties the call to the federated subject + tenant (#79)."""
+    if not MEMORY_ACCESS_ROLE_ARN:
+        raise MemoryToolError("AGATE_MEMORY_ACCESS_ROLE_ARN not configured")
+    sts_tags = tags.to_sts_tags()
+    resp = _sts.assume_role(
+        RoleArn=MEMORY_ACCESS_ROLE_ARN,
+        RoleSessionName=role_session_name(tags.tenant, subject),
+        Tags=sts_tags,
+        TransitiveTagKeys=[t["Key"] for t in sts_tags],
+        DurationSeconds=900,
+    )
+    c = resp["Credentials"]
+    return boto3.client(
+        "bedrock-agentcore",
+        region_name=REGION,
+        aws_access_key_id=c["AccessKeyId"],
+        aws_secret_access_key=c["SecretAccessKey"],
+        aws_session_token=c["SessionToken"],
+    )
 
 
 def validate_idp_token(token: str) -> dict:
@@ -61,11 +95,14 @@ def validate_idp_token(token: str) -> dict:
 
 
 def _actor_id(tags: SessionTags, subject: str) -> str:
-    """The AgentCore `actorId` for a write — tenant-qualified + injective `subject_key`, so the
-    namespace AgentCore resolves from it stays inside the credential's `agate/{tenant}/...`
-    fence. Tenant FIRST so two tenants' actors can never collide; `subject_key` makes the
-    per-principal segment injective (a collision here would be a cross-principal memory leak)."""
-    return f"{tags.tenant}.{subject_key(subject)}"
+    """The AgentCore `actorId` for a write — `{tenant}@{subject_key}`, so the namespace
+    AgentCore resolves from it stays inside the credential's `agate/{tenant}/...` fence. Tenant
+    FIRST so two tenants' actors can never collide; `subject_key` makes the per-principal
+    segment injective (a collision here would be a cross-principal memory leak). The `@`
+    separator is the same unforgeable tenant delimiter `role_session_name` uses — `@` is
+    excluded from the tenant grammar (`tags._TENANT_RE`), so `{tenant}@{...}` parses back
+    unambiguously (a `.` would not: `.` is legal in both tenant and subject_key)."""
+    return f"{tags.tenant}@{subject_key(subject)}"
 
 
 def _session_id(req: dict) -> str:
@@ -104,7 +141,8 @@ def record(req: dict) -> dict:
     # Derive the namespaces this session may touch (proves the session_id resolves to a real
     # in-fence path; also the value a follow-up recall will read).
     namespaces = namespaces_for(tags, subject, session_id)
-    resp = _agentcore.create_event(
+    client = assume_memory_client(tags, subject)  # tag-scoped; the IAM fence is operative
+    resp = client.create_event(
         memoryId=MEMORY_ID,
         actorId=_actor_id(tags, subject),
         sessionId=session_id,
@@ -136,7 +174,8 @@ def recall(req: dict) -> dict:
         raise MemoryToolError(f"tier not available for this session: {tier}")
     query = str(req.get("query") or "")
     max_results = int(req.get("max_results") or 20)
-    resp = _agentcore.retrieve_memory_records(
+    client = assume_memory_client(tags, subject)  # tag-scoped; the IAM fence is operative
+    resp = client.retrieve_memory_records(
         memoryId=MEMORY_ID,
         namespace=namespaces[tier],
         searchCriteria={"searchQuery": query} if query else {"searchQuery": ""},

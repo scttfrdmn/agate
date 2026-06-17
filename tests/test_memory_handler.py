@@ -47,8 +47,18 @@ _UNSCOPED_CLAIMS = {k: v for k, v in _CLAIMS.items() if k != "data_scope"}
 @pytest.fixture
 def fake(monkeypatch):
     fc = _FakeAgentCore()
-    monkeypatch.setattr(h, "_agentcore", fc)
+    # The handler assumes a tag-scoped role per request and builds the AgentCore client from
+    # the returned creds; patch that seam to hand back the fake (and record the tags it would
+    # have passed, so a test can assert the tenant/scope fence travels on the assumed session).
+    fc.assume_tags = []
+
+    def _fake_assume(tags, subject):
+        fc.assume_tags.append((tags.tenant, tags.scope, subject))
+        return fc
+
+    monkeypatch.setattr(h, "assume_memory_client", _fake_assume)
     monkeypatch.setattr(h, "MEMORY_ID", "agate_memory-xyz")
+    monkeypatch.setattr(h, "MEMORY_ACCESS_ROLE_ARN", "arn:aws:iam::111122223333:role/agate-mem")
     # Bypass real JWKS verification: the verified claims are the test's input.
     monkeypatch.setattr(h, "validate_idp_token", lambda token: dict(_CLAIMS) if token else _raise())
     return fc
@@ -78,8 +88,9 @@ def test_record_uses_server_derived_actor_and_session(fake):
     )
     assert out["status"] == 200
     call = fake.create_calls[0]
-    # actorId is tenant-qualified + injective subject_key — NOT a client value.
-    assert call["actorId"] == f"chem.{subject_key('alice')}"
+    # actorId is tenant-qualified (unambiguous `@` separator) + injective subject_key —
+    # NOT a client value.
+    assert call["actorId"] == f"chem@{subject_key('alice')}"
     assert call["sessionId"] == "s-1"
     assert call["memoryId"] == "agate_memory-xyz"
 
@@ -100,8 +111,27 @@ def test_record_ignores_client_supplied_namespace_and_identity(fake):
     )
     call = fake.create_calls[0]
     assert "evil" not in call["actorId"]
-    assert call["actorId"].startswith("chem.")
+    assert call["actorId"].startswith("chem@")
     assert "namespace" not in call  # create_event has no client namespace param
+
+
+def test_record_assumes_role_with_verified_tenant_and_scope(fake):
+    # The IAM fence depends on the assumed session carrying the verified agate: tags — the
+    # handler must pass the tenant/scope from the token, not the body, to assume_memory_client.
+    _invoke(
+        {
+            "idp_token": "t",
+            "op": "record",
+            "session_id": "s-1",
+            "payload": [{"role": "user", "text": "hi"}],
+            "tenant": "evil",
+            "scope": "evil/scope",
+        }
+    )
+    tenant, scope, subject = fake.assume_tags[0]
+    assert tenant == "chem"  # from the verified token, NOT the body's "evil"
+    assert scope == "chemistry/chem-101"
+    assert subject == "alice"
 
 
 def test_record_requires_payload(fake):

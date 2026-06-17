@@ -99,9 +99,12 @@ class MemoryStack(Stack):
             memory_execution_role_arn=extraction_role.role_arn,
         )
 
-        # --- Read/write Lambda (the SDK path, ABAC-fenced) ----------------
+        # --- Read/write Lambda (the SDK path) ----------------------------
         # Records/recalls via the bedrock-agentcore SDK, deriving every namespace from
         # `agate.memory.namespaces_for` — never a client value. Mirrors the slurm MCP bundle.
+        # The Lambda's OWN role holds NO memory data perms: it can only assume the tenant-fenced
+        # role below (carrying the verified agate: tags), so the IAM namespacePath fence is
+        # operative on the principal that actually calls AgentCore (the #84 retrieval pattern).
         memory_fn = lambda_.Function(
             self,
             "MemoryTool",
@@ -120,10 +123,29 @@ class MemoryStack(Stack):
             },
             description="agate Memory read/write server - namespaces_for-fenced (#110/#130)",
         )
-        # The #110 ABAC fence, scoped to THIS memory's ARN: read+write only under
-        # `agate/{tenant}/...`, deny without a tenant tag, deny shared outside scope. The same
-        # policy the live SimulateCustomPolicy proof validates.
-        memory_fn.role.attach_inline_policy(
+
+        # --- Tenant-fenced memory-access role (the ABAC boundary) ---------
+        # The role the Lambda ASSUMES per-request with the session's `agate:` tags. The #110
+        # fence (`memory_access_policy`) lives HERE — read+write only under `agate/{tenant}/...`,
+        # deny without a tenant tag, deny shared outside scope — so it binds the credential that
+        # carries the tenant/scope tags, not the un-tagged Lambda role. Same policy the live
+        # SimulateCustomPolicy proof validates. Trusted by the Lambda role for AssumeRole +
+        # TagSession (the fence depends on the tenant tag being passed).
+        memory_access_role = iam.Role(
+            self,
+            "MemoryAccessRole",
+            assumed_by=memory_fn.grant_principal,
+            description="agate: tenant-fenced memory read/write role; assumed by the tool Lambda",
+            max_session_duration=cdk.Duration.hours(1),
+        )
+        memory_access_role.assume_role_policy.add_statements(  # type: ignore[union-attr]
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                principals=[memory_fn.grant_principal],
+                actions=["sts:TagSession"],
+            )
+        )
+        memory_access_role.attach_inline_policy(
             iam.Policy(
                 self,
                 "MemoryAccess",
@@ -132,11 +154,21 @@ class MemoryStack(Stack):
                 ),
             )
         )
+        # The Lambda may assume (and tag) ONLY that role — its sole memory authority.
+        memory_fn.add_to_role_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=["sts:AssumeRole", "sts:TagSession"],
+                resources=[memory_access_role.role_arn],
+            )
+        )
+        memory_fn.add_environment("AGATE_MEMORY_ACCESS_ROLE_ARN", memory_access_role.role_arn)
 
         # --- Outputs -------------------------------------------------------
         cdk.CfnOutput(self, "MemoryId", value=memory.attr_memory_id)
         cdk.CfnOutput(self, "MemoryArn", value=memory.attr_memory_arn)
         cdk.CfnOutput(self, "MemoryToolArn", value=memory_fn.function_arn)
+        cdk.CfnOutput(self, "MemoryAccessRoleArn", value=memory_access_role.role_arn)
         cdk.CfnOutput(
             self,
             "CostPosture",

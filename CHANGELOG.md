@@ -19,9 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`create_event`) uses a server-derived, tenant-qualified + injective (`subject_key`)
   `actorId`; `recall` (`retrieve_memory_records`) reads an explicit `namespacePath` taken from
   `namespaces_for[tier]`, and a tier the session lacks (e.g. `shared` when unscoped) is
-  rejected. The Lambda's role carries `memory_access_policy(memory.attr_memory_arn)`, so the
-  same `agate:` tag fence guarding documents (#80) and vectors (#84) guards memory — no leak
-  across tenant, principal, or scope (§10.3). **OPT-IN cost posture:** unlike every other agate
+  rejected. Like the #84 retrieval proxy, the handler ASSUMES a separate tenant-fenced role
+  with the verified `agate:` session tags before touching AgentCore — the
+  `memory_access_policy(memory_arn)` fence lives on THAT role, so the principal that actually
+  calls AgentCore carries the `agate:tenant`/`agate:scope` tags the policy's `namespacePath`
+  condition interpolates (the Lambda's own role holds no memory data perms — only `sts:AssumeRole`
+  on the fenced role). So the same `agate:` tag fence guarding documents (#80) and vectors
+  (#84) guards memory — no leak across tenant, principal, or scope (§10.3). **OPT-IN cost posture:** unlike every other agate
   resource (per-request / $0-idle), managed AgentCore Memory stores + extracts continuously, so
   `agate-memory` is never in the default fleet — an institution stands it up explicitly
   (`cdk deploy agate-memory`), exactly like the Tier-1 chokepoint. Deploy-ready, NOT

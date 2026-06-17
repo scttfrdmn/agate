@@ -148,3 +148,27 @@ def test_agent_write_honours_explicit_bucket():
     doc = agent_write_policy(bucket="agate-docs-123-us-east-1")
     allow = _stmt(doc, "PutOwnTenantAgents")
     assert "agate-docs-123-us-east-1" in allow["Resource"][0]
+
+
+# --- room_rw_policy (#116 collaborative rooms) ------------------------------
+
+
+def test_room_rw_is_tenant_fenced_to_rooms_segment():
+    from policy.generate import room_rw_policy
+
+    doc = room_rw_policy()
+    allow = _stmt(doc, "RwOwnTenantRooms")
+    assert set(allow["Action"]) == {"s3:GetObject", "s3:PutObject"}
+    # tenant-rooted _rooms/ (room object = tenant metadata, scope re-derived in code)
+    assert allow["Resource"] == [
+        "arn:aws:s3:::agate-docs-*/${aws:PrincipalTag/agate:tenant}/_rooms/*"
+    ]
+
+
+def test_room_rw_fails_closed_without_tenant_tag():
+    from policy.generate import room_rw_policy
+
+    deny = _stmt(room_rw_policy(), "DenyRoomWhenNoTenantTag")
+    assert deny["Effect"] == "Deny"
+    assert set(deny["Action"]) == {"s3:GetObject", "s3:PutObject"}
+    assert deny["Condition"]["Null"]["aws:PrincipalTag/agate:tenant"] == "true"

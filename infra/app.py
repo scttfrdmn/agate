@@ -30,6 +30,7 @@ from infra.stacks.governance import GovernanceStack  # noqa: E402
 from infra.stacks.identity import IdentityStack  # noqa: E402
 from infra.stacks.lti import LtiStack  # noqa: E402
 from infra.stacks.memory import MemoryStack  # noqa: E402
+from infra.stacks.rooms import RoomsStack  # noqa: E402
 from infra.stacks.web import WebStack  # noqa: E402
 
 app = cdk.App()
@@ -58,6 +59,9 @@ DeployStack(app, "agate-deploy", env=env)
 # Graphical authoring (#117) — the bounded-menu visual builder + template gallery. No model,
 # no write (deploy-on-confirm is agate-deploy); per-request / $0-idle, a default-fleet stack.
 AuthoringStack(app, "agate-authoring", env=env)
+# Collaborative rooms (#116) — intersection-scoped, attributed, per-message-metered rooms over
+# a polling transport (no WebSocket; per-request / $0-idle). A default-fleet stack.
+RoomsStack(app, "agate-rooms", env=env)
 # Optional Tier 1 — only deploy when an institution requires exact pre-call caps,
 # centralized inspection, or non-Bedrock routing (design §2, §12 Phase 6).
 ChokepointStack(app, "agate-chokepoint", env=env)

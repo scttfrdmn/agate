@@ -31,6 +31,9 @@ export interface AppConfig {
   // Graphical authoring endpoint (agate-authoring Function URL, #117). Empty = the
   // "Build an agent" screen is hidden.
   authoringUrl: string;
+  // Collaborative rooms endpoint (agate-rooms Function URL, #116). Empty = the
+  // "Rooms" screen is hidden.
+  roomsUrl: string;
 }
 
 const env = import.meta.env;
@@ -50,4 +53,5 @@ export const config: AppConfig = {
   draftingUrl: env.VITE_DRAFTING_URL ?? "",
   deployUrl: env.VITE_DEPLOY_URL ?? "",
   authoringUrl: env.VITE_AUTHORING_URL ?? "",
+  roomsUrl: env.VITE_ROOMS_URL ?? "",
 };

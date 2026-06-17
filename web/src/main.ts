@@ -25,6 +25,8 @@ import { config } from "./config";
 import { type AuthoringOptions, AuthoringClient, type TemplateRow } from "./drafting/builder";
 import { buildSpecFromForm } from "./drafting/builder";
 import { DeployClient, DraftClient, renderDraft } from "./drafting/draft";
+import { RoomClient } from "./rooms/client";
+import { renderMembers, renderMessages } from "./rooms/view";
 import { reduce, type RunState, emptyRunState } from "./events/collector";
 import type { RunEvent } from "./events/protocol";
 import { renderCells, renderPanel } from "./panes/render";
@@ -154,6 +156,11 @@ function main(): void {
   if (config.authoringUrl) {
     navItems.push({ label: "Build an agent", icon: "🧩", href: "#", onSelect: () => showBuild() });
   }
+  // Collaborative rooms (#116). The room's reach is the server-enforced intersection of its
+  // members; every message is attributed + budget-gated. Polling transport ($0-idle).
+  if (config.roomsUrl) {
+    navItems.push({ label: "Rooms", icon: "👥", href: "#", onSelect: () => showRoom() });
+  }
   const { topbar } = mountChrome({
     brand: "agate",
     tag: "GenAI gateway",
@@ -163,6 +170,7 @@ function main(): void {
   app.insertBefore(topbar, app.firstChild);
 
   function selectMode(value: string): void {
+    roomPollToken += 1; // leaving the room view stops its poll loop
     const sel = document.getElementById("mode") as HTMLSelectElement | null;
     if (sel) sel.value = value;
     (document.getElementById("q") as HTMLInputElement | null)?.focus();
@@ -172,6 +180,7 @@ function main(): void {
   async function showAdmin(): Promise<void> {
     const out = document.getElementById("out");
     if (!out) return;
+    roomPollToken += 1; // leaving the room view stops its poll loop
     out.replaceChildren();
     out.setAttribute("aria-busy", "true");
     try {
@@ -196,6 +205,7 @@ function main(): void {
   function showDraft(): void {
     const outEl = document.getElementById("out");
     if (!outEl) return;
+    roomPollToken += 1; // leaving the room view stops its poll loop
     outEl.replaceChildren();
     if (!draftClient) {
       renderError(outEl, "Log in to draft an agent — drafting runs under your own entitlements.");
@@ -250,6 +260,7 @@ function main(): void {
   async function showBuild(): Promise<void> {
     const outEl = document.getElementById("out");
     if (!outEl) return;
+    roomPollToken += 1; // leaving the room view stops its poll loop
     outEl.replaceChildren();
     if (!authoringClient) {
       renderError(outEl, "Log in to build an agent — the builder is scoped to your entitlements.");
@@ -397,6 +408,114 @@ function main(): void {
     outEl.append(panel, result);
   }
 
+  // --- Collaborative rooms (#116) -------------------------------------------
+  let roomClient: RoomClient | null = null;
+  // A monotonically-bumped token: each screen entry/nav bump cancels any prior poll loop, so
+  // navigating away stops polling (no standing connection — NO CLOCKS on the client too).
+  let roomPollToken = 0;
+
+  async function showRoom(): Promise<void> {
+    const outEl = document.getElementById("out");
+    if (!outEl) return;
+    roomPollToken += 1; // cancel any prior poll loop
+    outEl.replaceChildren();
+    if (!roomClient) {
+      renderError(outEl, "Log in to use rooms — a room runs under your own entitlements.");
+      return;
+    }
+    // A minimal room launcher: open a new room or join one by id, then enter the live view.
+    const panel = document.createElement("section");
+    panel.className = "panel";
+    panel.setAttribute("aria-label", "Rooms");
+    panel.appendChild(Object.assign(document.createElement("div"), {
+      className: "panel-title",
+      textContent: "Collaborative rooms",
+    }));
+    const idIn = document.createElement("input");
+    idIn.className = "field";
+    idIn.placeholder = "room id (to open or join)";
+    idIn.setAttribute("aria-label", "Room id");
+    const openBtn = document.createElement("button");
+    openBtn.type = "button";
+    openBtn.className = "btn";
+    openBtn.textContent = "Open";
+    const joinBtn = document.createElement("button");
+    joinBtn.type = "button";
+    joinBtn.className = "btn ghost";
+    joinBtn.textContent = "Join";
+    const live = document.createElement("div");
+
+    openBtn.onclick = async () => {
+      const v = await roomClient!.open(idIn.value.trim() || "room");
+      if (!v.ok) return renderError(live, v.reason || "could not open room");
+      enterRoom(v.room, live);
+    };
+    joinBtn.onclick = async () => {
+      const id = idIn.value.trim();
+      if (!id) return;
+      const v = await roomClient!.join(id);
+      if (!v.ok) return renderError(live, v.reason || "could not join room");
+      enterRoom(v.room, live);
+    };
+    panel.append(idIn, openBtn, joinBtn);
+    outEl.append(panel, live);
+  }
+
+  // Enter the live room view: a members panel, the message stream, a composer, and a poll loop
+  // folding new messages. The loop self-cancels when `roomPollToken` is bumped (nav away).
+  function enterRoom(roomId: string, target: HTMLElement): void {
+    const myToken = (roomPollToken += 1);
+    target.replaceChildren();
+    const membersEl = document.createElement("div");
+    const streamEl = document.createElement("div");
+    const composer = document.createElement("div");
+    composer.className = "input-bar";
+    const text = document.createElement("input");
+    text.className = "field";
+    text.placeholder = "message the room…";
+    text.setAttribute("aria-label", "Message");
+    const send = document.createElement("button");
+    send.type = "button";
+    send.className = "btn";
+    send.textContent = "Send";
+    const note = document.createElement("p");
+    note.className = "cost-line";
+    composer.append(text, send);
+    target.append(membersEl, streamEl, composer, note);
+
+    send.onclick = async () => {
+      const t = text.value.trim();
+      if (!t) return;
+      send.disabled = true;
+      const r = await roomClient!.postMessage(roomId, t);
+      if (r.ok) {
+        text.value = "";
+        note.textContent = "";
+      } else {
+        // a budget/membership rejection is surfaced plainly (the gate working, not an error).
+        note.textContent = r.reason || "message rejected";
+      }
+      send.disabled = false;
+    };
+
+    // Poll loop: fetch the full view (members + messages) every ~2s; stop if the token moved.
+    const tick = async () => {
+      if (myToken !== roomPollToken) return; // cancelled (navigated away / re-entered)
+      try {
+        const v = await roomClient!.events(roomId, 0);
+        if (myToken !== roomPollToken) return;
+        if (v.ok) {
+          renderMembers(v, membersEl);
+          renderMessages(v.messages, streamEl);
+        }
+      } catch {
+        /* transient; the next tick retries */
+      }
+      if (myToken === roomPollToken) setTimeout(tick, 2000);
+    };
+    void tick();
+  }
+
   const scopeEl = document.getElementById("scope")!;
   const form = document.getElementById("f") as HTMLFormElement;
 
@@ -456,6 +575,15 @@ function main(): void {
   if (config.authoringUrl) {
     authoringClient = new AuthoringClient(
       { region: config.region, endpoint: config.authoringUrl },
+      () => creds.get(),
+      () => idpToken(),
+    );
+  }
+  // The collaborative-rooms client (#116) — open/join/leave/post/poll; the room's reach is the
+  // server-enforced intersection of members, every message attributed + budget-gated.
+  if (config.roomsUrl) {
+    roomClient = new RoomClient(
+      { region: config.region, endpoint: config.roomsUrl },
       () => creds.get(),
       () => idpToken(),
     );

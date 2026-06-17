@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Rooms SPA screen: the collaborative-room UI (#116 — UI, PR 2 of 2).** The browser surface
+  over the #116 endpoint, completing collaborative rooms. NEW `web/src/rooms/client.ts`
+  (`RoomClient` SigV4-signs open/join/leave/post/events + pure `toRoomView`/`toPostResult`
+  mappers) and `web/src/rooms/view.ts` (pure `renderMembers`/`renderMessages` — the participant
+  list + the attributed message stream, mirroring `renderPane`, textContent-only so a script-y
+  author/text is inert). A new "Rooms" nav item + `showRoom`/`enterRoom` in `web/src/main.ts`:
+  open/join a room, then a live view with a members panel (humans + agents, the room's derived
+  scope/tier as the ceiling), the message stream, a composer, and a **~2s poll loop** that folds
+  new messages — the loop self-cancels (a bumped token) when the user navigates to any other
+  screen, so there's no standing connection (NO CLOCKS on the client too). A budget/membership
+  rejection from `post` is surfaced plainly (the gate working). Gated on `VITE_ROOMS_URL` +
+  login. 123 web tests pass, `tsc` + build clean. Completes #116.
 - **Collaborative rooms endpoint: the live transport (#116 — server, PR 1 of 2).** The social
   surface over the merged `agate.rooms` core: humans AND agents as bounded participants in a
   scope-bounded space. NEW `infra/functions/rooms/` + `infra/stacks/rooms.py` (`RoomsStack`):

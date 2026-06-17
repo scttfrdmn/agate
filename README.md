@@ -148,7 +148,8 @@ cd web && VITE_BROKER_URL=<broker-url> VITE_AWS_REGION=<region> \
   VITE_AGENT_RUNTIME_ARN=<runtime-arn> \
   VITE_DRAFTING_URL=<drafting-url> \
   VITE_DEPLOY_URL=<deploy-url> \
-  VITE_AUTHORING_URL=<authoring-url> npm run build && cd ..
+  VITE_AUTHORING_URL=<authoring-url> \
+  VITE_ROOMS_URL=<rooms-url> npm run build && cd ..
 npx cdk deploy agate-web                 # publishes web/dist to S3 + CloudFront
 ```
 The `agate-web` output `SiteUrl` is the demo URL. `VITE_RETRIEVAL_URL` is the
@@ -159,7 +160,9 @@ agent" screen; omit it to hide that screen. `VITE_DEPLOY_URL` is the `agate-depl
 output `DeployUrl` (#118) — the confirm-and-create action; omit it and drafts render
 but the confirm button stays inert. `VITE_AUTHORING_URL` is the `agate-authoring`
 output `AuthoringUrl` (#117) — the visual "Build an agent" screen (bounded menu +
-form); omit it to hide that screen.
+form); omit it to hide that screen. `VITE_ROOMS_URL` is the `agate-rooms` output
+`RoomsUrl` (#116) — the collaborative "Rooms" screen (polling transport); omit it to
+hide that screen.
 
 **5. Optional Tier 1** (`agate-chokepoint`) and **audit** (`agate-audit`) only if the demo needs
 exact pre-call caps or the spend/forensic trail.

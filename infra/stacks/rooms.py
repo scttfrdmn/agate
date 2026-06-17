@@ -31,7 +31,7 @@ from aws_cdk import (
     aws_lambda as lambda_,
 )
 from constructs import Construct
-from infra.assets import pip_bundled_code
+from infra.assets import oidc_env_from_context, pip_bundled_code
 from policy.generate import room_rw_policy
 
 
@@ -44,8 +44,6 @@ class RoomsStack(Stack):
         docs_bucket = f"{DOCS_BUCKET_PREFIX}-{account}-{region}"
         spend_table = self.node.try_get_context("spend_table") or f"{HANDLE}-spend"
         budget_table = self.node.try_get_context("budget_table") or f"{HANDLE}-budget"
-        oidc_discovery_url = self.node.try_get_context("cognito_discovery_url") or ""
-        allowed_audience = self.node.try_get_context("cognito_audience") or ""
 
         fn = lambda_.Function(
             self,
@@ -61,8 +59,8 @@ class RoomsStack(Stack):
                 "AGATE_DOCS_BUCKET": docs_bucket,
                 "AGATE_SPEND_TABLE": spend_table,
                 "AGATE_BUDGET_TABLE": budget_table,
-                "AGATE_OIDC_ISSUER": oidc_discovery_url,
-                "AGATE_OIDC_AUDIENCE": allowed_audience,
+                # The verified-token coords (issuer + JWKS + audience).
+                **oidc_env_from_context(self.node),
             },
             description="agate collaborative rooms - intersection-scoped, attributed (#116)",
         )

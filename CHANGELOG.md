@@ -169,6 +169,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rebuild).
 
 ### Fixed
+- **OIDC verifier env on the new endpoint stacks — the JWKS URL was missing (live-deploy
+  blocker).** The drafting/deploy/authoring/rooms/memory stacks wired `AGATE_OIDC_ISSUER` (from
+  `cognito_discovery_url`) + `AGATE_OIDC_AUDIENCE` but NOT `AGATE_OIDC_JWKS_URL`, which
+  `agate.jwt_verify.verify_token` requires — so every request would fail closed (403), making
+  the endpoints undeployable in practice (the #118b review flagged this as fail-closed-deferred).
+  And `AGATE_OIDC_ISSUER` was being set to the *discovery* URL, not the issuer. NEW
+  `infra.assets.oidc_env_from_context()` derives the full `{ISSUER, JWKS_URL, AUDIENCE}` env from
+  the Cognito discovery URL (issuer = the URL minus `/.well-known/openid-configuration`, jwks =
+  `issuer + /.well-known/jwks.json` — verified exact against the live `agate-demo-idp` outputs);
+  the five endpoint stacks now use it, so they can't drift from the broker's OIDC wiring.
 - **Cedar governance policies load as one statement per AgentCore `CfnPolicy` (#governance,
   surfaced by the first live deploy of `agate-governance`).** The stack passed the whole Cedar
   policy SET (multiple `permit`s + the cross-tenant `forbid`) as a single `CfnPolicy.statement`

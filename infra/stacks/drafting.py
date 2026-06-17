@@ -31,7 +31,7 @@ from aws_cdk import (
     aws_lambda as lambda_,
 )
 from constructs import Construct
-from infra.assets import pip_bundled_code
+from infra.assets import oidc_env_from_context, pip_bundled_code
 
 
 class DraftingStack(Stack):
@@ -40,10 +40,6 @@ class DraftingStack(Stack):
 
         region = self.region
         account = self.account
-
-        # The verified-token coordinates (same Cognito the broker/Runtime trust inbound).
-        oidc_discovery_url = self.node.try_get_context("cognito_discovery_url") or ""
-        allowed_audience = self.node.try_get_context("cognito_audience") or ""
 
         fn = lambda_.Function(
             self,
@@ -56,8 +52,8 @@ class DraftingStack(Stack):
             memory_size=256,
             environment={
                 "AGATE_REGION": region,
-                "AGATE_OIDC_ISSUER": oidc_discovery_url,
-                "AGATE_OIDC_AUDIENCE": allowed_audience,
+                # The verified-token coords (issuer + JWKS + audience) the broker/Runtime trust.
+                **oidc_env_from_context(self.node),
                 "AGATE_DRAFT_MAX_TOKENS": "1024",
             },
             description="agate drafting endpoint - LLM drafts, the compiler disposes (#118b)",

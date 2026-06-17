@@ -35,7 +35,7 @@ from aws_cdk import (
     aws_lambda as lambda_,
 )
 from constructs import Construct
-from infra.assets import pip_bundled_code
+from infra.assets import oidc_env_from_context, pip_bundled_code
 from policy.generate import memory_access_policy
 
 
@@ -45,8 +45,6 @@ class MemoryStack(Stack):
 
         # Deploy-time config (supply at deploy with -c). Sensible defaults so the stack
         # synthesizes standalone.
-        oidc_discovery_url = self.node.try_get_context("cognito_discovery_url") or ""
-        allowed_audience = self.node.try_get_context("cognito_audience") or ""
         expiry_days = int(self.node.try_get_context("memory_expiry_days") or 90)
 
         # --- Extraction execution role -----------------------------------
@@ -117,9 +115,8 @@ class MemoryStack(Stack):
             environment={
                 "AGATE_MEMORY_ID": memory.attr_memory_id,
                 "AGATE_REGION": self.region,
-                # The verified-token coordinates (same Cognito the broker/Runtime trust).
-                "AGATE_OIDC_ISSUER": oidc_discovery_url,
-                "AGATE_OIDC_AUDIENCE": allowed_audience,
+                # The verified-token coords (issuer + JWKS + audience).
+                **oidc_env_from_context(self.node),
             },
             description="agate Memory read/write server - namespaces_for-fenced (#110/#130)",
         )

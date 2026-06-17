@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
 from agate.entitlements import TIERS, models_for_tier
 from policy.cedar import (
+    AGENTCORE_GATEWAY_TYPE,
+    agentcore_tool_policy_statements,
     call_tool_policy,
     forbid_cross_tenant,
     generate_policy_set,
@@ -11,6 +14,8 @@ from policy.cedar import (
     policy_statements,
     retrieve_policy,
 )
+
+_GW_ARN = "arn:aws:bedrock-agentcore:us-east-1:942542972736:gateway/agate-demo-xsrgzb8b6f"
 
 
 def test_model_policies_cover_every_tier():
@@ -92,3 +97,45 @@ def test_policy_statements_are_separate_single_statements():
     forbid = dict(stmts)["forbid-cross-tenant"]
     assert forbid.lstrip().startswith("//") and "forbid(" in forbid
     assert "permit(" not in forbid
+
+
+# --- agent-path AgentCore tool policy (#154) ------------------------------- #
+def test_agentcore_tool_policy_one_statement_per_tool():
+    stmts = agentcore_tool_policy_statements(_GW_ARN, ["hpc-submit", "hpc-monitor"], "agate-slurm")
+    assert [n for n, _ in stmts] == ["tool-hpc-submit", "tool-hpc-monitor"]
+    for _, body in stmts:
+        # exactly one Cedar statement -> one terminating `;`
+        assert body.count(";") == 1
+        assert body.rstrip().endswith(";")
+
+
+def test_agentcore_tool_policy_uses_agentcore_schema_not_abstract_resource():
+    # The #154 fix: AgentCore rejects an abstract `resource` — every statement must pin the
+    # specific AgentCore::Gateway ARN, a tool action, and an authenticated principal type.
+    _, body = agentcore_tool_policy_statements(_GW_ARN, ["hpc-submit"], "agate-slurm")[0]
+    assert f'{AGENTCORE_GATEWAY_TYPE}::"{_GW_ARN}"' in body
+    assert 'action == AgentCore::Action::"agate-slurm___hpc-submit"' in body
+    assert "principal is AgentCore::IamEntity" in body
+    # NOT the abstract chat-path mirror shapes
+    assert 'Action::"InvokeModel"' not in body
+    assert "resource.tier" not in body
+
+
+def test_agentcore_tool_policy_carries_a_constraining_when():
+    # A bare permit fails the analyzer ("Overly Permissive", confirmed live) — every statement
+    # must carry a constraining `when` on an identified principal.
+    _, body = agentcore_tool_policy_statements(_GW_ARN, ["hpc-submit"], "agate-slurm")[0]
+    assert "when {" in body
+    assert "principal has id" in body and 'principal.id != ""' in body
+
+
+def test_agentcore_tool_policy_rejects_unsupported_principal_type():
+    # AgentCore::UnauthenticatedUser is not a valid principal type in a policy (confirmed live).
+    with pytest.raises(ValueError, match="principal type"):
+        agentcore_tool_policy_statements(
+            _GW_ARN, ["hpc-submit"], "agate-slurm", principal_type="AgentCore::UnauthenticatedUser"
+        )
+
+
+def test_agentcore_tool_policy_empty_tool_list_is_empty():
+    assert agentcore_tool_policy_statements(_GW_ARN, [], "agate-slurm") == []

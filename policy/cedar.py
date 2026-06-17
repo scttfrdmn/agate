@@ -100,9 +100,50 @@ def forbid_cross_tenant() -> str:
     )
 
 
+def model_invoke_policy_statements() -> list[tuple[str, str]]:
+    """The per-tier InvokeModel permits as SEPARATE `(name, statement)` pairs. AgentCore
+    `CfnPolicy` holds exactly ONE Cedar statement, so each tier's permit is its own policy
+    resource (a multi-statement string is rejected — "unexpected token `permit`/`forbid`")."""
+    out: list[tuple[str, str]] = []
+    for tier in TIERS:
+        models = ", ".join(f'"{m}"' for m in models_for_tier(tier))
+        out.append(
+            (
+                f"invoke-{tier}",
+                f"// tier {tier}: {len(models_for_tier(tier))} entitled models\n"
+                f"permit(\n"
+                f"  principal,\n"
+                f"  action == {ACTION_INVOKE},\n"
+                f"  resource\n"
+                f") when {{\n"
+                f'  principal.tier == "{tier}" &&\n'
+                f"  resource.tier == principal.tier &&\n"
+                f"  resource.tenant == principal.tenant &&\n"
+                f"  resource.model in [{models}]\n"
+                f"}};",
+            )
+        )
+    return out
+
+
+def policy_statements() -> list[tuple[str, str]]:
+    """Every Cedar statement as a SEPARATE `(name, statement)` pair — one per AgentCore
+    `CfnPolicy` resource. AgentCore Policy enforces ONE statement per policy, so the set is
+    loaded as N policies under the engine (model permits per tier + retrieve + call-tool +
+    the cross-tenant forbid), never one concatenated string."""
+    return [
+        *model_invoke_policy_statements(),
+        ("retrieve", retrieve_policy()),
+        ("call-tool", call_tool_policy()),
+        ("forbid-cross-tenant", forbid_cross_tenant()),
+    ]
+
+
 def generate_policy_set() -> str:
-    """The full Cedar policy text (model access + retrieval + tools + the
-    cross-tenant forbid), ready to load into AgentCore Policy."""
+    """The full Cedar policy text as ONE string (model access + retrieval + tools + the
+    cross-tenant forbid) — for the human-auditable mirror / docs. NOTE: AgentCore `CfnPolicy`
+    takes one statement, so the deploy stack loads `policy_statements()` (one policy each),
+    NOT this concatenation."""
     return "\n\n".join(
         [
             model_invoke_policies(),

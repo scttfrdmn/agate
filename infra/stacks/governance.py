@@ -26,7 +26,7 @@ from aws_cdk import (
     aws_bedrockagentcore as agentcore,
 )
 from constructs import Construct
-from policy.cedar import generate_policy_set
+from policy.cedar import policy_statements
 
 
 class GovernanceStack(Stack):
@@ -77,19 +77,24 @@ class GovernanceStack(Stack):
             name=f"{HANDLE}_policy_engine",
             description="agate AgentCore policy engine - tool/action authz (Cedar)",
         )
-        policy = agentcore.CfnPolicy(
-            self,
-            "CedarPolicy",
-            name=f"{HANDLE}_entitlements",
-            policy_engine_id=engine.attr_policy_engine_id,
-            definition=agentcore.CfnPolicy.PolicyDefinitionProperty(
-                cedar=agentcore.CfnPolicy.CedarPolicyProperty(
-                    statement=generate_policy_set(),
+        # AgentCore `CfnPolicy` holds exactly ONE Cedar statement, so the policy SET is loaded
+        # as N policies under the engine — one per statement (model permits per tier, retrieve,
+        # call-tool, the cross-tenant forbid). A single concatenated string is rejected at
+        # create ("unexpected token `forbid`"). All generated from `agate.entitlements`, so the
+        # enforced Cedar layer can't drift from the IAM model scope.
+        for stmt_name, statement in policy_statements():
+            cid = "CedarPolicy" + "".join(p.capitalize() for p in stmt_name.split("-"))
+            policy = agentcore.CfnPolicy(
+                self,
+                cid,
+                name=f"{HANDLE}_{stmt_name.replace('-', '_')}",
+                policy_engine_id=engine.attr_policy_engine_id,
+                definition=agentcore.CfnPolicy.PolicyDefinitionProperty(
+                    cedar=agentcore.CfnPolicy.CedarPolicyProperty(statement=statement),
                 ),
-            ),
-            description="Generated from agate.entitlements - mirrors the IAM model scope",
-        )
-        policy.add_dependency(engine)
+                description="Generated from agate.entitlements - mirrors the IAM model scope",
+            )
+            policy.add_dependency(engine)
 
         # --- Outputs -------------------------------------------------------
         cdk.CfnOutput(self, "GuardrailId", value=guardrail.attr_guardrail_id)

@@ -277,25 +277,35 @@ class AgentStack(Stack):
             )
         )
 
-        # The Gateway — MCP protocol, custom-JWT inbound auth (the verified campus user, the
-        # SAME discovery URL the Runtime uses). NAME is `agate-{tenant}` so its ARN joins the
+        # The Gateway — MCP protocol. NAME is `agate-{tenant}` so its ARN joins the
         # tenant-fenced family `_DEFAULT_GATEWAY_ARN` already authorizes (#113): a live ARN
         # outside `gateway/agate-{tenant}-*` would miss every grant.
+        #
+        # Authorizer: `CUSTOM_JWT` when a Cognito discovery URL is supplied (inbound = the
+        # verified campus user, the SAME discovery URL the Runtime uses) — and AWS REQUIRES
+        # the JWT config when that type is set, so the two are bound together. With no OIDC
+        # context, fall back to `AWS_IAM` (SigV4) — config-free, and correct because the
+        # gateway invoke is ALREADY IAM-fenced by the #113 tool grant (the caller signs with
+        # the broker-vended scoped creds). Setting CUSTOM_JWT without a config is the bug that
+        # failed the first live deploy (BedrockAgentCoreControl 400).
         gateway_name = f"{HANDLE}-{tenant}"
-        gateway_authorizer = None
         if oidc_discovery_url:
+            gateway_authorizer_type = "CUSTOM_JWT"
             gateway_authorizer = agentcore.CfnGateway.AuthorizerConfigurationProperty(
                 custom_jwt_authorizer=agentcore.CfnGateway.CustomJWTAuthorizerConfigurationProperty(
                     discovery_url=oidc_discovery_url,
                     allowed_audience=[allowed_audience] if allowed_audience else None,
                 )
             )
+        else:
+            gateway_authorizer_type = "AWS_IAM"
+            gateway_authorizer = None
         gateway = agentcore.CfnGateway(
             self,
             "ToolGateway",
             name=gateway_name,
             role_arn=execution_role.role_arn,
-            authorizer_type="CUSTOM_JWT",
+            authorizer_type=gateway_authorizer_type,
             protocol_type="MCP",
             authorizer_configuration=gateway_authorizer,
             description=f"agate campus-tool gateway (tenant {tenant}) - MCP, per-request",
@@ -393,13 +403,21 @@ class AgentStack(Stack):
             ],
             description="agate Slurm MCP target (hpc-submit/hpc-monitor)",
         )
-        slurm_target.add_dependency(gateway)
-        # The Gateway invokes the Slurm Lambda; grant it on the function.
+        # An MCP-Lambda target with `GATEWAY_IAM_ROLE` credentials is invoked by AgentCore AS
+        # the gateway's EXECUTION ROLE — so that role (not just the service principal) must
+        # hold `lambda:InvokeFunction` on the Slurm function, and AgentCore validates this at
+        # target-create time. Grant both: the role grant (what AgentCore checks) + the
+        # service-principal resource policy (defense in depth). The target depends on the role
+        # grant so CloudFormation attaches it BEFORE creating the target (else it 400s
+        # "execution role lacks permission" — the bug that failed the second live deploy).
+        slurm_invoke_grant = slurm_fn.grant_invoke(execution_role)
         slurm_fn.add_permission(
             "AllowGatewayInvoke",
             principal=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
             action="lambda:InvokeFunction",
         )
+        slurm_target.add_dependency(gateway)
+        slurm_target.node.add_dependency(slurm_invoke_grant)
 
         # --- Connector targets (#133 data plane, user-delegated OAuth) ----
         # The user-oauth connectors (Drive/Box/Teams/Discord) reach their content APIs AS the

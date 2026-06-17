@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Two AgentCore Gateway deploy bugs surfaced by the first live `cdk deploy` of `agate-agent`
+  (#136).** Both failed the deploy and rolled back cleanly (the live Runtime was never
+  touched, by design — the diff was additive-only with the running container image pinned).
+  (1) The Gateway hardcoded `authorizer_type="CUSTOM_JWT"` but only set the JWT config when a
+  Cognito discovery URL was in context — AWS rejects `CUSTOM_JWT` with no config (400). Now the
+  authorizer type is **conditional**: `CUSTOM_JWT` (with its required config) when an OIDC
+  discovery URL is supplied, else **`AWS_IAM`** (config-free, and correct — the gateway invoke
+  is already IAM-fenced by the #113 tool grant, the caller signing with the broker-vended
+  scoped creds). (2) The Slurm MCP-Lambda target (credential type `GATEWAY_IAM_ROLE`) is
+  invoked by AgentCore AS the gateway's execution ROLE, so that role must hold
+  `lambda:InvokeFunction` on the Slurm function (a service-principal resource policy alone
+  isn't what AgentCore validates) — now granted via `grant_invoke(execution_role)`, with the
+  target depending on the grant so CFN attaches it first. After both fixes the deploy
+  **succeeded**: the live Gateway (`agate-demo-xsrgzb8b6f`), WorkloadIdentity, Slurm Lambda +
+  target are deployed, and a live `SimulateCustomPolicy` against the real Gateway ARN confirms
+  the #113 fence (declared `hpc-submit` allowed; cross-tenant + no-tools denied). Two new synth
+  assertions pin both fixes.
+
 ### Added
 - **AG-UI — the event-stream governor (#119 slice, the last; Phase 12 / tracking #103).**
   AG-UI is the open streaming protocol for agent state/events to a UI — "the event stream is

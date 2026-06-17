@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Natural-language drafting endpoint: the LLM proposes, the compiler disposes (#118b,
+  follow-up to #118).** The live surface behind the #118 disposer core. NEW
+  `infra/functions/drafting/handler.py` + `infra/stacks/drafting.py` (`DraftingStack`): a Lambda
+  behind an IAM-authed Function URL that verifies the IdP token, asks the author's OWN cheapest
+  entitled model (`models_for_tier(verified_tier)[0]`) to draft an agent spec, fence-strips +
+  parses the model's JSON, then runs `agate.drafting.dispose_draft` to CLAMP it to the author's
+  verified authority and returns the bounded plan to confirm. The model output carries ZERO
+  authority — a cross-tenant/over-broad draft is clamped or rejected (never widened), a
+  non-JSON output is a clean `ok=False` outcome (not a 500), and the endpoint returns only the
+  legible plan, never the credential. The per-session tier is enforced in code (drafting with
+  the verified tier's model); the Lambda's `bedrock:Converse` grant is scoped to the
+  entitled-model superset (the agent-runtime discipline — the IAM bound is the outer universe,
+  not the per-user scope). Nothing compiles to a live agent — draft → clamp → render only; the
+  SPA confirm UI (#118c) + the deploy-on-confirm executor stay deferred. Default-fleet stack
+  (Bedrock is per-request / $0-idle, NO CLOCKS). Unit + synth tests; 902 passing. Deploy-ready,
+  not yet deployed.
 - **Agent Runtime memory hook: per-turn recall + record (#130b, follow-up to #130).** The
   reference agent container now recalls personal memory before a turn and records the turn
   after — when the opt-in memory tool is wired. NEW `agent/memory_client.py`: a best-effort

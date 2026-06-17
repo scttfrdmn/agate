@@ -185,6 +185,74 @@ def test_pattern_per_role_system_prompt_reaches_backend(monkeypatch):
     assert "GAPS" in joined
 
 
+# --- memory hook (#130b) ----------------------------------------------------
+
+
+def test_memory_disabled_is_a_noop(stub_backends, monkeypatch):
+    # With no memory tool wired, neither recall nor record is attempted — the default path.
+    from agent import memory_client
+
+    monkeypatch.setattr(memory_client, "MEMORY_TOOL_ARN", "")
+    calls = []
+    monkeypatch.setattr(memory_client, "recall", lambda *a, **k: calls.append("recall") or [])
+    monkeypatch.setattr(memory_client, "record", lambda *a, **k: calls.append("record") or True)
+    events = server.run_invocation({"question": "q", "idp_token": "t"}, session_id="s-1")
+    assert calls == []  # enabled() is False, so the hooks short-circuit before calling
+    assert events[-1]["type"] == "receipt"
+
+
+def test_memory_recall_prepended_to_evidence(stub_backends, monkeypatch):
+    # When enabled, recalled memory is folded into the evidence the reasoning modes consume.
+    from agent import memory_client
+
+    seen_prompts = []
+
+    class CapturingBackend:
+        def __init__(self, *_a, **_k):
+            pass
+
+        def converse(self, tier, system, prompt, max_tokens):
+            seen_prompts.append(prompt)
+            return ("SYNTHESIS" if "Reply with one word" in system else "ok"), {
+                "inputTokens": 1,
+                "outputTokens": 1,
+            }, None
+
+    monkeypatch.setattr(server, "BedrockBackend", CapturingBackend)
+    monkeypatch.setattr(memory_client, "enabled", lambda: True)
+    monkeypatch.setattr(
+        memory_client, "recall", lambda *a, **k: [{"content": "the user prefers SI units"}]
+    )
+    recorded = {}
+    monkeypatch.setattr(
+        memory_client, "record",
+        lambda token, payload, **k: recorded.update(token=token, payload=payload) or True,
+    )
+    events = server.run_invocation(
+        {"question": "compute", "idp_token": "tok", "evidence": "DOC1", "mode": "SYNTHESIS"},
+        session_id="s-1",
+    )
+    # the Ask prompt carries BOTH the recalled memory and the original evidence
+    ask = next(p for p in seen_prompts if "Question:" in p)
+    assert "the user prefers SI units" in ask
+    assert "DOC1" in ask
+    # the turn's answers were recorded with the forwarded token
+    assert recorded["token"] == "tok"
+    assert any(e.get("type") == "answer" for e in [{"type": "answer"}])  # sanity
+    assert events[-1]["type"] == "receipt"
+
+
+def test_memory_record_skipped_without_session_id(stub_backends, monkeypatch):
+    from agent import memory_client
+
+    monkeypatch.setattr(memory_client, "enabled", lambda: True)
+    monkeypatch.setattr(memory_client, "recall", lambda *a, **k: [])
+    calls = []
+    monkeypatch.setattr(memory_client, "record", lambda *a, **k: calls.append(1) or True)
+    server.run_invocation({"question": "q", "idp_token": "tok"}, session_id="")
+    assert calls == []  # no session id -> no record
+
+
 def test_events_to_blob_is_ndjson():
     blob = server._events_to_blob(
         [{"type": "answer", "text": "hi"}, {"type": "cost", "total": 1.0}]

@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Collaborative rooms endpoint: the live transport (#116 — server, PR 1 of 2).** The social
+  surface over the merged `agate.rooms` core: humans AND agents as bounded participants in a
+  scope-bounded space. NEW `infra/functions/rooms/` + `infra/stacks/rooms.py` (`RoomsStack`):
+  a Lambda behind an IAM-authed Function URL with op-dispatched **open / join / leave / post /
+  events**, over a **polling** transport (the SPA polls `events?since=<cursor>`) — NOT WebSocket,
+  which bills per-connection-minute and breaks NO CLOCKS. NEW pure `agate/room_record.py`
+  (`SavedRoom` + `room_object_key`) persists a room as a TENANT-rooted object
+  (`{tenant}/_rooms/{id}.json` — a room is coordination metadata whose scope narrows as members
+  join, so it can't be scope-keyed; the scope fences live in `effective_member_tags`, the
+  transcript SavedSession, and handler membership). NEW `policy.generate.room_rw_policy`
+  (Get+Put confined to `{tenant}/_rooms/*` via `${aws:PrincipalTag/agate:tenant}`). The handler
+  RE-DERIVES the room's scope/tier server-side from members on every mutation (a disjoint member
+  → 403, never widened to tenant-wide), attributes every message to the verified session (#137
+  `ActingAs`, never a body field), and budget-gates `post` under EVERY member's remaining budget
+  (`evaluate_cascade` over `room_cascade_nodes`; reject names the breaching member, nothing
+  appended/debited). Reads/writes go through a tenant-fenced role the handler ASSUMES with the
+  verified tags (the #130/#118 lesson); the per-member gate+debit use the spend/budget DDB rows.
+  `leave` is restricted to self-removal or removing an AGENT member (a caller can't evict
+  another human — closing the griefing/authorization gap the security review flagged). Unit +
+  synth tests + a live `SimulateCustomPolicy` proof of the `_rooms/` tenant fence (3/3). 975
+  tests pass. Default-fleet stack, deploy-ready, not deployed. The SPA room screen is PR 2.
 - **Visual builder: the "Build an agent" SPA screen (#117 — UI, PR 2 of 2).** The graphical
   authoring surface over the #117 endpoint. NEW `web/src/drafting/builder.ts`: an
   `AuthoringClient` (SigV4-signs `options`/`dispose` to the authoring Function URL) + a pure

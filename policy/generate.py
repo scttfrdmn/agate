@@ -201,6 +201,44 @@ def agent_write_policy(bucket: str | None = None) -> dict:
     }
 
 
+def room_rw_policy(bucket: str | None = None) -> dict:
+    """Get+PutObject for COLLABORATIVE ROOMS, confined to `{tenant}/_rooms/*` (#116).
+
+    The rooms endpoint assumes a role carrying this policy (with the verified `agate:` session
+    tags) to READ and WRITE a room object. A room object is coordination METADATA (members +
+    message log), NOT scoped data — its scope is the INTERSECTION of members, which narrows as
+    members join, so it is keyed at the TENANT root (`{tenant}/_rooms/{id}`), not under a scope.
+    The fences that matter are elsewhere: `rooms.effective_member_tags` clamps what a member may
+    DO, the transcript SavedSession is written under the intersection scope (#80), and MEMBERSHIP
+    is checked in the handler (dynamic, not IAM-expressible). So this policy enforces the one
+    boundary IAM can: TENANT isolation — a member can only touch rooms under its OWN tenant
+    (`${aws:PrincipalTag/agate:tenant}` interpolated), never another's. A missing tenant tag
+    denies outright (fail closed). The browser role carries no grant; this lives only on the
+    assumed rooms role."""
+    docs_bucket = bucket or f"{DOCS_BUCKET_PREFIX}-*"
+    tenant_tag = f"${{aws:PrincipalTag/{tag_key('tenant')}}}"
+    return {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                # Read+write room objects only under the session's own tenant's `_rooms/`.
+                "Sid": "RwOwnTenantRooms",
+                "Effect": "Allow",
+                "Action": ["s3:GetObject", "s3:PutObject"],
+                "Resource": [f"arn:aws:s3:::{docs_bucket}/{tenant_tag}/_rooms/*"],
+            },
+            {
+                # Fail closed: no tenant tag -> no room access at all.
+                "Sid": "DenyRoomWhenNoTenantTag",
+                "Effect": "Deny",
+                "Action": ["s3:GetObject", "s3:PutObject"],
+                "Resource": "*",
+                "Condition": {"Null": {f"aws:PrincipalTag/{tag_key('tenant')}": "true"}},
+            },
+        ],
+    }
+
+
 def vector_query_policy() -> dict:
     """S3 Vectors query grant for the `agate-vector-reader` role (#84).
 

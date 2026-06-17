@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Cedar governance policies load as one statement per AgentCore `CfnPolicy` (#governance,
+  surfaced by the first live deploy of `agate-governance`).** The stack passed the whole Cedar
+  policy SET (multiple `permit`s + the cross-tenant `forbid`) as a single `CfnPolicy.statement`
+  — AgentCore Policy holds exactly ONE statement, so it 400'd ("unexpected token `forbid`").
+  `policy/cedar.py` now exposes `policy_statements()` (each statement as a `(name, statement)`
+  pair — a permit per tier + retrieve + call-tool + the forbid), and `governance.py` creates one
+  `CfnPolicy` per statement under the engine. The Guardrail + PolicyEngine deploy cleanly; the
+  per-statement split is correct and unit-tested. **NOTE — `agate-governance` is still NOT
+  deployable**: a second AgentCore constraint then surfaced (it requires each Cedar `resource`
+  clause to be constrained to its own entity types, e.g. `AgentCore::Gateway`, rejecting the
+  abstract `resource` the §13.4 IAM-mirror policies use). Adapting the Cedar entity model to
+  AgentCore Policy's schema — without diverging the human-auditable IAM mirror — is tracked as
+  follow-up work; the stack stays un-deployed (it failed-closed and rolled back with zero
+  orphaned resources). The other 7 agate stacks are deployed + in sync.
 - **Two AgentCore Gateway deploy bugs surfaced by the first live `cdk deploy` of `agate-agent`
   (#136).** Both failed the deploy and rolled back cleanly (the live Runtime was never
   touched, by design — the diff was additive-only with the running container image pinned).

@@ -8,6 +8,7 @@ from policy.cedar import (
     forbid_cross_tenant,
     generate_policy_set,
     model_invoke_policies,
+    policy_statements,
     retrieve_policy,
 )
 
@@ -70,3 +71,24 @@ def test_policy_set_is_nonempty_and_commented():
     text = generate_policy_set()
     assert len(text) > 200
     assert "//" in text  # human-auditable comments present
+
+
+def test_policy_statements_are_separate_single_statements():
+    # AgentCore CfnPolicy holds ONE statement each, so the set is split per-statement: a
+    # tier permit each + retrieve + call-tool + the forbid. None may contain two statements.
+    stmts = policy_statements()
+    names = [n for n, _ in stmts]
+    assert names == [
+        *(f"invoke-{t}" for t in TIERS),
+        "retrieve",
+        "call-tool",
+        "forbid-cross-tenant",
+    ]
+    for name, body in stmts:
+        # exactly one Cedar statement -> exactly one terminating `;`
+        assert body.count(";") == 1, f"{name} must be a single statement"
+        assert body.rstrip().endswith(";")
+    # the forbid is its own statement (the bug was it trailing a permit in one string)
+    forbid = dict(stmts)["forbid-cross-tenant"]
+    assert forbid.lstrip().startswith("//") and "forbid(" in forbid
+    assert "permit(" not in forbid

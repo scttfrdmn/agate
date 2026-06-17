@@ -22,6 +22,9 @@ export interface AppConfig {
   cognitoClientId: string;
   // Governed-access console API (agate-admin). Empty = admin view hidden.
   adminUrl: string;
+  // Natural-language drafting endpoint (agate-drafting Function URL, #118b). Empty =
+  // the Draft screen is hidden.
+  draftingUrl: string;
 }
 
 const env = import.meta.env;
@@ -38,4 +41,5 @@ export const config: AppConfig = {
   cognitoDomain: env.VITE_COGNITO_DOMAIN ?? "",
   cognitoClientId: env.VITE_COGNITO_CLIENT_ID ?? "",
   adminUrl: env.VITE_ADMIN_URL ?? "",
+  draftingUrl: env.VITE_DRAFTING_URL ?? "",
 };

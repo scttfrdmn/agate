@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Deploy-on-confirm UI: the confirm button creates the agent (#118, UI — PR 2 of 2).** Wires
+  the #118c "Draft an agent" confirm button to the #118 deploy endpoint, completing
+  natural-language authoring end to end: describe → draft → clamp → render → **create**. NEW
+  `DeployClient` + pure `responseToDeploy` in `web/src/drafting/draft.ts`: the confirm button
+  SigV4-signs (service `lambda`) a POST of `{idp_token, spec}` to the deploy Function URL — the
+  endpoint RE-CLAMPS the spec server-side, so the echoed spec carries no authority. The drafting
+  response now carries the validated `spec` through `DraftPlan` to confirm; `renderDraft`'s
+  button shows "Creating…" → "Created: {agent_id}" on success, or the re-clamp reason on
+  rejection (re-enabling for retry). `main.ts` builds the `DeployClient` after login + passes
+  `onConfirm` into the draft screen, gated on `VITE_DEPLOY_URL`. With no deploy URL the button
+  explains it isn't wired. 110 web tests pass, `tsc` + build clean.
 - **Deploy-on-confirm: create a confirmed agent as a governed spec record (#118, the last
   authoring slice — server side).** When a user confirms a drafted plan, the agent is *created*
   by persisting its governed spec — per §0.1 agate governs (records the spec + bound), the

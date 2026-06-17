@@ -19,11 +19,14 @@ import type { ScopedCredentials } from "../auth";
 import { toSdkCredentials as sdkCreds } from "../auth/sdkCreds";
 
 // The endpoint's response contract (infra/functions/drafting/handler.py): a draft
-// OUTCOME, never a credential. `plan` is the legible "this agent will / will not" lines.
+// OUTCOME, never a credential. `plan` is the legible "this agent will / will not" lines;
+// `spec` is the validated draft dict the user confirms (echoed to the deploy endpoint, which
+// RE-CLAMPS it server-side — so it carries no authority, it's a convenience).
 export interface DraftPlan {
   ok: boolean;
   reason: string;
   plan: string[];
+  spec?: Record<string, unknown>;
 }
 
 export interface DraftConfig {
@@ -47,10 +50,15 @@ export function responseToPlan(status: number, payload: Record<string, unknown>)
   const plan = Array.isArray(payload.plan)
     ? payload.plan.filter((l): l is string => typeof l === "string")
     : [];
+  const spec =
+    payload.spec && typeof payload.spec === "object" && !Array.isArray(payload.spec)
+      ? (payload.spec as Record<string, unknown>)
+      : undefined;
   return {
     ok: payload.ok === true,
     reason: typeof payload.reason === "string" ? payload.reason : "",
     plan,
+    spec,
   };
 }
 
@@ -97,6 +105,85 @@ export class DraftClient {
   }
 }
 
+// The deploy endpoint's response contract (infra/functions/deploy/handler.py): on ok, the
+// created agent's id + the persisted plan; otherwise the re-clamp/refusal reason. Never a
+// credential — agate persists the governed spec, it does not vend a standing credential.
+export interface DeployResult {
+  ok: boolean;
+  reason: string;
+  agentId: string;
+  plan: string[];
+}
+
+export interface DeployConfig {
+  region: string;
+  // The deploy Function URL (VITE_DEPLOY_URL). Empty disables the confirm action.
+  endpoint: string;
+}
+
+// Pure: map the deploy endpoint's status + body to a DeployResult. Exported for testing.
+export function responseToDeploy(status: number, payload: Record<string, unknown>): DeployResult {
+  if (status === 403) {
+    const detail = typeof payload.detail === "string" ? payload.detail : "not entitled";
+    return { ok: false, reason: detail, agentId: "", plan: [] };
+  }
+  if (status !== 200) {
+    const err = typeof payload.error === "string" ? payload.error : `error ${status}`;
+    return { ok: false, reason: err, agentId: "", plan: [] };
+  }
+  const plan = Array.isArray(payload.plan)
+    ? payload.plan.filter((l): l is string => typeof l === "string")
+    : [];
+  return {
+    ok: payload.ok === true,
+    reason: typeof payload.reason === "string" ? payload.reason : "",
+    agentId: typeof payload.agent_id === "string" ? payload.agent_id : "",
+    plan,
+  };
+}
+
+export class DeployClient {
+  constructor(
+    private readonly cfg: DeployConfig,
+    private readonly creds: () => Promise<ScopedCredentials>,
+    private readonly idpToken: () => string,
+  ) {}
+
+  // Confirm-and-create: POST the validated spec; the endpoint RE-CLAMPS it against the
+  // verified token server-side and persists the governed record. The spec carries no
+  // authority — a tampered one is re-clamped or rejected exactly as a fresh draft.
+  async deploy(spec: Record<string, unknown>): Promise<DeployResult> {
+    const body = JSON.stringify({ idp_token: this.idpToken(), spec });
+    const url = new URL(this.cfg.endpoint);
+    const signer = new SignatureV4({
+      service: "lambda", // a Lambda Function URL (AWS_IAM auth)
+      region: this.cfg.region,
+      credentials: sdkCreds(await this.creds()),
+      sha256: Sha256,
+    });
+    const signed = await signer.sign({
+      method: "POST",
+      protocol: url.protocol,
+      hostname: url.hostname,
+      path: url.pathname,
+      headers: { host: url.hostname, "content-type": "application/json" },
+      body,
+    });
+    const resp = await fetch(this.cfg.endpoint, {
+      method: "POST",
+      headers: signed.headers as Record<string, string>,
+      body,
+    });
+    let payload: Record<string, unknown> = {};
+    try {
+      payload = (await resp.json()) as Record<string, unknown>;
+    } catch {
+      payload = {};
+    }
+    return responseToDeploy(resp.status, payload);
+  }
+}
+
 function el(tag: string, cls = "", text?: string): HTMLElement {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -104,14 +191,15 @@ function el(tag: string, cls = "", text?: string): HTMLElement {
   return n;
 }
 
-// Pure: render a disposed DraftPlan into `target`. On ok, the bounded plan lines + a
-// confirm button (deploy-on-confirm is deferred — the handler explains it). On reject,
-// the reason — the clamp/refusal is the whole point, surfaced plainly, not an error.
-// `onConfirm` is invoked when the user accepts the rendered plan.
+// Pure: render a disposed DraftPlan into `target`. On ok, the bounded plan lines + a confirm
+// button; on reject, the reason — the clamp/refusal is the whole point, surfaced plainly, not
+// an error. `onConfirm` (when supplied) is the async deploy-on-confirm action: it returns a
+// DeployResult, which is rendered in place. With no `onConfirm` (or no spec), the button
+// explains that deploy isn't wired rather than pretending to create.
 export function renderDraft(
   plan: DraftPlan,
   target: HTMLElement,
-  opts: { onConfirm?: () => void } = {},
+  opts: { onConfirm?: (spec: Record<string, unknown>) => Promise<DeployResult> } = {},
 ): void {
   target.replaceChildren();
 
@@ -140,19 +228,39 @@ export function renderDraft(
   panel.appendChild(ul);
   target.appendChild(panel);
 
-  // Confirm. The plan is reviewed; deploy-on-confirm (the #106 spawn_child executor) is
-  // not yet wired, so the button explains that rather than pretending to deploy.
+  // Confirm — the deploy-on-confirm action. The server RE-CLAMPS the spec against the verified
+  // token before persisting, so the echoed spec carries no authority.
   const actions = el("section", "panel");
   actions.setAttribute("aria-label", "Confirm");
   const note = el("p", "cost-line", "Review the bounds above. Nothing is created until you confirm.");
   actions.appendChild(note);
   const btn = el("button", "btn", "Confirm & create agent") as HTMLButtonElement;
   btn.type = "button";
-  btn.onclick = () => {
-    if (opts.onConfirm) opts.onConfirm();
-    note.textContent = "Confirmed. Deploy-on-confirm is not enabled in this build yet (#118c).";
-    btn.disabled = true;
-  };
+
+  const canDeploy = Boolean(opts.onConfirm && plan.spec);
+  if (!canDeploy) {
+    btn.onclick = () => {
+      note.textContent = "Deploy-on-confirm is not enabled in this build.";
+      btn.disabled = true;
+    };
+  } else {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      note.textContent = "Creating…";
+      try {
+        const result = await opts.onConfirm!(plan.spec!);
+        if (result.ok) {
+          note.textContent = `Created: ${result.agentId}`;
+        } else {
+          note.textContent = `Not created: ${result.reason || "rejected"}`;
+          btn.disabled = false; // let them retry / re-draft
+        }
+      } catch (err) {
+        note.textContent = `Create failed: ${(err as Error).message}`;
+        btn.disabled = false;
+      }
+    };
+  }
   actions.appendChild(btn);
   target.appendChild(actions);
 }

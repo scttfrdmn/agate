@@ -35,15 +35,38 @@ def test_gateway_target_oauth_and_lambda_synthesize(template):
     assert len(t.find_resources("AWS::Lambda::Function")) >= 1
 
 
-def test_gateway_is_mcp_with_custom_jwt_and_tenant_fenced_name(template):
+def test_gateway_is_mcp_iam_authed_without_oidc_and_tenant_fenced(template):
+    # No OIDC context (the default fixture) -> AWS_IAM authorizer (config-free; the gateway
+    # invoke is already IAM-fenced by the #113 grant). Setting CUSTOM_JWT without a config is
+    # what failed the first live deploy, so the type must be conditional.
     t, stack = template
     gws = list(t.find_resources("AWS::BedrockAgentCore::Gateway").values())
     props = gws[0]["Properties"]
     assert props["ProtocolType"] == "MCP"
-    assert props["AuthorizerType"] == "CUSTOM_JWT"
+    assert props["AuthorizerType"] == "AWS_IAM"
+    assert "AuthorizerConfiguration" not in props  # AWS_IAM needs none
     # The load-bearing assertion: the gateway name joins the #113 fence `agate-{tenant}-*`.
     assert props["Name"] == stack.gateway_name
     assert props["Name"].startswith("agate-")
+
+
+def test_gateway_uses_custom_jwt_when_oidc_supplied():
+    # With a Cognito discovery URL in context, the gateway is CUSTOM_JWT WITH its config
+    # (AWS requires the config when that type is set — the two are bound together).
+    app = cdk.App(
+        context={
+            "cognito_discovery_url": (
+                "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_x/.well-known/"
+                "openid-configuration"
+            ),
+            "cognito_audience": "client-id",
+        }
+    )
+    stack = AgentStack(app, "agate-agent-jwt", env=_ENV)
+    t = assertions.Template.from_stack(stack)
+    props = list(t.find_resources("AWS::BedrockAgentCore::Gateway").values())[0]["Properties"]
+    assert props["AuthorizerType"] == "CUSTOM_JWT"
+    assert "AuthorizerConfiguration" in props
 
 
 def test_slurm_target_declares_both_hpc_tools(template):
@@ -52,6 +75,29 @@ def test_slurm_target_declares_both_hpc_tools(template):
     payload = str(tgt["Properties"])  # the inline tool schema is nested; names appear in it
     assert "hpc-submit" in payload
     assert "hpc-monitor" in payload
+
+
+def test_gateway_execution_role_can_invoke_the_slurm_lambda(template):
+    # An MCP-Lambda target (GATEWAY_IAM_ROLE) is invoked AS the gateway's execution role, so
+    # that role must hold lambda:InvokeFunction on the Slurm fn — AgentCore validates this at
+    # target-create time (the bug that failed the second live deploy).
+    t, _ = template
+    t.has_resource_properties(
+        "AWS::IAM::Policy",
+        {
+            "PolicyDocument": assertions.Match.object_like(
+                {
+                    "Statement": assertions.Match.array_with(
+                        [
+                            assertions.Match.object_like(
+                                {"Action": "lambda:InvokeFunction"}
+                            )
+                        ]
+                    )
+                }
+            )
+        },
+    )
 
 
 def test_slurm_lambda_reads_spend_and_budget_tables(template):

@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Graphical authoring endpoint: the bounded-menu surface (#117 — server, PR 1 of 2).** The
+  live side of the visual builder / template gallery. NEW `infra/functions/authoring/` +
+  `infra/stacks/authoring.py` (`AuthoringStack`): a Lambda behind an IAM-authed Function URL
+  with two PURE-clamp ops (no model call, unlike #118b drafting): `options` returns the bounded
+  menu (`agate.authoring.authoring_options` — only tiers ≤ the author's and scope nodes the
+  author CONTAINS, plus the capability/skill/pattern catalogs + the template gallery), and
+  `dispose` funnels a builder-assembled (or template-filled) spec through the SAME compiler
+  clamp an LLM draft uses (`author_from_options` → `dispose_draft`) — so a client that bypasses
+  the bounded UI and POSTs a hand-crafted over-broad selection is clamped or rejected exactly
+  as a hallucinated draft. The scope-picker candidates are seeded from the author's OWN scope +
+  their verified `courses` (course-shaped sub-nodes), containment-filtered — the seed can only
+  narrow, never widen. **Least privilege by construction**: no model call and no write, so the
+  Lambda carries NO Bedrock / S3 / STS grant (deploy-on-confirm is the separate #118 endpoint).
+  Identity is the verified token; the menu + dispose both derive from it, never the body.
+  Default-fleet stack ($0-idle). The visual-builder SPA screen is PR 2. 946 tests pass;
+  deploy-ready, not yet deployed.
 - **Deploy-on-confirm UI: the confirm button creates the agent (#118, UI — PR 2 of 2).** Wires
   the #118c "Draft an agent" confirm button to the #118 deploy endpoint, completing
   natural-language authoring end to end: describe → draft → clamp → render → **create**. NEW

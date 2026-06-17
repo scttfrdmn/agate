@@ -22,6 +22,7 @@ import { currentToken, isLoggedIn, login, logout, type LoginConfig } from "./aut
 import { ChatSession } from "./chat/session";
 import { mountChrome } from "./chrome/nav";
 import { config } from "./config";
+import { DraftClient, renderDraft } from "./drafting/draft";
 import { reduce, type RunState, emptyRunState } from "./events/collector";
 import type { RunEvent } from "./events/protocol";
 import { renderCells, renderPanel } from "./panes/render";
@@ -141,6 +142,11 @@ function main(): void {
   if (config.adminUrl) {
     navItems.push({ label: "Admin · Usage", icon: "🛠", href: "#", onSelect: () => showAdmin() });
   }
+  // Natural-language drafting (#118c). The endpoint clamps any draft to the author's
+  // verified authority server-side; this screen just describes → renders the bounded plan.
+  if (config.draftingUrl) {
+    navItems.push({ label: "Draft an agent", icon: "✎", href: "#", onSelect: () => showDraft() });
+  }
   const { topbar } = mountChrome({
     brand: "agate",
     tag: "GenAI gateway",
@@ -169,6 +175,59 @@ function main(): void {
     } finally {
       out.setAttribute("aria-busy", "false");
     }
+  }
+
+  // The drafting client is created after login (it needs scoped creds for SigV4). The
+  // Draft screen is offered in the nav whenever the endpoint is configured; if a visitor
+  // reaches it before logging in, it explains that rather than failing.
+  let draftClient: DraftClient | null = null;
+
+  // Render the natural-language drafting surface (#118c): a textarea to describe an agent,
+  // then the server-clamped bounded plan + a confirm step. The boundary is enforced
+  // server-side — the model's draft has zero authority.
+  function showDraft(): void {
+    const outEl = document.getElementById("out");
+    if (!outEl) return;
+    outEl.replaceChildren();
+    if (!draftClient) {
+      renderError(outEl, "Log in to draft an agent — drafting runs under your own entitlements.");
+      return;
+    }
+    const panel = document.createElement("section");
+    panel.className = "panel";
+    panel.setAttribute("aria-label", "Describe an agent");
+    const title = document.createElement("div");
+    title.className = "panel-title";
+    title.textContent = "Describe an agent in plain language";
+    const ta = document.createElement("textarea");
+    ta.className = "field";
+    ta.rows = 3;
+    ta.style.cssText = "width:100%;resize:vertical";
+    ta.placeholder = "e.g. an agent that summarizes new papers in my lab every Monday";
+    ta.setAttribute("aria-label", "Describe the agent you want");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn";
+    btn.textContent = "Draft it";
+    const result = document.createElement("div");
+    btn.onclick = async () => {
+      const request = ta.value.trim();
+      if (!request) return;
+      btn.disabled = true;
+      result.replaceChildren();
+      result.setAttribute("aria-busy", "true");
+      try {
+        const plan = await draftClient!.draft(request);
+        renderDraft(plan, result);
+      } catch (err) {
+        renderError(result, (err as Error).message);
+      } finally {
+        result.setAttribute("aria-busy", "false");
+        btn.disabled = false;
+      }
+    };
+    panel.append(title, ta, btn);
+    outEl.append(panel, result);
   }
 
   const scopeEl = document.getElementById("scope")!;
@@ -207,6 +266,15 @@ function main(): void {
   const agent = config.agentRuntimeArn
     ? new AgentCoreTransport({ region: config.region, runtimeArn: config.agentRuntimeArn }, () => creds.get())
     : null;
+  // The drafting client (#118c) — SigV4-signs the drafting Function URL with the scoped
+  // creds; the endpoint clamps the model's draft to the verified author authority.
+  if (config.draftingUrl) {
+    draftClient = new DraftClient(
+      { region: config.region, endpoint: config.draftingUrl },
+      () => creds.get(),
+      () => idpToken(),
+    );
+  }
 
   const out = document.getElementById("out")!;
   const input = document.getElementById("q") as HTMLInputElement;

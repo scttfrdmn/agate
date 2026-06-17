@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Drafting confirm UI: the "Draft an agent" SPA screen (#118c, follow-up to #118b).** The
+  browser surface for natural-language authoring. NEW `web/src/drafting/draft.ts`: a
+  `DraftClient` that SigV4-signs (service `lambda`) a POST to the #118b drafting Function URL
+  with the broker-vended scoped creds + the verified `idp_token`, and a pure `renderDraft` that
+  shows the server-clamped bounded plan ("reads X · may draft Y · ≤ $Z") with a confirm button,
+  or — when the draft asked for more than the author holds — the clamp/refusal reason plainly
+  (the boundary working, not an error). A new "Draft an agent" nav item + `showDraft` screen in
+  `web/src/main.ts` (a textarea → draft → plan), gated on `VITE_DRAFTING_URL` and login. The
+  boundary is enforced entirely server-side (the model's draft has zero authority); the client
+  renders the outcome and never sees a credential. Deploy-on-confirm (#106 `spawn_child`) stays
+  deferred — the confirm button explains it. Pure-function unit tests (`responseToPlan` +
+  `renderDraft`); 102 web tests pass, `tsc` + build clean.
 - **Natural-language drafting endpoint: the LLM proposes, the compiler disposes (#118b,
   follow-up to #118).** The live surface behind the #118 disposer core. NEW
   `infra/functions/drafting/handler.py` + `infra/stacks/drafting.py` (`DraftingStack`): a Lambda

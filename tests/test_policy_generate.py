@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from agate.entitlements import TIER_MODELS, foundation_model_arn
-from policy.generate import data_scope_policy, model_access_policy, vector_query_policy
+from policy.generate import (
+    agent_write_policy,
+    data_scope_policy,
+    model_access_policy,
+    vector_query_policy,
+)
 
 
 def _stmt(doc, sid):
@@ -99,3 +104,47 @@ def test_vector_query_policy_is_tenant_fenced_and_guarded():
     deny = _stmt(doc, "DenyVectorsWhenNoTenantTag")
     assert deny["Effect"] == "Deny"
     assert deny["Condition"]["Null"]["aws:PrincipalTag/agate:tenant"] == "true"
+
+
+# --- agent_write_policy (#118 deploy-on-confirm) ----------------------------
+
+
+def test_agent_write_is_tenant_fenced_to_agents_segment():
+    doc = agent_write_policy()
+    allow = _stmt(doc, "PutOwnTenantAgents")
+    assert allow["Action"] == ["s3:PutObject"]
+    # confined to the tenant prefix AND the _agents/ segment (interpolated tenant tag), in
+    # BOTH the scoped (`{tenant}/{scope}/_agents/*`) and unscoped tenant-root
+    # (`{tenant}/_agents/*`) forms — the latter is the common tenant-wide author.
+    assert allow["Resource"] == [
+        "arn:aws:s3:::agate-docs-*/${aws:PrincipalTag/agate:tenant}/*/_agents/*",
+        "arn:aws:s3:::agate-docs-*/${aws:PrincipalTag/agate:tenant}/_agents/*",
+    ]
+    # every Allowed ARN stays under the tenant tag + the _agents/ segment
+    for r in allow["Resource"]:
+        assert "${aws:PrincipalTag/agate:tenant}" in r
+        assert "/_agents/" in r
+
+
+def test_agent_write_fails_closed_without_tenant_tag():
+    deny = _stmt(agent_write_policy(), "DenyAgentWriteWhenNoTenantTag")
+    assert deny["Effect"] == "Deny"
+    assert deny["Action"] == ["s3:PutObject"]
+    assert deny["Condition"]["Null"]["aws:PrincipalTag/agate:tenant"] == "true"
+
+
+def test_agent_write_scope_confinement_is_null_guarded():
+    # A scoped session may only write under {tenant}/{scope}/_agents/* (Null:false guard ->
+    # inert for an unscoped session).
+    deny = _stmt(agent_write_policy(), "DenyAgentWriteOutsideScopeSubtree")
+    assert deny["Effect"] == "Deny"
+    assert deny["Condition"]["Null"]["aws:PrincipalTag/agate:scope"] == "false"
+    assert deny["NotResource"] == [
+        "arn:aws:s3:::agate-docs-*/${aws:PrincipalTag/agate:tenant}/${aws:PrincipalTag/agate:scope}/_agents/*"
+    ]
+
+
+def test_agent_write_honours_explicit_bucket():
+    doc = agent_write_policy(bucket="agate-docs-123-us-east-1")
+    allow = _stmt(doc, "PutOwnTenantAgents")
+    assert "agate-docs-123-us-east-1" in allow["Resource"][0]

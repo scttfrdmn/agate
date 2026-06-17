@@ -23,6 +23,7 @@ from infra.stacks.audit import AuditStack  # noqa: E402
 from infra.stacks.chokepoint import ChokepointStack  # noqa: E402
 from infra.stacks.data import DataStack  # noqa: E402
 from infra.stacks.demo_idp import DemoIdpStack  # noqa: E402
+from infra.stacks.deploy import DeployStack  # noqa: E402
 from infra.stacks.drafting import DraftingStack  # noqa: E402
 from infra.stacks.governance import GovernanceStack  # noqa: E402
 from infra.stacks.identity import IdentityStack  # noqa: E402
@@ -50,6 +51,9 @@ AdminStack(app, "agate-admin", env=env)
 # Natural-language drafting (#118b) — an entitled model drafts a spec, the compiler clamps it
 # to the author's authority. Bedrock is per-request / $0-idle, so this is a default-fleet stack.
 DraftingStack(app, "agate-drafting", env=env)
+# Deploy-on-confirm (#118) — persists a confirmed, re-clamped agent spec as a scope-tagged S3
+# object. S3 PUT is per-request / $0-idle, so this is a default-fleet stack.
+DeployStack(app, "agate-deploy", env=env)
 # Optional Tier 1 — only deploy when an institution requires exact pre-call caps,
 # centralized inspection, or non-Bedrock routing (design §2, §12 Phase 6).
 ChokepointStack(app, "agate-chokepoint", env=env)

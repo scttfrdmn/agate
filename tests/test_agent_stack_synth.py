@@ -35,6 +35,47 @@ def test_gateway_target_oauth_and_lambda_synthesize(template):
     assert len(t.find_resources("AWS::Lambda::Function")) >= 1
 
 
+# --- memory hook (#130b, opt-in) --------------------------------------------
+_MEM_ARN = "arn:aws:lambda:us-east-1:111122223333:function:agate-memory-tool"
+
+
+def test_memory_hook_absent_without_context():
+    # The default deploy (no memory_tool_arn context) wires NO memory env / grant — the
+    # billable opt-in stays off and the Runtime is unchanged.
+    app = cdk.App()
+    t = assertions.Template.from_stack(AgentStack(app, "agate-agent-nomem", env=_ENV))
+    runtimes = list(t.find_resources("AWS::BedrockAgentCore::Runtime").values())
+    env = runtimes[0]["Properties"]["EnvironmentVariables"]
+    assert "AGATE_MEMORY_TOOL_ARN" not in env
+    # no InvokeMemoryTool statement anywhere
+    pols = t.find_resources("AWS::IAM::Policy")
+    sids = [
+        s.get("Sid")
+        for p in pols.values()
+        for s in p["Properties"]["PolicyDocument"]["Statement"]
+    ]
+    assert "InvokeMemoryTool" not in sids
+
+
+def test_memory_hook_wired_when_context_supplied():
+    # With the deployed memory tool ARN in context, the Runtime gets the env var and the
+    # execution role gets lambda:InvokeFunction scoped to exactly that function.
+    app = cdk.App(context={"memory_tool_arn": _MEM_ARN})
+    t = assertions.Template.from_stack(AgentStack(app, "agate-agent-mem", env=_ENV))
+    runtimes = list(t.find_resources("AWS::BedrockAgentCore::Runtime").values())
+    assert runtimes[0]["Properties"]["EnvironmentVariables"]["AGATE_MEMORY_TOOL_ARN"] == _MEM_ARN
+    pols = t.find_resources("AWS::IAM::Policy")
+    invoke = [
+        s
+        for p in pols.values()
+        for s in p["Properties"]["PolicyDocument"]["Statement"]
+        if s.get("Sid") == "InvokeMemoryTool"
+    ]
+    assert len(invoke) == 1
+    assert invoke[0]["Action"] == "lambda:InvokeFunction"
+    assert invoke[0]["Resource"] == _MEM_ARN
+
+
 def test_gateway_is_mcp_iam_authed_without_oidc_and_tenant_fenced(template):
     # No OIDC context (the default fixture) -> AWS_IAM authorizer (config-free; the gateway
     # invoke is already IAM-fenced by the #113 grant). Setting CUSTOM_JWT without a config is

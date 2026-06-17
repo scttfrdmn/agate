@@ -25,6 +25,7 @@ from agate.patterns import get as pattern_get
 from agate.tags import ClaimsError, claims_to_tags
 from cost import CostMeter
 
+from agent import memory_client
 from agent.backends import (
     BedrockBackend,
     CodeInterpreterRunner,
@@ -34,6 +35,9 @@ from agent.backends import (
 REGION = os.environ.get("AGATE_REGION", "us-east-1")
 CODE_INTERPRETER_ID = os.environ.get("AGATE_CODE_INTERPRETER_ID", "")
 PORT = int(os.environ.get("PORT", "8080"))
+# AgentCore passes the multi-turn session id as this header; the memory hook keys the
+# session tier on it. Lower-cased (http.server normalises header lookups case-insensitively).
+_SESSION_HEADER = "x-amzn-bedrock-agentcore-runtime-session-id"
 
 
 def _verified_tier(payload: dict) -> str:
@@ -99,13 +103,11 @@ def _resolve_models(payload: dict, models: list[str]) -> dict:
         p["roster"] = [
             {"tier": m, "label": f"model-{i + 1}", "max_tokens": 1024} for i, m in enumerate(picks)
         ]
-        p.setdefault(
-            "adjudicator", {"tier": cheapest, "label": "adjudicator", "max_tokens": 1024}
-        )
+        p.setdefault("adjudicator", {"tier": cheapest, "label": "adjudicator", "max_tokens": 1024})
     return p
 
 
-def run_invocation(payload: dict) -> list[dict]:
+def run_invocation(payload: dict, *, session_id: str = "") -> list[dict]:
     """Run one invocation and return the ordered event stream.
 
     Per-invocation backends so a microVM serving one session holds no cross-session
@@ -115,9 +117,30 @@ def run_invocation(payload: dict) -> list[dict]:
     VERIFIED inbound token (`_verified_tier`), never from a payload field or an
     unsourced header. `dispatch` rejects any payload-named model outside that set
     before invoking; an unverifiable token fails closed to oss.
+
+    Memory (#130b): when a memory tool is wired (opt-in), recall personal memory and
+    prepend it to the invocation `evidence` BEFORE dispatch, and record the turn AFTER.
+    Both are best-effort via `agent.memory_client` (the memory boundary re-verifies the
+    forwarded token + fences the namespace server-side) — a memory failure never breaks
+    the turn, and with no tool wired both are silent no-ops.
     """
     events: list[dict] = []
     emit = events.append
+
+    idp_token = payload.get("idp_token", "")
+    # Recall BEFORE dispatch: fold remembered context into the evidence the reasoning
+    # modes (DEBATE/Ask) already consume. Best-effort; [] when disabled or on failure.
+    if memory_client.enabled() and idp_token:
+        recalled = memory_client.recall(
+            idp_token,
+            tier="personal",
+            query=(payload.get("question") or "").strip(),
+            session_id=session_id,
+        )
+        block = memory_client.recall_as_evidence(recalled)
+        if block:
+            existing = payload.get("evidence", "")
+            payload = {**payload, "evidence": f"{block}\n\n{existing}".strip()}
 
     # Attach tenant/user attribution so the Bedrock invocation log can be metered
     # per tenant (#77); derived from the verified token, sanitised in the backend.
@@ -168,6 +191,14 @@ def run_invocation(payload: dict) -> list[dict]:
     except InvocationError as exc:
         emit({"type": "answer", "title": "error", "text": str(exc)})
 
+    # Record the turn AFTER dispatch (best-effort, opt-in). The answer events become the
+    # session memory the next turn recalls; the memory tool re-verifies the token + fences
+    # the namespace server-side, so the container forwards only the verified token.
+    if memory_client.enabled() and idp_token and session_id:
+        answers = [e for e in events if e.get("type") == "answer" and e.get("title") != "error"]
+        if answers:
+            memory_client.record(idp_token, answers, session_id=session_id)
+
     # Close the run with an itemised receipt (the meter's rows + total).
     emit(meter.receipt().to_event())
     return events
@@ -193,10 +224,14 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(length) if length else b""
         try:
             payload = decode_payload(body)
+            # The AgentCore multi-turn session id arrives as a header; fall back to a
+            # payload field. It only keys the memory session tier — identity/tenant/scope
+            # are still derived from the verified token, never this value.
+            session_id = self.headers.get(_SESSION_HEADER) or payload.get("session_id") or ""
             # SEC-4b: the tier is derived from the VERIFIED IdP token inside
             # run_invocation — not from a request header (which had no trusted
             # source). The SPA includes idp_token in the invocation payload.
-            events = run_invocation(payload)
+            events = run_invocation(payload, session_id=session_id)
             self._send(200, _events_to_blob(events), content_type="application/x-ndjson")
         except Exception as exc:  # noqa: BLE001 — never 500 silently
             self._send(500, json.dumps({"error": "agent_error", "detail": str(exc)}).encode())

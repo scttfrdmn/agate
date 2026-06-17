@@ -171,6 +171,31 @@ class AgentStack(Stack):
             )
         )
 
+        # --- Memory hook (#130b, OPT-IN) ----------------------------------
+        # When the (billable, opt-in) agate-memory stack is deployed, pass its read/write
+        # tool Lambda ARN to the container so each turn recalls/records memory. The Runtime
+        # only INVOKES that Lambda (forwarding the verified token) — it never touches
+        # AgentCore Memory directly, so the tenant fence stays where #130 put it (the tool
+        # assumes a tag-scoped role server-side). With no ARN supplied, the container's hook
+        # is a silent no-op (memory disabled) — the default deploy is unchanged.
+        runtime_env = {
+            # The agent reads its region + the Code Interpreter id at runtime; both are
+            # non-secret. The orchestration (agate.analyze) invokes the CI by this id.
+            "AGATE_REGION": region,
+            "AGATE_CODE_INTERPRETER_ID": code_interpreter.attr_code_interpreter_id,
+        }
+        memory_tool_arn = self.node.try_get_context("memory_tool_arn")
+        if memory_tool_arn:
+            runtime_env["AGATE_MEMORY_TOOL_ARN"] = memory_tool_arn
+            execution_role.add_to_policy(
+                iam.PolicyStatement(
+                    sid="InvokeMemoryTool",
+                    effect=iam.Effect.ALLOW,
+                    actions=["lambda:InvokeFunction"],
+                    resources=[memory_tool_arn],
+                )
+            )
+
         # --- AgentCore Runtime --------------------------------------------
         authorizer = None
         if oidc_discovery_url:
@@ -195,13 +220,7 @@ class AgentStack(Stack):
                 network_mode="PUBLIC",  # no VPC — NO CLOCKS (§14)
             ),
             authorizer_configuration=authorizer,
-            environment_variables={
-                # The agent reads its region + the Code Interpreter id at runtime;
-                # both are non-secret. The orchestration (agate.analyze) invokes the
-                # Code Interpreter by this id.
-                "AGATE_REGION": region,
-                "AGATE_CODE_INTERPRETER_ID": code_interpreter.attr_code_interpreter_id,
-            },
+            environment_variables=runtime_env,
             description="agate agent path - hosts Panel/Analyze/router orchestration",
         )
         runtime.add_dependency(code_interpreter)
@@ -323,9 +342,7 @@ class AgentStack(Stack):
             self,
             "WorkloadIdentity",
             name=f"{HANDLE}-{tenant}",
-            allowed_resource_oauth2_return_urls=(
-                [oauth_return_url] if oauth_return_url else None
-            ),
+            allowed_resource_oauth2_return_urls=([oauth_return_url] if oauth_return_url else None),
         )
 
         # OAuth2 credential provider for USER-DELEGATED outbound auth (#136 / §5): the agent

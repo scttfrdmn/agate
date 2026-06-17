@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Agent Runtime memory hook: per-turn recall + record (#130b, follow-up to #130).** The
+  reference agent container now recalls personal memory before a turn and records the turn
+  after — when the opt-in memory tool is wired. NEW `agent/memory_client.py`: a best-effort
+  bridge that INVOKES the #130 memory Lambda (forwarding the verified `idp_token`) rather than
+  calling AgentCore Memory directly — so the tenant fence stays where #130 put it (the tool
+  re-verifies the token + assumes a tag-scoped role server-side); the Runtime's shared,
+  un-tagged execution role never touches Memory. `agent/server.py` recalls (`tier=personal`,
+  prepended into the `evidence` DEBATE/Ask already consume) before `dispatch` and records the
+  answer events after, keyed on the AgentCore `runtime-session-id` header. **OPT-IN / fail-open:
+  with no `memory_tool_arn` context (the default), the hook is a silent no-op and the Runtime
+  is unchanged**; a recall/record failure NEVER breaks a turn (memory is an enhancement, not a
+  gate). `infra/stacks/agent.py` wires the tool ARN into the Runtime env + grants
+  `lambda:InvokeFunction` on exactly that function, both gated on the `memory_tool_arn` context.
+  Deploy-ready, NOT auto-deployed (it's coupled to standing up the billable `agate-memory`).
+  Unit + synth tests; 889 passing.
 - **AgentCore Memory: live resource + SDK read/write path (#130, follow-up to #110).** The
   pure namespace core (`agate.memory.namespaces_for`) + the IAM fence
   (`policy.generate.memory_access_policy`, live-proven) now have a real resource behind them.

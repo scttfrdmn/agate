@@ -22,6 +22,8 @@ import { currentToken, isLoggedIn, login, logout, type LoginConfig } from "./aut
 import { ChatSession } from "./chat/session";
 import { mountChrome } from "./chrome/nav";
 import { config } from "./config";
+import { type AuthoringOptions, AuthoringClient, type TemplateRow } from "./drafting/builder";
+import { buildSpecFromForm } from "./drafting/builder";
 import { DeployClient, DraftClient, renderDraft } from "./drafting/draft";
 import { reduce, type RunState, emptyRunState } from "./events/collector";
 import type { RunEvent } from "./events/protocol";
@@ -147,6 +149,11 @@ function main(): void {
   if (config.draftingUrl) {
     navItems.push({ label: "Draft an agent", icon: "✎", href: "#", onSelect: () => showDraft() });
   }
+  // Graphical authoring (#117). The bounded menu is pre-clamped to the author's reach
+  // server-side; the assembled spec funnels through the same compiler clamp as a draft.
+  if (config.authoringUrl) {
+    navItems.push({ label: "Build an agent", icon: "🧩", href: "#", onSelect: () => showBuild() });
+  }
   const { topbar } = mountChrome({
     brand: "agate",
     tag: "GenAI gateway",
@@ -235,6 +242,161 @@ function main(): void {
     outEl.append(panel, result);
   }
 
+  // The visual builder (#117): fetch the bounded menu, render a form whose scope/tier choices
+  // are ALREADY clamped to the author (unsafe is unrepresentable), then dispose the assembled
+  // spec through the same compiler clamp + the #118 confirm/deploy flow.
+  let authoringClient: AuthoringClient | null = null;
+
+  async function showBuild(): Promise<void> {
+    const outEl = document.getElementById("out");
+    if (!outEl) return;
+    outEl.replaceChildren();
+    if (!authoringClient) {
+      renderError(outEl, "Log in to build an agent — the builder is scoped to your entitlements.");
+      return;
+    }
+    outEl.setAttribute("aria-busy", "true");
+    try {
+      const resp = await authoringClient.options();
+      if (!resp.ok || !resp.options) {
+        renderError(outEl, "Could not load the authoring options.");
+        return;
+      }
+      renderBuilderForm(outEl, resp.options, resp.templates ?? []);
+    } catch (err) {
+      renderError(outEl, (err as Error).message);
+    } finally {
+      outEl.setAttribute("aria-busy", "false");
+    }
+  }
+
+  // Build the bounded form: a scope <select> (only nodes the author holds), a capability
+  // checklist, a reasoning-pattern <select>, name/description/budget fields, and an optional
+  // template prefill. On "Review", dispose → renderDraft (with the deploy confirm wired).
+  function renderBuilderForm(
+    outEl: HTMLElement,
+    options: AuthoringOptions,
+    templates: TemplateRow[],
+  ): void {
+    const mk = (tag: string, cls = "", text?: string): HTMLElement => {
+      const n = document.createElement(tag);
+      if (cls) n.className = cls;
+      if (text !== undefined) n.textContent = text;
+      return n;
+    };
+    const panel = mk("section", "panel");
+    panel.setAttribute("aria-label", "Build an agent");
+    panel.appendChild(mk("div", "panel-title", "Build an agent — bounded to what you hold"));
+
+    const nameIn = mk("input", "field") as HTMLInputElement;
+    nameIn.placeholder = "agent name (e.g. paper-sweep)";
+    nameIn.setAttribute("aria-label", "Agent name");
+    const descIn = mk("input", "field") as HTMLInputElement;
+    descIn.placeholder = "what it does";
+    descIn.setAttribute("aria-label", "Description");
+
+    const scopeSel = mk("select", "field") as HTMLSelectElement;
+    scopeSel.setAttribute("aria-label", "Scope (only nodes you hold)");
+    for (const s of options.offerable_scopes) {
+      const o = document.createElement("option");
+      o.value = s;
+      o.textContent = s || "(tenant-wide)";
+      scopeSel.appendChild(o);
+    }
+
+    const patternSel = mk("select", "field") as HTMLSelectElement;
+    patternSel.setAttribute("aria-label", "Reasoning pattern");
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "(default reasoning)";
+    patternSel.appendChild(none);
+    for (const p of options.patterns) {
+      const o = document.createElement("option");
+      o.value = p.key;
+      o.textContent = p.key;
+      patternSel.appendChild(o);
+    }
+
+    const budgetIn = mk("input", "field") as HTMLInputElement;
+    budgetIn.placeholder = "budget (e.g. $20 / user / month)";
+    budgetIn.setAttribute("aria-label", "Budget");
+
+    // Capability checklist — only the catalogued tools (the menu is the allowed set).
+    const toolsBox = mk("fieldset");
+    toolsBox.style.cssText = "border:1px solid var(--border);border-radius:6px;padding:.5rem";
+    const legend = mk("legend", "", "Capabilities");
+    toolsBox.appendChild(legend);
+    const toolInputs: HTMLInputElement[] = [];
+    for (const c of options.capabilities) {
+      const lbl = mk("label");
+      lbl.style.cssText = "display:flex;gap:.4rem;align-items:center;padding:.15rem 0";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = c.name;
+      toolInputs.push(cb);
+      lbl.append(cb, mk("span", "", c.name + (c.description ? ` — ${c.description}` : "")));
+      toolsBox.appendChild(lbl);
+    }
+
+    // Optional template prefill.
+    const tmplSel = mk("select", "field") as HTMLSelectElement;
+    tmplSel.setAttribute("aria-label", "Start from a template");
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "(start blank)";
+    tmplSel.appendChild(blank);
+    for (const t of templates) {
+      const o = document.createElement("option");
+      o.value = t.id;
+      o.textContent = `${t.name} — ${t.description}`;
+      tmplSel.appendChild(o);
+    }
+
+    const reviewBtn = mk("button", "btn", "Review") as HTMLButtonElement;
+    reviewBtn.type = "button";
+    const result = mk("div");
+
+    reviewBtn.onclick = async () => {
+      reviewBtn.disabled = true;
+      result.replaceChildren();
+      result.setAttribute("aria-busy", "true");
+      try {
+        const spec = buildSpecFromForm({
+          agent: nameIn.value,
+          description: descIn.value,
+          scope: scopeSel.value,
+          reasoning: patternSel.value || undefined,
+          tools: toolInputs.filter((c) => c.checked).map((c) => c.value),
+          budget: budgetIn.value || undefined,
+        });
+        const template = tmplSel.value || undefined;
+        const plan = await authoringClient!.dispose(spec, template);
+        const onConfirm = deployClient
+          ? (s: Record<string, unknown>) => deployClient!.deploy(s)
+          : undefined;
+        renderDraft(plan, result, { onConfirm });
+      } catch (err) {
+        renderError(result, (err as Error).message);
+      } finally {
+        result.setAttribute("aria-busy", "false");
+        reviewBtn.disabled = false;
+      }
+    };
+
+    panel.append(
+      mk("label", "sr-only", "Start from a template"),
+      tmplSel,
+      nameIn,
+      descIn,
+      scopeSel,
+      patternSel,
+      budgetIn,
+      toolsBox,
+      reviewBtn,
+    );
+    outEl.append(panel, result);
+  }
+
   const scopeEl = document.getElementById("scope")!;
   const form = document.getElementById("f") as HTMLFormElement;
 
@@ -285,6 +447,15 @@ function main(): void {
   if (config.deployUrl) {
     deployClient = new DeployClient(
       { region: config.region, endpoint: config.deployUrl },
+      () => creds.get(),
+      () => idpToken(),
+    );
+  }
+  // The graphical-authoring client (#117) — fetches the bounded menu + disposes the assembled
+  // spec; the menu is pre-clamped server-side and the dispose re-clamps.
+  if (config.authoringUrl) {
+    authoringClient = new AuthoringClient(
+      { region: config.region, endpoint: config.authoringUrl },
       () => creds.get(),
       () => idpToken(),
     );

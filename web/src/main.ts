@@ -22,7 +22,7 @@ import { currentToken, isLoggedIn, login, logout, type LoginConfig } from "./aut
 import { ChatSession } from "./chat/session";
 import { mountChrome } from "./chrome/nav";
 import { config } from "./config";
-import { DraftClient, renderDraft } from "./drafting/draft";
+import { DeployClient, DraftClient, renderDraft } from "./drafting/draft";
 import { reduce, type RunState, emptyRunState } from "./events/collector";
 import type { RunEvent } from "./events/protocol";
 import { renderCells, renderPanel } from "./panes/render";
@@ -181,6 +181,7 @@ function main(): void {
   // Draft screen is offered in the nav whenever the endpoint is configured; if a visitor
   // reaches it before logging in, it explains that rather than failing.
   let draftClient: DraftClient | null = null;
+  let deployClient: DeployClient | null = null;
 
   // Render the natural-language drafting surface (#118c): a textarea to describe an agent,
   // then the server-clamped bounded plan + a confirm step. The boundary is enforced
@@ -218,7 +219,11 @@ function main(): void {
       result.setAttribute("aria-busy", "true");
       try {
         const plan = await draftClient!.draft(request);
-        renderDraft(plan, result);
+        // Wire confirm to the deploy endpoint when configured; the server re-clamps the spec.
+        const onConfirm = deployClient
+          ? (spec: Record<string, unknown>) => deployClient!.deploy(spec)
+          : undefined;
+        renderDraft(plan, result, { onConfirm });
       } catch (err) {
         renderError(result, (err as Error).message);
       } finally {
@@ -271,6 +276,15 @@ function main(): void {
   if (config.draftingUrl) {
     draftClient = new DraftClient(
       { region: config.region, endpoint: config.draftingUrl },
+      () => creds.get(),
+      () => idpToken(),
+    );
+  }
+  // The deploy-on-confirm client (#118) — POSTs the confirmed spec; the endpoint re-clamps it
+  // server-side and persists the governed record.
+  if (config.deployUrl) {
+    deployClient = new DeployClient(
+      { region: config.region, endpoint: config.deployUrl },
       () => creds.get(),
       () => idpToken(),
     );

@@ -25,6 +25,9 @@ export interface AppConfig {
   // Natural-language drafting endpoint (agate-drafting Function URL, #118b). Empty =
   // the Draft screen is hidden.
   draftingUrl: string;
+  // Deploy-on-confirm endpoint (agate-deploy Function URL, #118). Empty = the confirm
+  // button is inert (drafts render but can't be created).
+  deployUrl: string;
 }
 
 const env = import.meta.env;
@@ -42,4 +45,5 @@ export const config: AppConfig = {
   cognitoClientId: env.VITE_COGNITO_CLIENT_ID ?? "",
   adminUrl: env.VITE_ADMIN_URL ?? "",
   draftingUrl: env.VITE_DRAFTING_URL ?? "",
+  deployUrl: env.VITE_DEPLOY_URL ?? "",
 };

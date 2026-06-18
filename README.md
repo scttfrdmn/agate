@@ -106,21 +106,28 @@ uv run python -m cost.pricelist --out cost/model_rates.json   # generated artifa
 The meter/chokepoint Lambdas load `cost/model_rates.json` automatically (it ships inside
 the bundled `cost` package) — no env var, no runtime Price List call (NO CLOCKS).
 
-**1. Identity (the crux — Tier 0).**
+**1a. Demo IdP FIRST (only if you have no campus IdP to point at).** Deploy it before the broker
+so its OIDC outputs are available — and pass the **deployed SPA URL** as `site_url` so the Hosted
+UI will redirect back to it (omit it and login errors with "An error was encountered with the
+requested page" because the CloudFront origin isn't a registered callback):
 ```bash
-npx cdk deploy agate-identity            # Cognito Identity Pool, broker Lambda, ABAC role
+npx cdk deploy agate-demo-idp -c site_url=https://<cloudfront-domain>   # throwaway Cognito pool
 ```
-Real login needs OIDC config on the broker (it verifies the IdP token — no placeholder):
-set `AGATE_OIDC_JWKS_URL`, `AGATE_OIDC_ISSUER`, `AGATE_OIDC_AUDIENCE` for your campus IdP (or a
-demo Cognito User Pool / any OIDC provider). Without them the broker fails closed.
+(First time you won't know the CloudFront domain yet — deploy `agate-web` once, then RE-deploy
+`agate-demo-idp` with its `SiteUrl`. The re-deploy modifies the app client in place; the
+UserPoolId/audience don't change.) The stack outputs `OidcIssuer`, `OidcJwksUrl`, `OidcAudience`.
 
-**1a. Demo IdP (only if you have no campus IdP to point at).**
+**1. Identity (the crux — Tier 0).** The broker verifies the IdP token, so it needs the OIDC
+config as deploy **context** (`-c`) — without it the broker fails closed ("verifier
+misconfigured"). Pass the demo-idp outputs (or your campus IdP's values):
 ```bash
-npx cdk deploy agate-demo-idp            # throwaway Cognito User Pool that issues real RS256 JWTs
+npx cdk deploy agate-identity \
+  -c oidc_issuer=<OidcIssuer> -c oidc_jwks_url=<OidcJwksUrl> -c oidc_audience=<OidcAudience>
 ```
-The stack outputs `OidcIssuer`, `OidcJwksUrl`, and `OidcAudience` — set those as
-`AGATE_OIDC_ISSUER` / `AGATE_OIDC_JWKS_URL` / `AGATE_OIDC_AUDIENCE` on the broker (and the agent's
-`cognito_discovery_url` / `cognito_audience`). Create a demo user and set their
+The same three values also wire the agent's gateway as `cognito_discovery_url` /
+`cognito_audience`, and the new endpoint stacks (drafting/authoring/deploy/rooms/memory) take
+`-c cognito_discovery_url=<…/.well-known/openid-configuration> -c cognito_audience=<OidcAudience>`
+(they derive issuer + JWKS from the discovery URL). Create a demo user and set their
 `custom:affiliation` / `custom:tenant` / `custom:courses` attributes — a pre-token Lambda maps
 those onto the `agate` claims, so the demo token scopes exactly like a campus token. Production
 skips this stack entirely.

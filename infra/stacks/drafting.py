@@ -31,7 +31,7 @@ from aws_cdk import (
     aws_lambda as lambda_,
 )
 from constructs import Construct
-from infra.assets import oidc_env_from_context, pip_bundled_code
+from infra.assets import function_url_cors, oidc_env_from_context, pip_bundled_code
 
 
 class DraftingStack(Stack):
@@ -74,7 +74,10 @@ class DraftingStack(Stack):
 
         # Function URL, IAM-authed (the SPA signs with the broker-vended scoped creds). No
         # public access, no ALB, no clock.
-        url = fn.add_function_url(auth_type=lambda_.FunctionUrlAuthType.AWS_IAM)
+        url = fn.add_function_url(
+            auth_type=lambda_.FunctionUrlAuthType.AWS_IAM,
+            cors=function_url_cors(self.node),
+        )
 
         cdk.CfnOutput(self, "DraftingUrl", value=url.url)
         cdk.CfnOutput(self, "DraftingFunction", value=fn.function_name)

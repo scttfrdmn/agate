@@ -30,7 +30,7 @@ from aws_cdk import (
     aws_lambda as lambda_,
 )
 from constructs import Construct
-from infra.assets import oidc_env_from_context, pip_bundled_code
+from infra.assets import function_url_cors, oidc_env_from_context, pip_bundled_code
 from policy.generate import agent_write_policy
 
 
@@ -97,7 +97,10 @@ class DeployStack(Stack):
         fn.add_environment("AGATE_AGENT_DEPLOY_ROLE_ARN", write_role.role_arn)
 
         # Function URL, IAM-authed (the SPA signs with the broker-vended scoped creds).
-        url = fn.add_function_url(auth_type=lambda_.FunctionUrlAuthType.AWS_IAM)
+        url = fn.add_function_url(
+            auth_type=lambda_.FunctionUrlAuthType.AWS_IAM,
+            cors=function_url_cors(self.node),
+        )
 
         cdk.CfnOutput(self, "DeployUrl", value=url.url)
         cdk.CfnOutput(self, "DeployFunction", value=fn.function_name)

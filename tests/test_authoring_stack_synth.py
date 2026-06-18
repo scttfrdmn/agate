@@ -33,7 +33,13 @@ def test_lambda_and_iam_authed_function_url(template):
     assert len(memfn) == 1
     urls = template.find_resources("AWS::Lambda::Url")
     assert len(urls) == 1
-    assert list(urls.values())[0]["Properties"]["AuthType"] == "AWS_IAM"
+    props = list(urls.values())[0]["Properties"]
+    assert props["AuthType"] == "AWS_IAM"
+    # CORS must be present (the SPA calls this cross-origin from CloudFront; without it the
+    # browser preflight gets no Access-Control-Allow-Origin and fails "Failed to fetch").
+    cors = props["Cors"]
+    assert "POST" in cors["AllowMethods"]
+    assert "authorization" in cors["AllowHeaders"]  # SigV4-signed request header
 
 
 def test_no_bedrock_or_data_grant_least_privilege(template):

@@ -31,7 +31,7 @@ from aws_cdk import (
     aws_lambda as lambda_,
 )
 from constructs import Construct
-from infra.assets import oidc_env_from_context, pip_bundled_code
+from infra.assets import function_url_cors, oidc_env_from_context, pip_bundled_code
 from policy.generate import room_rw_policy
 
 
@@ -116,7 +116,10 @@ class RoomsStack(Stack):
         )
 
         # Function URL, IAM-authed (the SPA signs with the broker-vended scoped creds).
-        url = fn.add_function_url(auth_type=lambda_.FunctionUrlAuthType.AWS_IAM)
+        url = fn.add_function_url(
+            auth_type=lambda_.FunctionUrlAuthType.AWS_IAM,
+            cors=function_url_cors(self.node),
+        )
 
         cdk.CfnOutput(self, "RoomsUrl", value=url.url)
         cdk.CfnOutput(self, "RoomsFunction", value=fn.function_name)

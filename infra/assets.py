@@ -155,3 +155,28 @@ def oidc_env_from_context(node) -> dict[str, str]:  # noqa: ANN001 — a constru
         "AGATE_OIDC_JWKS_URL": jwks,
         "AGATE_OIDC_AUDIENCE": audience,
     }
+
+
+def function_url_cors(node) -> lambda_.FunctionUrlCorsOptions:  # noqa: ANN001 — a constructs.Node
+    """CORS for a Lambda Function URL the SPA calls cross-origin (the drafting/authoring/deploy/
+    rooms endpoints). The SPA at the CloudFront origin POSTs a SigV4-signed request, so the
+    browser preflight must be allowed AND the SigV4 headers echoed — without this the Function
+    URL sends no `Access-Control-Allow-Origin` and the browser blocks it ("Failed to fetch").
+
+    `allowed_origins` is the deployed `site_url` context when set (pin to the SPA origin), else
+    `*` (demo default — mirrors the broker/retrieval HTTP APIs). The allowed headers are the
+    SigV4 set the AWS SDK sends (`authorization` / `x-amz-date` / `x-amz-content-sha256` /
+    `x-amz-security-token`) plus `content-type`."""
+    site_url = (node.try_get_context("site_url") or "").strip().rstrip("/")
+    origins = [site_url] if site_url else ["*"]
+    return lambda_.FunctionUrlCorsOptions(
+        allowed_origins=origins,
+        allowed_methods=[lambda_.HttpMethod.POST],
+        allowed_headers=[
+            "content-type",
+            "authorization",
+            "x-amz-date",
+            "x-amz-content-sha256",
+            "x-amz-security-token",
+        ],
+    )

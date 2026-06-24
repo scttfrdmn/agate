@@ -416,10 +416,14 @@ class IdentityStack(Stack):
             cors_preflight=apigwv2.CorsPreflightOptions(
                 allow_origins=["*"],  # demo: any origin; pin to the SiteUrl for prod
                 allow_methods=[apigwv2.CorsHttpMethod.POST],
+                # The SPA SigV4-signs this endpoint; the signer emits an
+                # x-amz-content-sha256 header, so the preflight must allow it or the
+                # browser blocks the request ("Failed to fetch") before it is sent.
                 allow_headers=[
                     "content-type",
                     "authorization",
                     "x-amz-date",
+                    "x-amz-content-sha256",
                     "x-amz-security-token",
                 ],
             ),

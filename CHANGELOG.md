@@ -183,6 +183,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rebuild).
 
 ### Fixed
+- **"Ask" failed with "Failed to fetch" from the browser — two bugs on the chokepoint path.**
+  (1) The retrieval HTTP API's CORS preflight allowed `authorization`/`x-amz-date`/
+  `x-amz-security-token` but **not `x-amz-content-sha256`**, which the SigV4 signer always emits;
+  since `runAsk` queries the RAG retriever *before* the choke point, the browser blocked that
+  request outright. Added the header to the retrieval CORS (the chokepoint Function URL already
+  allowed it via `function_url_cors`). (2) `OpenAITransport` never sent `idp_token`, so once the
+  choke point was reached it could not verify identity and 402'd. The transport now takes an
+  `idpToken()` getter and includes the token in the body (identity is still derived server-side
+  from the *verified* token — the other body fields stay advisory). New `identity` synth test locks
+  the `x-amz-content-sha256` CORS header; updated `openai` transport test. 980 tests pass.
 - **OIDC verifier env on the new endpoint stacks — the JWKS URL was missing (live-deploy
   blocker).** The drafting/deploy/authoring/rooms/memory stacks wired `AGATE_OIDC_ISSUER` (from
   `cognito_discovery_url`) + `AGATE_OIDC_AUDIENCE` but NOT `AGATE_OIDC_JWKS_URL`, which

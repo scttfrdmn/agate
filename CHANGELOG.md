@@ -183,6 +183,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rebuild).
 
 ### Fixed
+- **Login failed with `redirect_mismatch` ("An error was encountered with the requested page").**
+  The SPA sent `redirect_uri = location.origin + location.pathname`, but Cognito requires an EXACT
+  match against a registered callback (we register `<origin>/`). Any non-root path — a deep link, or
+  leftover path from a prior bad navigation — made `pathname` ≠ `/`, so Cognito rejected the
+  authorize request. The SPA now sends the canonical site root (`location.origin + "/"`), which it
+  serves the same app from. (Surfaced right after the scheme fix below let login reach Cognito.)
 - **The "Log in" button did nothing — the Hosted-UI URL was built without a scheme.**
   `VITE_COGNITO_DOMAIN` is set bare (`…amazoncognito.com`, no `https://`), and `authorizeUrl`
   used it verbatim — so `location.assign("…amazoncognito.com/login?…")` resolved it as a path

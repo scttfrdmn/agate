@@ -58,6 +58,32 @@ def estimate_input_tokens(messages: list[dict]) -> int:
     return int(math.ceil(chars / 4)) + 1
 
 
+def to_converse_messages(messages: list[dict]) -> list[dict]:
+    """Map the request's chat messages to the Bedrock Converse `messages` shape.
+
+    Converse has no `role:"system"` turn (the system prompt is a separate field), and
+    several models — including the default oss tier — reject system messages entirely
+    ("This model doesn't support system messages"). The SPA's RAG path prepends grounding
+    context as a system message, so fold any system text into the FIRST user turn instead.
+    That works for every model and keeps the grounding in front of the question. Pure."""
+    system_text = "\n\n".join(
+        str(m.get("content", "")) for m in messages if m.get("role") == "system"
+    ).strip()
+    turns = [m for m in messages if m.get("role") != "system"]
+    out: list[dict] = []
+    folded = False
+    for m in turns:
+        content = str(m.get("content", ""))
+        if not folded and system_text and m.get("role") == "user":
+            content = f"{system_text}\n\n{content}"
+            folded = True
+        out.append({"role": m["role"], "content": [{"text": content}]})
+    # No user turn to fold into (system-only request) — send the system text as a user turn.
+    if system_text and not folded:
+        out.insert(0, {"role": "user", "content": [{"text": system_text}]})
+    return out
+
+
 def lookup_budget(tenant: str, user: str, period: str) -> float | None:
     """The authoritative budget for the verified identity, from the budget table.
 
@@ -214,7 +240,7 @@ def process(req: dict, *, period: str | None = None) -> dict:
     br = assume_user_role(tags, user)
     resp = br.converse(
         modelId=model_id,
-        messages=[{"role": m["role"], "content": [{"text": m["content"]}]} for m in messages],
+        messages=to_converse_messages(messages),
         inferenceConfig={"maxTokens": max_tokens},
     )
     text = "".join(b.get("text", "") for b in resp["output"]["message"]["content"])

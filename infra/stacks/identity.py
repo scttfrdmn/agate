@@ -114,10 +114,13 @@ class IdentityStack(Stack):
                             # Function URL (optional Ask routing). Ceiling only; the
                             # actual grant is scoped to the choke point's ARN on the
                             # role. Without this ceiling the boundary caps the invoke
-                            # and the signed POST is 403'd at the edge.
+                            # and the signed POST is 403'd at the edge. BOTH actions are
+                            # required: as of Oct 2025 a Function URL needs
+                            # lambda:InvokeFunctionUrl AND lambda:InvokeFunction (the
+                            # latter bounded to URL calls on the role's grant below).
                             "Sid": "CeilingInvokeFunctionUrl",
                             "Effect": "Allow",
-                            "Action": "lambda:InvokeFunctionUrl",
+                            "Action": ["lambda:InvokeFunctionUrl", "lambda:InvokeFunction"],
                             "Resource": "*",
                         },
                         {
@@ -225,6 +228,11 @@ class IdentityStack(Stack):
         # create a cross-stack dependency, as with the agent runtime above). Bounded by
         # CeilingInvokeFunctionUrl. A permissions boundary requires the invoke be
         # allowed identity-side too — a resource policy alone is capped by the boundary.
+        # As of Oct 2025, invoking a Function URL needs BOTH lambda:InvokeFunctionUrl
+        # and lambda:InvokeFunction. Grant both; bound InvokeFunction to URL calls only
+        # (lambda:InvokedViaFunctionUrl) so this can't be used to invoke the function by
+        # any other path.
+        chokepoint_fn_arn = f"arn:aws:lambda:{region}:{account}:function:{HANDLE}-chokepoint"
         authenticated_role.attach_inline_policy(
             iam.Policy(
                 self,
@@ -237,11 +245,17 @@ class IdentityStack(Stack):
                                 "Sid": "InvokeChokepointUrl",
                                 "Effect": "Allow",
                                 "Action": "lambda:InvokeFunctionUrl",
-                                "Resource": (
-                                    f"arn:aws:lambda:{region}:{account}:function:"
-                                    f"{HANDLE}-chokepoint"
-                                ),
-                            }
+                                "Resource": chokepoint_fn_arn,
+                            },
+                            {
+                                "Sid": "InvokeChokepointFunction",
+                                "Effect": "Allow",
+                                "Action": "lambda:InvokeFunction",
+                                "Resource": chokepoint_fn_arn,
+                                "Condition": {
+                                    "Bool": {"lambda:InvokedViaFunctionUrl": "true"}
+                                },
+                            },
                         ],
                     }
                 ),

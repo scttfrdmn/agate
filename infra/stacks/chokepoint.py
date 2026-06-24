@@ -78,15 +78,25 @@ class ChokepointStack(Stack):
             description="agate Tier 1 choke point - exact pre-call budget enforcement (optional)",
         )
 
-        # Read authoritative spend + the server-side budget; assume the user's scoped role.
+        spend_arn = f"arn:aws:dynamodb:{self.region}:{self.account}:table/{spend_table}"
+        budget_arn = f"arn:aws:dynamodb:{self.region}:{self.account}:table/{budget_table}"
+        # Read authoritative spend + the server-side budget (the pre-call cascade).
         fn.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["dynamodb:GetItem"],
-                resources=[
-                    f"arn:aws:dynamodb:{self.region}:{self.account}:table/{spend_table}",
-                    f"arn:aws:dynamodb:{self.region}:{self.account}:table/{budget_table}",
-                ],
+                resources=[spend_arn, budget_arn],
+            )
+        )
+        # After an allowed call, the handler records the ACTUAL cost against each
+        # ancestor scope node's running total in the spend table (the cascade's
+        # post-call debit). That needs UpdateItem on the spend table — without it the
+        # call succeeds at Bedrock but 500s recording the debit.
+        fn.add_to_role_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=["dynamodb:UpdateItem"],
+                resources=[spend_arn],
             )
         )
         if auth_role_arn != PLACEHOLDER:
@@ -108,16 +118,25 @@ class ChokepointStack(Stack):
         )
 
         # The browser's authenticated role must be allowed to INVOKE the IAM-authed
-        # Function URL (lambda:InvokeFunctionUrl) — without this the signed POST is
-        # rejected at the edge with a 403 before the handler runs. A resource-based
-        # permission on THIS function suffices for a same-account principal (no
-        # cross-stack import: we only need the role ARN, supplied via context).
+        # Function URL — without this the signed POST is rejected at the edge with a
+        # 403 before the handler runs. As of Oct 2025 a Function URL requires BOTH
+        # lambda:InvokeFunctionUrl AND lambda:InvokeFunction; grant both as resource
+        # permissions (the InvokeFunction one bounded to URL calls via
+        # invoked_via_function_url). A resource-based permission on THIS function
+        # suffices for a same-account principal (no cross-stack import: we only need
+        # the role ARN, supplied via context).
         if auth_role_arn != PLACEHOLDER:
             fn.add_permission(
                 "InvokeUrlFromAuthRole",
                 principal=iam.ArnPrincipal(auth_role_arn),
                 action="lambda:InvokeFunctionUrl",
                 function_url_auth_type=lambda_.FunctionUrlAuthType.AWS_IAM,
+            )
+            fn.add_permission(
+                "InvokeFunctionFromAuthRole",
+                principal=iam.ArnPrincipal(auth_role_arn),
+                action="lambda:InvokeFunction",
+                invoked_via_function_url=True,
             )
 
         cdk.CfnOutput(self, "ChokepointUrl", value=url.url)

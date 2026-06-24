@@ -183,6 +183,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rebuild).
 
 ### Fixed
+- **An expired token left the SPA stuck "logged in" — login wouldn't re-trigger.** `isLoggedIn()`
+  checked only token *presence*, not expiry, so once the id_token expired the SPA kept showing the
+  logged-in state (the auth button read "Logout", not "Login") and kept sending the dead token. The
+  SPA now decodes the JWT `exp` (new pure `isTokenExpired`); `currentToken()` drops an expired stored
+  token and returns "", so the UI falls back to the login affordance automatically. No signature
+  check client-side — the broker stays the authority; a token with no readable `exp` is treated as
+  live. New `isTokenExpired` tests.
 - **The broker 403'd ("broker refused credentials: 403") after ~1h — the demo id_token expired.**
   The demo Cognito app client minted a 1-hour id_token, but the SPA has no token-refresh path (it
   reuses the id_token to refresh its short-lived STS creds), so once the hour elapsed the broker

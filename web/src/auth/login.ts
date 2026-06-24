@@ -29,6 +29,24 @@ export function tokenFromFragment(fragment: string): string {
   return p.get("id_token") ?? p.get("idp_token") ?? "";
 }
 
+/** Is this JWT expired (or unreadable)? Decodes the `exp` claim (seconds since
+ *  epoch) from the payload — no signature check, that's the broker's job; this is
+ *  only so the SPA stops treating a dead token as a live session. A token with no
+ *  readable `exp` is treated as NOT expired (the server remains the authority).
+ *  `nowMs` defaults to the current time; injectable for tests. Pure. */
+export function isTokenExpired(token: string, nowMs: number = Date.now()): boolean {
+  const parts = token.split(".");
+  if (parts.length < 2) return false;
+  try {
+    const json = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
+    const exp = (JSON.parse(json) as { exp?: number }).exp;
+    if (typeof exp !== "number") return false;
+    return nowMs >= exp * 1000;
+  } catch {
+    return false;
+  }
+}
+
 /** Build the Hosted-UI authorize URL for the implicit flow. Pure. */
 export function authorizeUrl(cfg: LoginConfig): string {
   const q = new URLSearchParams({
@@ -62,9 +80,16 @@ export function captureTokenFromUrl(): string {
   return tok;
 }
 
-/** The current IdP token: a captured/stored one, else whatever capture finds now. */
+/** The current IdP token: a captured/stored one, else whatever capture finds now.
+ *  An EXPIRED stored token is dropped and treated as absent — otherwise the SPA
+ *  would keep showing "logged in" and sending a dead token the broker now 403s. */
 export function currentToken(): string {
-  return sessionStorage.getItem(STORAGE_KEY) || captureTokenFromUrl();
+  const tok = sessionStorage.getItem(STORAGE_KEY) || captureTokenFromUrl();
+  if (tok && isTokenExpired(tok)) {
+    sessionStorage.removeItem(STORAGE_KEY);
+    return "";
+  }
+  return tok;
 }
 
 export function isLoggedIn(): boolean {

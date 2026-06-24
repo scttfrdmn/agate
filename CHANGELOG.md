@@ -183,6 +183,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rebuild).
 
 ### Fixed
+- **"Ask" through the choke point returned 403 (Forbidden) — the auth role couldn't invoke the
+  Function URL.** The choke point's Function URL is `AWS_IAM`-authed, but nothing granted the
+  browser's `agate-authenticated` role `lambda:InvokeFunctionUrl`, so the SigV4-signed POST was
+  rejected at the edge before the handler ran (a 403, distinct from the handler's own 402/500). The
+  `chokepoint` stack now adds a resource-based permission letting the auth role (supplied via
+  `-c auth_role_arn`) invoke the URL — a same-account principal, so no cross-stack import. New synth
+  tests assert the permission exists when an auth role is given and is absent otherwise.
+- **A 500 from the choke point or the retrieval proxy was undiagnosable — both swallowed the
+  exception silently.** Their last-resort `except` now `logging.exception(...)`s the traceback to
+  CloudWatch; the response body stays opaque (no internals leaked, retrieval still returns no
+  partial/unscoped results). Fail-closed behaviour is unchanged.
 - **"Ask" failed with "Failed to fetch" from the browser — two bugs on the chokepoint path.**
   (1) The retrieval HTTP API's CORS preflight allowed `authorization`/`x-amz-date`/
   `x-amz-security-token` but **not `x-amz-content-sha256`**, which the SigV4 signer always emits;

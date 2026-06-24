@@ -75,3 +75,23 @@ def test_assume_user_role_grant_when_auth_role_supplied():
     ]
     assert assumes, "the choke point must be able to assume the user's authenticated role"
     assert any(_AUTH_ROLE in str(s.get("Resource")) for s in assumes)
+
+
+def test_auth_role_may_invoke_the_function_url():
+    # The IAM-authed Function URL needs a resource permission letting the browser's
+    # authenticated role invoke it — else the signed POST is 403'd before the handler.
+    t = _template({"auth_role_arn": _AUTH_ROLE})
+    t.has_resource_properties(
+        "AWS::Lambda::Permission",
+        {
+            "Action": "lambda:InvokeFunctionUrl",
+            "FunctionUrlAuthType": "AWS_IAM",
+            "Principal": _AUTH_ROLE,
+        },
+    )
+
+
+def test_no_invoke_permission_without_auth_role():
+    # No auth role supplied -> no invoke permission (nothing to grant to).
+    t = _template()
+    assert t.find_resources("AWS::Lambda::Permission") == {}

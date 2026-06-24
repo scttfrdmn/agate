@@ -51,7 +51,11 @@ const loginConfig: LoginConfig | null = config.cognitoDomain
   ? {
       domain: config.cognitoDomain,
       clientId: config.cognitoClientId,
-      redirectUri: location.origin + location.pathname,
+      // The site ROOT, not origin+pathname: Cognito requires the redirect_uri to
+      // match a registered callback EXACTLY, and we register `<origin>/`. Using the
+      // live pathname would mismatch on any deep link / leftover path ("An error was
+      // encountered with the requested page"). The SPA serves the same app at root.
+      redirectUri: location.origin + "/",
     }
   : null;
 

@@ -34,6 +34,10 @@ export interface AppConfig {
   // Collaborative rooms endpoint (agate-rooms Function URL, #116). Empty = the
   // "Rooms" screen is hidden.
   roomsUrl: string;
+  // Optional Tier-1 choke point (agate-chokepoint Function URL). When set, Tier-0 "Ask"
+  // routes through it (gated + metered, server-enforced) instead of browser-direct Bedrock
+  // — required for Ask to work from the browser (Bedrock's endpoint has no CORS).
+  chokepointUrl: string;
 }
 
 const env = import.meta.env;
@@ -54,4 +58,5 @@ export const config: AppConfig = {
   deployUrl: env.VITE_DEPLOY_URL ?? "",
   authoringUrl: env.VITE_AUTHORING_URL ?? "",
   roomsUrl: env.VITE_ROOMS_URL ?? "",
+  chokepointUrl: env.VITE_CHOKEPOINT_URL ?? "",
 };

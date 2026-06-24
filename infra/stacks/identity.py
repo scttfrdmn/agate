@@ -296,6 +296,20 @@ class IdentityStack(Stack):
                 actions=["sts:AssumeRole", "sts:TagSession"],
             )
         )
+        # The OPTIONAL Tier-1 choke point (agate-chokepoint) also assumes this role to run a
+        # gated, metered inference AS the user (it passes the verified `agate:` tags, so the
+        # assumed session is exactly the user's real entitlement). Trust it by its PINNED exec
+        # role name — a constructed ARN, so there is NO cross-stack dependency on agate-chokepoint
+        # (it's an opt-in stack that may not be deployed). Mirrors the broker grant above.
+        authenticated_role.assume_role_policy.add_statements(  # type: ignore[union-attr]
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                principals=[
+                    iam.ArnPrincipal(f"arn:aws:iam::{self.account}:role/{HANDLE}-chokepoint-exec")
+                ],
+                actions=["sts:AssumeRole", "sts:TagSession"],
+            )
+        )
 
         # --- Vector retrieval proxy (#84) ---------------------------------
         # Makes sub-tenant vector scope a REAL boundary. The browser-held role above

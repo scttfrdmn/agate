@@ -29,7 +29,7 @@ from aws_cdk import (
     aws_lambda as lambda_,
 )
 from constructs import Construct
-from infra.assets import pip_bundled_code
+from infra.assets import function_url_cors, oidc_env_from_context, pip_bundled_code
 
 PLACEHOLDER = "PLACEHOLDER"
 
@@ -48,6 +48,20 @@ class ChokepointStack(Stack):
             self,
             "Chokepoint",
             function_name=f"{HANDLE}-chokepoint",
+            # PINNED exec role name so `agate-identity` can trust this role by a constructed ARN
+            # (`arn:aws:iam::{acct}:role/{HANDLE}-chokepoint-exec`) WITHOUT a cross-stack import —
+            # the chokepoint assumes the user's `agate-authenticated` role, which must trust it.
+            role=iam.Role(
+                self,
+                "ChokepointExecRole",
+                role_name=f"{HANDLE}-chokepoint-exec",
+                assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
+                managed_policies=[
+                    iam.ManagedPolicy.from_aws_managed_policy_name(
+                        "service-role/AWSLambdaBasicExecutionRole"
+                    )
+                ],
+            ),
             runtime=lambda_.Runtime.PYTHON_3_13,
             handler="chokepoint.handler.handler",
             code=pip_bundled_code("agate", "chokepoint", "cost", "meter"),
@@ -58,6 +72,8 @@ class ChokepointStack(Stack):
                 "AGATE_BUDGET_TABLE": budget_table,
                 "AGATE_AUTHENTICATED_ROLE_ARN": auth_role_arn,
                 "AGATE_DEFAULT_MAX_TOKENS": "1024",
+                # The verified-token coords (issuer + JWKS + audience) — verify_token needs them.
+                **oidc_env_from_context(self.node),
             },
             description="agate Tier 1 choke point - exact pre-call budget enforcement (optional)",
         )
@@ -87,6 +103,8 @@ class ChokepointStack(Stack):
         url = fn.add_function_url(
             auth_type=lambda_.FunctionUrlAuthType.AWS_IAM,
             invoke_mode=lambda_.InvokeMode.RESPONSE_STREAM,
+            # CORS: the SPA (CloudFront origin) calls this cross-origin with a SigV4-signed POST.
+            cors=function_url_cors(self.node),
         )
 
         cdk.CfnOutput(self, "ChokepointUrl", value=url.url)

@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Tier-0 "Ask" routes through the choke point — gated, metered, browser-reachable.** Browser-
+  direct Bedrock can't work from a web origin (no CORS on `bedrock-runtime`), and a security-first
+  gateway's default path arguably *should* be server-enforced anyway. So when `VITE_CHOKEPOINT_URL`
+  is set, the SPA's Tier-0 Ask transport is the `OpenAITransport` pointed at the **`agate-chokepoint`
+  Function URL** (already the chokepoint adapter) instead of `BedrockTransport`: the choke point
+  verifies the token, runs the pre-call budget **cascade**, **assumes the user's OWN scoped
+  `agate-authenticated` role** (passing the verified `agate:` tags — the gate holds), invokes
+  Converse, records the debit, and returns the answer (or a 402-style budget rejection). `ChatSession`
+  was already transport-agnostic; `runAsk` widened to `Transport`. Server changes: `chokepoint.py`
+  gains the OIDC verifier env (`oidc_env_from_context`) + Function-URL CORS (`function_url_cors`) +
+  a **pinned `agate-chokepoint-exec` role name**; `identity.py` trusts that role on the
+  authenticated role by a constructed ARN (no cross-stack import — but deploy chokepoint FIRST so
+  the role exists, then identity). Browser-direct Bedrock remains the default for CLI/native callers.
+  New chokepoint synth test; 979 tests pass.
 - **Rooms SPA screen: the collaborative-room UI (#116 — UI, PR 2 of 2).** The browser surface
   over the #116 endpoint, completing collaborative rooms. NEW `web/src/rooms/client.ts`
   (`RoomClient` SigV4-signs open/join/leave/post/events + pure `toRoomView`/`toPostResult`

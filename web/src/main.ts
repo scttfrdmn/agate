@@ -34,6 +34,8 @@ import { withContext } from "./rag/context";
 import { Retriever } from "./rag/retriever";
 import { AgentCoreTransport } from "./transport/agentcore";
 import { BedrockTransport } from "./transport/bedrock";
+import { OpenAITransport } from "./transport/openai";
+import type { Transport } from "./transport";
 import { AUTO, type Tier, type UiMode, UI_MODES, modelOptions, uiToRoute } from "./router";
 
 // IdP token provider. With the demo Hosted UI wired (VITE_COGNITO_*), this is the
@@ -544,11 +546,35 @@ function main(): void {
   }
 
   const creds = new CredentialManager(config.brokerUrl, () => Promise.resolve(idpToken()));
-  const bedrock = new BedrockTransport(config.region, () => creds.get(), () => {
-    // Attribution for the spend meter (#77): tenant/user from the session scope.
-    const s = creds.scope;
-    return s ? { "agate:tenant": s.tenant, "agate:affiliation": s.affiliation } : undefined;
-  });
+  // Tier-0 "Ask" transport. DEFAULT (no chokepoint configured) = browser-direct Bedrock
+  // (works from a CLI/native caller; from a web origin it's blocked by Bedrock's lack of CORS).
+  // When `chokepointUrl` is set, Ask routes through the OPTIONAL Tier-1 choke point instead: a
+  // gated, metered, server-enforced call that assumes the user's OWN scoped role + runs the
+  // pre-call budget cascade — the same boundary every other agate surface funnels through, and
+  // CORS-reachable from the browser. (Panel/Analyze always go through the AgentCore Runtime.)
+  const askTransport: Transport = config.chokepointUrl
+    ? new OpenAITransport(
+        {
+          region: config.region,
+          endpoint: config.chokepointUrl,
+          scope: () => {
+            const s = creds.scope;
+            return {
+              tenant: s?.tenant ?? "",
+              user: idpToken() ? "self" : "",  // server derives the real subject from the token
+              period: "",  // server stamps the current period; not client-trusted
+              tier: s?.tier ?? "oss",
+              courses: s?.courses ?? [],
+            };
+          },
+        },
+        () => creds.get(),
+      )
+    : new BedrockTransport(config.region, () => creds.get(), () => {
+        // Attribution for the spend meter (#77): tenant/user from the session scope.
+        const s = creds.scope;
+        return s ? { "agate:tenant": s.tenant, "agate:affiliation": s.affiliation } : undefined;
+      });
   const agent = config.agentRuntimeArn
     ? new AgentCoreTransport({ region: config.region, runtimeArn: config.agentRuntimeArn }, () => creds.get())
     : null;
@@ -631,7 +657,7 @@ function main(): void {
       // ever lists entitled models, so this can't escape the tier.
       const pin = modelSel.value === AUTO ? undefined : modelSel.value;
       if (!pattern && selected === "ask") {
-        await runAsk(q, bedrock, creds, out, pin);
+        await runAsk(q, askTransport, creds, out, pin);
       } else {
         if (!agent) {
           renderError(out, "Panel/Analyze/patterns need VITE_AGENT_RUNTIME_ARN (the deployed agent).");
@@ -658,7 +684,7 @@ function main(): void {
 
 async function runAsk(
   q: string,
-  bedrock: BedrockTransport,
+  transport: Transport,
   creds: CredentialManager,
   out: HTMLElement,
   modelId?: string,
@@ -683,7 +709,7 @@ async function runAsk(
   // A pinned (entitled) model wins; else the configured default (the server-side
   // entitlement-aware router, #122, will refine this once wired into the live path).
   const session = new ChatSession(
-    bedrock, modelId ?? config.defaultModelId, undefined, undefined, contextProvider,
+    transport, modelId ?? config.defaultModelId, undefined, undefined, contextProvider,
   );
   await session.send(q, {
     onReasoning: () => (log.textContent += log.textContent.includes("[thinking…]") ? "" : "[thinking…] "),

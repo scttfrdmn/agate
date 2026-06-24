@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { authorizeUrl, logoutUrl, tokenFromFragment, type LoginConfig } from "./login";
+import {
+  authorizeUrl,
+  isTokenExpired,
+  logoutUrl,
+  tokenFromFragment,
+  type LoginConfig,
+} from "./login";
+
+// Build a minimal unsigned JWT with the given exp (seconds since epoch).
+function jwtWithExp(exp: number | undefined): string {
+  const b64 = (o: object) => btoa(JSON.stringify(o)).replace(/=+$/, "");
+  return `${b64({ alg: "none" })}.${b64(exp === undefined ? { sub: "u" } : { sub: "u", exp })}.sig`;
+}
 
 const cfg: LoginConfig = {
   domain: "https://agate-demo-123.auth.us-east-1.amazoncognito.com",
@@ -27,6 +39,27 @@ describe("tokenFromFragment", () => {
   it("returns empty string when no token", () => {
     expect(tokenFromFragment("#access_token=nope")).toBe("");
     expect(tokenFromFragment("")).toBe("");
+  });
+});
+
+describe("isTokenExpired", () => {
+  const now = 1_700_000_000_000; // fixed "now" in ms
+
+  it("is true when exp is in the past", () => {
+    expect(isTokenExpired(jwtWithExp(now / 1000 - 60), now)).toBe(true);
+  });
+
+  it("is false when exp is in the future", () => {
+    expect(isTokenExpired(jwtWithExp(now / 1000 + 3600), now)).toBe(false);
+  });
+
+  it("treats a token with no exp as not expired (server stays the authority)", () => {
+    expect(isTokenExpired(jwtWithExp(undefined), now)).toBe(false);
+  });
+
+  it("treats an unreadable/non-JWT token as not expired", () => {
+    expect(isTokenExpired("not-a-jwt", now)).toBe(false);
+    expect(isTokenExpired("", now)).toBe(false);
   });
 });
 

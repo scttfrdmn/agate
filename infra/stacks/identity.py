@@ -110,6 +110,17 @@ class IdentityStack(Stack):
                             "Resource": "*",
                         },
                         {
+                            # The session SigV4-signs the IAM-authed Tier-1 choke point
+                            # Function URL (optional Ask routing). Ceiling only; the
+                            # actual grant is scoped to the choke point's ARN on the
+                            # role. Without this ceiling the boundary caps the invoke
+                            # and the signed POST is 403'd at the edge.
+                            "Sid": "CeilingInvokeFunctionUrl",
+                            "Effect": "Allow",
+                            "Action": "lambda:InvokeFunctionUrl",
+                            "Resource": "*",
+                        },
+                        {
                             # Explicit deny of anything that could widen privilege
                             # or persist beyond the session.
                             "Sid": "CeilingDenyEscalation",
@@ -202,6 +213,34 @@ class IdentityStack(Stack):
                                     f"arn:aws:bedrock-agentcore:{region}:{account}:runtime/{HANDLE}_agent-*",
                                     f"arn:aws:bedrock-agentcore:{region}:{account}:runtime/{HANDLE}_agent-*/*",
                                 ],
+                            }
+                        ],
+                    }
+                ),
+            )
+        )
+        # Optional Tier-1 choke point (Ask routing): let the session invoke its
+        # IAM-authed Function URL. Scoped to the agate-chokepoint function ARN by name
+        # (the function lives in the agate-chokepoint stack — match by name rather than
+        # create a cross-stack dependency, as with the agent runtime above). Bounded by
+        # CeilingInvokeFunctionUrl. A permissions boundary requires the invoke be
+        # allowed identity-side too — a resource policy alone is capped by the boundary.
+        authenticated_role.attach_inline_policy(
+            iam.Policy(
+                self,
+                "InvokeChokepoint",
+                document=iam.PolicyDocument.from_json(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Sid": "InvokeChokepointUrl",
+                                "Effect": "Allow",
+                                "Action": "lambda:InvokeFunctionUrl",
+                                "Resource": (
+                                    f"arn:aws:lambda:{region}:{account}:function:"
+                                    f"{HANDLE}-chokepoint"
+                                ),
                             }
                         ],
                     }

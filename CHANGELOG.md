@@ -183,6 +183,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rebuild).
 
 ### Fixed
+- **Ask via the choke point still 403'd — the authenticated role's permissions boundary capped the
+  invoke, and the resource policy alone couldn't.** The Function URL is `AWS_IAM`-authed and we'd
+  added a resource-based invoke permission, but `agate-authenticated` carries a permissions boundary
+  that ceilings it to Bedrock + S3/S3Vectors read + `execute-api:Invoke` + agentcore — with **no
+  `lambda:InvokeFunctionUrl`**. A boundary caps the *identity* side, and a same-account invoke needs
+  the identity side to allow it too; so the signed POST was denied at the edge (no invocation, no
+  log group). Added a `CeilingInvokeFunctionUrl` ceiling to the boundary **and** an identity-side
+  `InvokeChokepoint` grant on the role (scoped to the `agate-chokepoint` function ARN by name).
+- **Ask grounding (retrieval) 500'd — the `agate-vector-reader` role couldn't decrypt the vector
+  CMK.** The S3 Vectors indexes are encrypted with a per-tenant customer CMK, and the reader role
+  (assumed by the retrieval proxy) had `s3vectors:QueryVectors` but no `kms:Decrypt`, so the query
+  failed with a KMS `AccessDeniedException`. The data stack's per-tenant CMK key policy now grants
+  `kms:Decrypt`/`kms:DescribeKey` to the `agate-vector-reader` role (by name-based ARN — no
+  cross-stack import; tenant isolation holds since the role is only assumed with a verified
+  `agate:tenant` tag and each CMK is per-tenant).
 - **Login failed with `redirect_mismatch` ("An error was encountered with the requested page").**
   The SPA sent `redirect_uri = location.origin + location.pathname`, but Cognito requires an EXACT
   match against a registered callback (we register `<origin>/`). Any non-root path — a deep link, or

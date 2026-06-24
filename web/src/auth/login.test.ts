@@ -80,6 +80,14 @@ describe("authorizeUrl", () => {
       "amazoncognito.com/login?",
     );
   });
+
+  it("adds https:// when the domain is bare (no scheme) so it's not treated as relative", () => {
+    const bare = "agate-demo-123.auth.us-east-1.amazoncognito.com";
+    const u = authorizeUrl({ ...cfg, domain: bare });
+    expect(u.startsWith(`https://${bare}/login?`)).toBe(true);
+    // and it parses as an absolute URL (would throw if relative)
+    expect(new URL(u).origin).toBe(`https://${bare}`);
+  });
 });
 
 describe("logoutUrl", () => {

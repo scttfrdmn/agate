@@ -20,13 +20,17 @@ export interface OpenAIConfig {
 
 
 // Pure: build the Tier 1 request body from a ConverseRequest + session scope.
-// Exported for testing without the network.
+// Exported for testing without the network. The choke point verifies `idp_token`
+// to DERIVE identity/budget server-side; the scope fields are advisory only (the
+// server never trusts them — see chokepoint/handler.py process()).
 export function buildRequestBody(
   req: ConverseRequest,
   scope: ReturnType<OpenAIConfig["scope"]>,
+  idpToken: string,
 ): Record<string, unknown> {
   const messages = req.messages.map((m: ChatMessage) => ({ role: m.role, content: m.content }));
   return {
+    idp_token: idpToken,
     model: req.modelId,
     messages,
     max_tokens: req.maxTokens ?? 1024,
@@ -68,10 +72,13 @@ export class OpenAITransport implements Transport {
   constructor(
     private readonly cfg: OpenAIConfig,
     private readonly creds: () => Promise<ScopedCredentials>,
+    // The campus IdP token — the choke point verifies it to derive tenant/scope and
+    // assume the user's role. Identity is NOT taken from any field this client sends.
+    private readonly idpToken: () => string,
   ) {}
 
   async *converse(req: ConverseRequest): AsyncIterable<ConverseChunk> {
-    const body = JSON.stringify(buildRequestBody(req, this.cfg.scope()));
+    const body = JSON.stringify(buildRequestBody(req, this.cfg.scope(), this.idpToken()));
     const url = new URL(this.cfg.endpoint);
 
     // SigV4-sign the POST (the Function URL is AWS_IAM-authed).

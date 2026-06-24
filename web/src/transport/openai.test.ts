@@ -22,7 +22,8 @@ describe("buildRequestBody", () => {
       ],
       maxTokens: 256,
     };
-    const body = buildRequestBody(req, scope);
+    const body = buildRequestBody(req, scope, "tok-abc");
+    expect(body.idp_token).toBe("tok-abc");
     expect(body.model).toBe("oss");
     expect(body.max_tokens).toBe(256);
     expect(body.tenant).toBe("chem");
@@ -35,7 +36,7 @@ describe("buildRequestBody", () => {
   });
 
   it("defaults max_tokens when unset", () => {
-    const body = buildRequestBody({ modelId: "oss", messages: [] }, scope);
+    const body = buildRequestBody({ modelId: "oss", messages: [] }, scope, "tok-abc");
     expect(body.max_tokens).toBe(1024);
   });
 });

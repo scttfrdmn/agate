@@ -569,6 +569,7 @@ function main(): void {
           },
         },
         () => creds.get(),
+        () => idpToken(),
       )
     : new BedrockTransport(config.region, () => creds.get(), () => {
         // Attribution for the spend meter (#77): tenant/user from the session scope.

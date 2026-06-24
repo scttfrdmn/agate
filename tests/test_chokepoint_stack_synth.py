@@ -91,7 +91,38 @@ def test_auth_role_may_invoke_the_function_url():
     )
 
 
+def test_auth_role_also_gets_invoke_function_permission():
+    # As of Oct 2025 a Function URL requires BOTH lambda:InvokeFunctionUrl AND
+    # lambda:InvokeFunction; the latter bounded to URL calls (InvokedViaFunctionUrl).
+    t = _template({"auth_role_arn": _AUTH_ROLE})
+    t.has_resource_properties(
+        "AWS::Lambda::Permission",
+        {
+            "Action": "lambda:InvokeFunction",
+            "InvokedViaFunctionUrl": True,
+            "Principal": _AUTH_ROLE,
+        },
+    )
+
+
 def test_no_invoke_permission_without_auth_role():
     # No auth role supplied -> no invoke permission (nothing to grant to).
     t = _template()
     assert t.find_resources("AWS::Lambda::Permission") == {}
+
+
+def test_exec_role_can_write_the_scope_spend_debit():
+    # The handler records the actual cost against each scope node after an allowed
+    # call (dynamodb:UpdateItem on the spend table). Without it the call succeeds at
+    # Bedrock but 500s recording the debit.
+    t = _template({"spend_table": "agate-spend"})
+    pols = t.find_resources("AWS::IAM::Policy")
+    updates = [
+        s
+        for p in pols.values()
+        for s in p["Properties"]["PolicyDocument"]["Statement"]
+        if "dynamodb:UpdateItem"
+        in (s["Action"] if isinstance(s["Action"], list) else [s["Action"]])
+    ]
+    assert updates, "the choke point must be able to write the scope-spend debit"
+    assert any("agate-spend" in str(s.get("Resource")) for s in updates)

@@ -183,6 +183,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rebuild).
 
 ### Fixed
+- **Ask via the choke point: the Function URL needed `lambda:InvokeFunction` too (Oct 2025 AWS
+  change), then the debit write needed `dynamodb:UpdateItem`.** As of October 2025, invoking a
+  Lambda Function URL requires BOTH `lambda:InvokeFunctionUrl` AND `lambda:InvokeFunction` — we
+  granted only the former (boundary ceiling, role grant, and resource policy), so the vended session
+  was 403'd at the edge despite every policy appearing to allow the invoke. Added `lambda:InvokeFunction`
+  in all three places, bounded to URL calls (`lambda:InvokedViaFunctionUrl`) on the grants so it
+  can't invoke the function by any other path. With auth fixed, the call reached the handler and
+  ran the full flow (verify → budget cascade → assume the user's role → Converse) but 500'd on the
+  post-call debit: the `agate-chokepoint-exec` role had `dynamodb:GetItem` (read spend/budget) but
+  not `dynamodb:UpdateItem` (write the scope-spend running total). Added `UpdateItem` on the spend
+  table. End-to-end verified: a real gated, metered answer with `estimated_cost`.
 - **Ask via the choke point still 403'd — the authenticated role's permissions boundary capped the
   invoke, and the resource policy alone couldn't.** The Function URL is `AWS_IAM`-authed and we'd
   added a resource-based invoke permission, but `agate-authenticated` carries a permissions boundary

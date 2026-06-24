@@ -47,6 +47,15 @@ export function isTokenExpired(token: string, nowMs: number = Date.now()): boole
   }
 }
 
+/** Normalize the Hosted-UI base to an absolute https origin (no trailing slash).
+ *  VITE_COGNITO_DOMAIN is often set bare (`x.auth.region.amazoncognito.com`); without
+ *  a scheme `location.assign()` treats the login URL as RELATIVE and appends it to the
+ *  current page instead of navigating to Cognito. Pure. */
+function hostedUiBase(domain: string): string {
+  const trimmed = domain.replace(/\/$/, "");
+  return /^https?:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
 /** Build the Hosted-UI authorize URL for the implicit flow. Pure. */
 export function authorizeUrl(cfg: LoginConfig): string {
   const q = new URLSearchParams({
@@ -55,7 +64,7 @@ export function authorizeUrl(cfg: LoginConfig): string {
     scope: "openid profile",
     redirect_uri: cfg.redirectUri,
   });
-  return `${cfg.domain.replace(/\/$/, "")}/login?${q.toString()}`;
+  return `${hostedUiBase(cfg.domain)}/login?${q.toString()}`;
 }
 
 /** Build the Hosted-UI logout URL. Pure. */
@@ -64,7 +73,7 @@ export function logoutUrl(cfg: LoginConfig): string {
     client_id: cfg.clientId,
     logout_uri: cfg.redirectUri,
   });
-  return `${cfg.domain.replace(/\/$/, "")}/logout?${q.toString()}`;
+  return `${hostedUiBase(cfg.domain)}/logout?${q.toString()}`;
 }
 
 /** Capture a token from the current location's fragment into sessionStorage and

@@ -183,6 +183,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rebuild).
 
 ### Fixed
+- **The "Log in" button did nothing — the Hosted-UI URL was built without a scheme.**
+  `VITE_COGNITO_DOMAIN` is set bare (`…amazoncognito.com`, no `https://`), and `authorizeUrl`
+  used it verbatim — so `location.assign("…amazoncognito.com/login?…")` resolved it as a path
+  RELATIVE to the current page (the URL bar showed `cloudfront.net/…amazoncognito.com/…` growing
+  with each click) instead of navigating to Cognito. `authorizeUrl`/`logoutUrl` now normalize the
+  base to an absolute `https://` origin (new pure `hostedUiBase`). New bare-domain test.
 - **An expired token left the SPA stuck "logged in" — login wouldn't re-trigger.** `isLoggedIn()`
   checked only token *presence*, not expiry, so once the id_token expired the SPA kept showing the
   logged-in state (the auth button read "Logout", not "Login") and kept sending the dead token. The

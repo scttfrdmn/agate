@@ -107,6 +107,19 @@ class ChokepointStack(Stack):
             cors=function_url_cors(self.node),
         )
 
+        # The browser's authenticated role must be allowed to INVOKE the IAM-authed
+        # Function URL (lambda:InvokeFunctionUrl) — without this the signed POST is
+        # rejected at the edge with a 403 before the handler runs. A resource-based
+        # permission on THIS function suffices for a same-account principal (no
+        # cross-stack import: we only need the role ARN, supplied via context).
+        if auth_role_arn != PLACEHOLDER:
+            fn.add_permission(
+                "InvokeUrlFromAuthRole",
+                principal=iam.ArnPrincipal(auth_role_arn),
+                action="lambda:InvokeFunctionUrl",
+                function_url_auth_type=lambda_.FunctionUrlAuthType.AWS_IAM,
+            )
+
         cdk.CfnOutput(self, "ChokepointUrl", value=url.url)
         cdk.CfnOutput(self, "ChokepointFunction", value=fn.function_name)
         cdk.CfnOutput(

@@ -33,6 +33,7 @@ returns NO results.
 from __future__ import annotations
 
 import json
+import logging
 import os
 
 import boto3
@@ -245,6 +246,9 @@ def handler(event: dict, context: object) -> dict:
     except RetrievalError as exc:
         return _resp(403, {"error": "not_entitled", "detail": str(exc)})
     except Exception:  # noqa: BLE001 — last-resort fail-closed
+        # Log the traceback (CloudWatch) so a 500 is diagnosable; the response body
+        # stays opaque (no internals leaked, no partial/unscoped results). Unchanged.
+        logging.exception("retrieval_error")
         return _resp(500, {"error": "retrieval_error"})
 
 

@@ -23,6 +23,7 @@ Default Tier 0 never touches this. Token estimation is always computed server-si
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 from decimal import Decimal
@@ -250,6 +251,9 @@ def handler(event: dict, context: object) -> dict:
     except ChokepointError as exc:
         return _resp(402, {"error": "budget_rejected", "detail": str(exc)})
     except Exception:  # noqa: BLE001 — fail closed
+        # Log the traceback (CloudWatch) so a 500 is diagnosable; the response body
+        # stays opaque (no internals leaked to the caller). Behaviour unchanged.
+        logging.exception("chokepoint_error")
         return _resp(500, {"error": "chokepoint_error"})
 
 

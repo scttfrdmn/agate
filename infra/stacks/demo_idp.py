@@ -106,7 +106,11 @@ class DemoIdpStack(Stack):
                 user_password=True,
                 admin_user_password=True,
             ),
-            id_token_validity=cdk.Duration.hours(1),
+            # Demo-only: a 12h id_token spans a full demo day. The SPA reuses this
+            # token to refresh its short-lived STS creds (it has no token-refresh
+            # path), so a 1h token expired mid-demo and the broker (correctly) 403'd
+            # the now-stale token. A campus IdP sets its own (shorter) lifetime.
+            id_token_validity=cdk.Duration.hours(12),
         )
 
         issuer = f"https://cognito-idp.{self.region}.amazonaws.com/{pool.user_pool_id}"

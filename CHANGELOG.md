@@ -183,6 +183,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rebuild).
 
 ### Fixed
+- **The broker 403'd ("broker refused credentials: 403") after ~1h — the demo id_token expired.**
+  The demo Cognito app client minted a 1-hour id_token, but the SPA has no token-refresh path (it
+  reuses the id_token to refresh its short-lived STS creds), so once the hour elapsed the broker
+  correctly rejected the now-stale token and vended nothing — and every downstream call (retrieval,
+  choke point) failed because there were no creds. Bumped the **demo** id_token validity to 12h so
+  it spans a demo day (a campus IdP sets its own lifetime). The broker now also `logging.info`s the
+  refusal reason (e.g. "token expired") to CloudWatch — the token itself is never logged — so a 403
+  is diagnosable server-side; the client response stays terse.
 - **"Ask" through the choke point returned 403 (Forbidden) — the auth role couldn't invoke the
   Function URL.** The choke point's Function URL is `AWS_IAM`-authed, but nothing granted the
   browser's `agate-authenticated` role `lambda:InvokeFunctionUrl`, so the SigV4-signed POST was

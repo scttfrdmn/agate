@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import logging
 import os
 
 import boto3
@@ -155,9 +156,13 @@ def handler(event: dict, context: object) -> dict:
         result = vend_credentials(claims, subject=subject)
         return _resp(200, result)
     except BrokerError as exc:
-        # Deliberately terse: do not leak why scoping failed to the client.
+        # Deliberately terse to the CLIENT: do not leak why scoping failed. But log
+        # the reason to CloudWatch (e.g. "token expired", "missing tenant claim") so a
+        # 403 is diagnosable server-side. The token itself is never logged.
+        logging.info("broker refused credentials: %s", exc)
         return _resp(403, {"error": "not_entitled", "detail": str(exc)})
     except Exception:  # noqa: BLE001 — last-resort fail-closed
+        logging.exception("broker_error")
         return _resp(500, {"error": "broker_error"})
 
 

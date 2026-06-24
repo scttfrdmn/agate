@@ -183,6 +183,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rebuild).
 
 ### Fixed
+- **Ask via the choke point 500'd whenever RAG grounding was present — the oss model rejects system
+  messages.** The SPA's retrieval path prepends grounding context as a `role:"system"` message, and
+  the choke point passed it straight into Bedrock Converse — but Converse has no system *turn* (the
+  system prompt is a separate field) and the default oss-tier model rejects system messages outright
+  ("This model doesn't support system messages"). The handler now folds any system text into the
+  first user turn (new pure `to_converse_messages`), which every model accepts and keeps the grounding
+  in front of the question. Verified end-to-end with a grounded request.
 - **Ask via the choke point: the Function URL needed `lambda:InvokeFunction` too (Oct 2025 AWS
   change), then the debit write needed `dynamodb:UpdateItem`.** As of October 2025, invoking a
   Lambda Function URL requires BOTH `lambda:InvokeFunctionUrl` AND `lambda:InvokeFunction` — we

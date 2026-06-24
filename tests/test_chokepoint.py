@@ -190,6 +190,59 @@ def test_estimate_input_tokens_is_server_side():
     assert cp.estimate_input_tokens([]) == 1
 
 
+def test_to_converse_messages_folds_system_into_first_user_turn():
+    # Bedrock Converse has no system role, and the oss tier rejects system messages;
+    # the SPA's RAG path prepends grounding as a system message. Fold it into the
+    # first user turn so every model accepts it and grounding precedes the question.
+    msgs = [
+        {"role": "system", "content": "CONTEXT: agate is a gateway."},
+        {"role": "user", "content": "what is it?"},
+    ]
+    out = cp.to_converse_messages(msgs)
+    assert [m["role"] for m in out] == ["user"]  # no system role survives
+    text = out[0]["content"][0]["text"]
+    assert text.startswith("CONTEXT: agate is a gateway.")
+    assert text.endswith("what is it?")
+
+
+def test_to_converse_messages_no_system_is_passthrough():
+    msgs = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "yo"}]
+    out = cp.to_converse_messages(msgs)
+    assert out == [
+        {"role": "user", "content": [{"text": "hi"}]},
+        {"role": "assistant", "content": [{"text": "yo"}]},
+    ]
+
+
+def test_to_converse_messages_system_only_becomes_user_turn():
+    out = cp.to_converse_messages([{"role": "system", "content": "ctx"}])
+    assert out == [{"role": "user", "content": [{"text": "ctx"}]}]
+
+
+def test_handler_with_system_message_never_sends_system_role(wired):
+    # End-to-end through process(): a system message must not reach Converse as a
+    # system role (the live oss model 500s on it). Capture what the fake gets.
+    seen = {}
+
+    def capture_converse(modelId, messages, inferenceConfig):  # noqa: N803
+        seen["messages"] = messages
+        return {
+            "output": {"message": {"content": [{"text": "answer"}]}},
+            "usage": {"inputTokens": 12, "outputTokens": 8},
+        }
+
+    wired._br.converse = capture_converse
+    wired.spend, wired.budget = 1.0, 100.0
+    req = _req()
+    req["messages"] = [
+        {"role": "system", "content": "grounding"},
+        {"role": "user", "content": "q?"},
+    ]
+    cp.process(req, period="2026-06")
+    assert all(m["role"] != "system" for m in seen["messages"])
+    assert "grounding" in seen["messages"][0]["content"][0]["text"]
+
+
 def test_handler_maps_reject_to_402(wired):
     wired.spend, wired.budget = 0.0, 0.0
     resp = cp.handler({"body": json.dumps(_req())}, None)

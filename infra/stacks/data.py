@@ -157,6 +157,26 @@ class DataStack(Stack):
                     conditions={"StringEquals": {"aws:SourceAccount": self.account}},
                 )
             )
+            # The server-side retrieval proxy assumes `agate-vector-reader` to run
+            # QueryVectors; the indexes are CMK-encrypted, so that role must also be
+            # able to DECRYPT — otherwise the query fails with a kms:Decrypt
+            # AccessDeniedException. The role lives in the identity stack; grant via a
+            # name-based ARN in THIS key's policy (no cross-stack import, same pattern
+            # as the chokepoint trust). Tenant isolation still holds: the role is only
+            # ever assumed with a verified agate:tenant tag, and each CMK is per-tenant.
+            key.add_to_resource_policy(
+                iam.PolicyStatement(
+                    sid="AllowVectorReaderDecrypt",
+                    effect=iam.Effect.ALLOW,
+                    principals=[
+                        iam.ArnPrincipal(
+                            f"arn:aws:iam::{self.account}:role/{HANDLE}-vector-reader"
+                        )
+                    ],
+                    actions=["kms:Decrypt", "kms:DescribeKey"],
+                    resources=["*"],
+                )
+            )
 
             # Text index (1024-dim) — the Phase 3 RAG store, unchanged.
             self.tenant_indexes[tenant] = _index(tenant, key, suffix="", dimension=EMBED_DIMENSION)

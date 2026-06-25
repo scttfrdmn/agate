@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Ask UX polish: answer bubbles, model attribution, dynamic follow-ups.** The assistant reply now
+  sits in its **own bubble** mirroring the question ("You asked" → "Answer"), with the **model that
+  replied** shown next to the Answer badge. The wait indicator reads **"Thinking …"** before the
+  dots. The composer + chips now **start near the top** and float downward as the transcript grows
+  (the whole column scrolls), instead of being pinned to the bottom. The input placeholder tracks the
+  mode ("Ask a question…" / "Pose a question for the panel…" / …). New **opt-in dynamic follow-up
+  questions** (sidebar toggle, off by default): after each answer the model suggests the likely next
+  questions as chips — it costs a small amount of extra tokens, runs through the same gated/metered
+  choke point, and falls back to the sample questions on failure. New `web/src/chat/followups.ts`
+  (pure `parseFollowups` + `suggestFollowups`) and `router.modelLabel`.
 - **Chatbot-style Ask UX with citations, sources, cost + budget.** The Ask screen now behaves like a
   conversation, not a single-shot box: a **scrolling transcript** of question/answer pairs (user
   bubble right, assistant left), animated **thinking dots**, smooth auto-scroll that yields when you

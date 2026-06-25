@@ -33,6 +33,7 @@ import type { RunEvent } from "./events/protocol";
 import { renderCells, renderPanel } from "./panes/render";
 import { ChatTranscript } from "./chat/ui";
 import { SessionMeter } from "./chat/meter";
+import { suggestFollowups } from "./chat/followups";
 import { type RetrievedChunk, withContext } from "./rag/context";
 import { Retriever } from "./rag/retriever";
 import { AgentCoreTransport } from "./transport/agentcore";
@@ -77,9 +78,9 @@ function render(app: HTMLElement): void {
           <p id="scope" class="empty-hint" role="status" aria-live="polite"></p>
         </div>
 
-        <!-- Suggestion chips (entitlement-aware sample questions). -->
-        <div id="chips" class="suggestions" role="group" aria-label="Suggested questions"></div>
-
+        <!-- Composer + chips flow right after the transcript: empty, they sit near
+             the top; as answers stream in the transcript grows and pushes them down
+             (the whole column scrolls). -->
         <form id="f" class="composer composer-bar" aria-label="Ask agate">
           <div class="composer-controls">
             <select id="mode" aria-label="Mode">
@@ -95,11 +96,13 @@ function render(app: HTMLElement): void {
             </select>
           </div>
           <div class="input-bar">
-            <textarea id="q" rows="1" placeholder="Ask a research question…"
+            <textarea id="q" rows="1" placeholder="Ask a question…"
                       autocomplete="off" aria-label="Your question"
                       aria-describedby="scope"></textarea>
             <button class="send-btn" type="submit" aria-label="Send" title="Send">&#x2191;</button>
           </div>
+          <!-- Suggestion chips (sample questions; dynamic follow-ups when enabled). -->
+          <div id="chips" class="suggestions" role="group" aria-label="Suggested questions"></div>
         </form>
       </main>
 
@@ -116,6 +119,15 @@ function render(app: HTMLElement): void {
             <div class="budget-track"><div id="budget-bar" class="budget-fill"></div></div>
             <div id="budget-text" class="budget-text"></div>
           </div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">Suggestions</div>
+          <label class="toggle">
+            <input id="followups-toggle" type="checkbox" />
+            <span>Dynamic follow-up questions</span>
+          </label>
+          <p class="toggle-hint">Suggests next questions after each answer. Uses a small
+            amount of extra tokens per answer.</p>
         </div>
       </aside>
     </div>`;
@@ -653,6 +665,7 @@ function main(): void {
   }
 
   const out = document.getElementById("out")!;
+  const mainCol = document.getElementById("main")!;
   const input = document.getElementById("q") as HTMLTextAreaElement;
   const modeSel = document.getElementById("mode") as HTMLSelectElement;
   const modelSel = document.getElementById("model") as HTMLSelectElement;
@@ -660,7 +673,9 @@ function main(): void {
 
   // The scrolling chat transcript (Ask) + the session cost/budget meter live for the
   // whole session, so history accumulates and the meter accrues across questions.
-  const transcript = new ChatTranscript(out);
+  // The transcript renders into #out but the main COLUMN is what scrolls (the
+  // composer flows beneath the transcript).
+  const transcript = new ChatTranscript(out, mainCol);
   const meter = new SessionMeter({
     total: document.getElementById("cost")!,
     status: document.getElementById("cost-status")!,
@@ -698,18 +713,20 @@ function main(): void {
     }
   });
 
-  // Suggestion chips: a few entitlement-neutral sample questions. Clicking one fills
-  // the box and sends it. (Kept simple; a server-provided per-tenant set can replace
-  // these later.) Hidden in Panel/Analyze modes where they don't apply.
+  // Suggestion chips. Initially a few entitlement-neutral sample questions; after an
+  // answer (when the follow-ups toggle is on) these are replaced with model-suggested
+  // follow-ups. Clicking a chip fills the box and sends it. Hidden in Panel/Analyze.
   const SAMPLE_QUESTIONS = [
     "Summarize the key points in my documents.",
     "What does the first law of thermodynamics state?",
     "What topics do my documents cover?",
   ];
   const chipsHost = document.getElementById("chips");
-  if (chipsHost) {
+  const followupsToggle = document.getElementById("followups-toggle") as HTMLInputElement | null;
+  const setChips = (questions: string[]): void => {
+    if (!chipsHost) return;
     chipsHost.replaceChildren(
-      ...SAMPLE_QUESTIONS.map((text) => {
+      ...questions.map((text) => {
         const chip = document.createElement("button");
         chip.type = "button";
         chip.className = "chip";
@@ -722,7 +739,8 @@ function main(): void {
         return chip;
       }),
     );
-  }
+  };
+  setChips(SAMPLE_QUESTIONS);
 
   // Populate the model picker with the session's ENTITLED models (Auto + each model the
   // tier permits). The picker never lists an unentitled model, so a user can't pin past
@@ -749,12 +767,22 @@ function main(): void {
     })
     .catch(() => {});
 
-  // Chips only make sense for Ask; hide them in Panel/Analyze/pattern modes.
-  const syncChipsVisibility = () => {
-    if (chipsHost) chipsHost.hidden = modeSel.value !== "ask";
+  // Chips only make sense for Ask; hide them in Panel/Analyze/pattern modes. The
+  // placeholder verb also tracks the mode ("Ask a question…" / "Run a panel…" / …).
+  const PLACEHOLDERS: Record<string, string> = {
+    ask: "Ask a question…",
+    panel: "Pose a question for the panel…",
+    analyze: "Describe an analysis to run…",
   };
-  modeSel.addEventListener("change", syncChipsVisibility);
-  syncChipsVisibility();
+  const syncModeUi = () => {
+    const mode = modeSel.value;
+    if (chipsHost) chipsHost.hidden = mode !== "ask";
+    input.placeholder = mode.startsWith("pattern:")
+      ? "Pose a question for this reasoning pattern…"
+      : (PLACEHOLDERS[mode] ?? "Ask a question…");
+  };
+  modeSel.addEventListener("change", syncModeUi);
+  syncModeUi();
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -775,7 +803,15 @@ function main(): void {
       // ever lists entitled models, so this can't escape the tier.
       const pin = modelSel.value === AUTO ? undefined : modelSel.value;
       if (!pattern && selected === "ask") {
-        await runAsk(q, askTransport, transcript, meter, retriever, pin);
+        await runAsk(q, askTransport, transcript, meter, retriever, pin, (question, answer, m) => {
+          // Dynamic follow-up chips (opt-in). Generate after the answer; on failure
+          // or empty result, fall back to the sample questions. Fire-and-forget so it
+          // never blocks the UI; it's metered like any other call (same transport).
+          if (!followupsToggle?.checked) return;
+          void suggestFollowups(askTransport, m, question, answer).then((qs) => {
+            setChips(qs.length ? qs : SAMPLE_QUESTIONS);
+          });
+        });
       } else {
         if (!agent) {
           renderError(out, "Panel/Analyze/patterns need VITE_AGENT_RUNTIME_ARN (the deployed agent).");
@@ -804,6 +840,7 @@ async function runAsk(
   meter: SessionMeter,
   retriever: Retriever | null,
   modelId?: string,
+  onAnswered?: (question: string, answer: string, modelId: string) => void,
 ): Promise<void> {
   const turn = transcript.begin(q);
 
@@ -840,6 +877,7 @@ async function runAsk(
       modelId: chosenModel,
     });
     meter.record(result.cost, result.budget);
+    if (result.text.trim()) onAnswered?.(q, result.text, chosenModel);
   } catch (err) {
     turn.fail((err as Error).message);
     throw err;

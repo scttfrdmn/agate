@@ -41,6 +41,22 @@ describe("renderMarkdown", () => {
     expect(b).toContain("katex");
   });
 
+  it("never leaks a MATH<n>MATH placeholder (math in lists + next to punctuation)", () => {
+    // Regression: the placeholder was inserted with surrounding spaces but matched
+    // with them too; the browser's HTML parser trims that whitespace in block
+    // elements, so every token leaked as raw "MATHnMATH" text. Matching the
+    // space-free core fixes it. Exercise the structures that triggered it.
+    const src = [
+      "- **Enthalpy (H)** – defined as \\(H = U + PV\\). At constant pressure:",
+      "  \\[ \\Delta H = q_p \\]",
+      "  Exothermic release heat (negative \\(\\Delta H\\)); endothermic absorb it.",
+      "- **Gibbs (G)** – given by \\(G = H - TS\\); spontaneous when \\(\\Delta G < 0\\).",
+    ].join("\n");
+    const html = renderMarkdown(src);
+    expect(html).not.toMatch(/MATH\d+MATH/);
+    expect(html).toContain("katex");
+  });
+
   it("does not treat a lone currency $ as math", () => {
     const html = renderMarkdown("It costs $5 today.");
     expect(html).toContain("$5"); // left as text, not swallowed as math

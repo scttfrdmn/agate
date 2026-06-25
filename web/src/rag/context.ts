@@ -30,8 +30,14 @@ export function buildContextMessage(chunks: RetrievedChunk[]): ChatMessage | nul
   return {
     role: "system",
     content:
-      "Answer using only the context below. If the context does not contain " +
-      "the answer, say so rather than guessing. Cite sources by their [n] marker.\n\n" +
+      "You answer strictly from the retrieved excerpts of the user's own in-scope " +
+      "documents shown below — this is a grounded document assistant, not a general " +
+      "chatbot. Answer using only this context and cite sources by their [n] marker. " +
+      "If the answer isn't in the context, do NOT guess: reply that the question is " +
+      "outside the documents available to this session (e.g. \"I couldn't find that " +
+      "in the documents available to you — the retrieved material covers <briefly name " +
+      "the topics present>. Try rephrasing, or ask about that material.\") and name the " +
+      "topics the excerpts actually cover so the user knows what they can ask.\n\n" +
       `Context:\n${sources}`,
   };
 }

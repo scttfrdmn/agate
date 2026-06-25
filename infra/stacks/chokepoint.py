@@ -108,11 +108,17 @@ class ChokepointStack(Stack):
                 )
             )
 
-        # Function URL with response streaming, IAM-authed (the SPA signs with the
-        # broker-vended scoped creds). No public access, no ALB, no clock.
+        # Function URL, IAM-authed (the SPA signs with the broker-vended scoped creds).
+        # No public access, no ALB, no clock. BUFFERED (not RESPONSE_STREAM): the handler
+        # returns one complete API-Gateway-style proxy response ({statusCode, body}), and
+        # only BUFFERED mode unwraps that envelope into the HTTP response the SPA parses.
+        # Under RESPONSE_STREAM the Function URL passes the dict through verbatim, so the
+        # client sees {statusCode, headers, body} instead of {text, usage} and renders a
+        # blank answer. The choke point doesn't token-stream (it returns the whole text),
+        # so BUFFERED is the correct mode; true streaming is a later enhancement.
         url = fn.add_function_url(
             auth_type=lambda_.FunctionUrlAuthType.AWS_IAM,
-            invoke_mode=lambda_.InvokeMode.RESPONSE_STREAM,
+            invoke_mode=lambda_.InvokeMode.BUFFERED,
             # CORS: the SPA (CloudFront origin) calls this cross-origin with a SigV4-signed POST.
             cors=function_url_cors(self.node),
         )

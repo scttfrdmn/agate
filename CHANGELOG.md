@@ -183,6 +183,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rebuild).
 
 ### Fixed
+- **Ask via the choke point returned 200 but a blank answer — the Function URL was streaming the
+  proxy envelope verbatim.** The handler returns an API-Gateway-style proxy response
+  (`{statusCode, headers, body}` with the real payload as a JSON string in `body`), but the URL was
+  configured `RESPONSE_STREAM`, which passes that dict through unmodified — so the SPA received
+  `{statusCode, headers, body}` and read `payload.text` as `undefined` (blank, no error). Switched
+  the Function URL to `BUFFERED`, which unwraps the proxy envelope into the HTTP response the SPA
+  expects (`{text, usage, estimated_cost}`). The choke point returns the whole text in one shot, so
+  BUFFERED is the correct mode; true token-streaming stays a later enhancement.
 - **Ask via the choke point 500'd whenever RAG grounding was present — the oss model rejects system
   messages.** The SPA's retrieval path prepends grounding context as a `role:"system"` message, and
   the choke point passed it straight into Bedrock Converse — but Converse has no system *turn* (the

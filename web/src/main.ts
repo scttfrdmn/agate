@@ -20,7 +20,6 @@ import "./styles/agate.css";
 import { fetchAdmin, renderAdmin } from "./admin/view";
 import { CredentialManager } from "./auth/credentials";
 import { currentToken, isLoggedIn, login, logout, type LoginConfig } from "./auth/login";
-import { ChatSession } from "./chat/session";
 import { mountChrome } from "./chrome/nav";
 import { config } from "./config";
 import { type AuthoringOptions, AuthoringClient, type TemplateRow } from "./drafting/builder";
@@ -31,7 +30,7 @@ import { renderMembers, renderMessages } from "./rooms/view";
 import { reduce, type RunState, emptyRunState } from "./events/collector";
 import type { RunEvent } from "./events/protocol";
 import { renderCells, renderPanel } from "./panes/render";
-import { ChatTranscript } from "./chat/ui";
+import { ChatManager } from "./chat/manager";
 import { SessionMeter } from "./chat/meter";
 import { suggestFollowups } from "./chat/followups";
 import { type RetrievedChunk, withContext } from "./rag/context";
@@ -40,7 +39,15 @@ import { AgentCoreTransport } from "./transport/agentcore";
 import { BedrockTransport } from "./transport/bedrock";
 import { OpenAITransport } from "./transport/openai";
 import type { Transport } from "./transport";
-import { AUTO, type Tier, type UiMode, UI_MODES, modelOptions, uiToRoute } from "./router";
+import {
+  AUTO,
+  type Tier,
+  type UiMode,
+  UI_MODES,
+  contextWindow as contextWindowFor,
+  modelOptions,
+  uiToRoute,
+} from "./router";
 
 // IdP token provider. With the demo Hosted UI wired (VITE_COGNITO_*), this is the
 // id_token captured from the login redirect (stored in sessionStorage, scrubbed
@@ -107,6 +114,18 @@ function render(app: HTMLElement): void {
       </main>
 
       <aside class="sidebar" aria-label="Session">
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-title">Chats</div>
+            <button id="new-chat" type="button" class="btn ghost btn-sm" title="Start a new chat">+ New</button>
+          </div>
+          <div id="chat-list" class="chat-list" aria-label="Your chats"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">Context</div>
+          <div class="ctx-track"><div id="ctx-bar" class="ctx-fill"></div></div>
+          <div id="ctx-text" class="ctx-text">0 tokens · empty</div>
+        </div>
         <div class="panel">
           <div class="panel-title">Session</div>
           <div id="scope-chips" class="scope-chips" aria-label="Your access"></div>
@@ -672,11 +691,57 @@ function main(): void {
   const modelSel = document.getElementById("model") as HTMLSelectElement;
   const emptyState = document.getElementById("empty");
 
-  // The scrolling chat transcript (Ask) + the session cost/budget meter live for the
-  // whole session, so history accumulates and the meter accrues across questions.
-  // The transcript renders into #out but the main COLUMN is what scrolls (the
-  // composer flows beneath the transcript).
-  const transcript = new ChatTranscript(out, mainCol);
+  // A shared retriever for Ask grounding (created once if RAG is wired).
+  const retrieverForGrounding = config.retrievalProxyUrl
+    ? new Retriever(
+        { region: config.region, endpoint: config.retrievalProxyUrl },
+        () => creds.get(),
+        () => idpToken(),
+      )
+    : null;
+  // Capture the last turn's retrieved chunks (for the Sources footer) — the context
+  // provider runs inside ChatSession.send, so we stash them here per turn.
+  let lastSources: RetrievedChunk[] = [];
+  const groundingProvider = retrieverForGrounding
+    ? async (query: string) => {
+        lastSources = await retrieverForGrounding.retrieve(query);
+        return withContext([], lastSources);
+      }
+    : undefined;
+
+  // Context-usage gauge (#2): show how full the active chat's context window is.
+  const ctxBar = document.getElementById("ctx-bar")!;
+  const ctxText = document.getElementById("ctx-text")!;
+  const renderContext = (chat: { contextTokens: number; turns: number }, windowTokens: number) => {
+    const pct = windowTokens > 0 ? Math.min(100, (chat.contextTokens / windowTokens) * 100) : 0;
+    ctxBar.style.width = `${pct.toFixed(1)}%`;
+    const wrap = ctxBar.parentElement!.parentElement!;
+    wrap.dataset.level = pct >= 90 ? "high" : pct >= 70 ? "mid" : "ok";
+    ctxText.textContent = chat.contextTokens
+      ? `${chat.contextTokens.toLocaleString()} / ${windowTokens.toLocaleString()} tokens · ${Math.round(pct)}% · ${chat.turns} turn${chat.turns === 1 ? "" : "s"}`
+      : "empty · new chat";
+  };
+
+  // Multi-session manager (#1): each chat is an independent conversation with its own
+  // transcript DOM + ChatSession (multi-turn history) + token tally. "New chat" starts
+  // fresh; the sidebar list switches between them. Transcripts render into #out; the
+  // main COLUMN scrolls (the composer flows beneath).
+  const chats = new ChatManager({
+    appendHost: out,
+    scrollHost: mainCol,
+    listHost: document.getElementById("chat-list")!,
+    transport: askTransport,
+    contextProvider: groundingProvider,
+    onActiveChange: (chat) => {
+      renderContext(chat, contextWindowFor(chat.modelId));
+      if (emptyState) emptyState.hidden = chat.turns > 0;
+    },
+  });
+  document.getElementById("new-chat")?.addEventListener("click", () => {
+    chats.newChat(modelSel?.value && modelSel.value !== AUTO ? modelSel.value : undefined);
+    input.focus();
+  });
+
   const meter = new SessionMeter({
     total: document.getElementById("cost")!,
     status: document.getElementById("cost-status")!,
@@ -691,15 +756,6 @@ function main(): void {
     if (s) renderScopeChips(s);
   };
   showScope();
-
-  // A shared retriever for Ask grounding (created once if RAG is wired).
-  const retriever = config.retrievalProxyUrl
-    ? new Retriever(
-        { region: config.region, endpoint: config.retrievalProxyUrl },
-        () => creds.get(),
-        () => idpToken(),
-      )
-    : null;
 
   // Textarea auto-grow + Enter-to-send (Shift+Enter for a newline), like a chatbot.
   const autoGrow = () => {
@@ -829,7 +885,7 @@ function main(): void {
       // ever lists entitled models, so this can't escape the tier.
       const pin = modelSel.value === AUTO ? undefined : modelSel.value;
       if (!pattern && selected === "ask") {
-        await runAsk(q, askTransport, transcript, meter, retriever, pin, (question, answer, m) => {
+        await runAsk(q, chats, meter, () => lastSources, pin, (question, answer, m) => {
           // Dynamic follow-up chips (opt-in). Generate after the answer; on failure
           // or empty result, fall back to the sample questions. Fire-and-forget so it
           // never blocks the UI. It's a real metered call (same choke point), so fold
@@ -874,33 +930,20 @@ function main(): void {
 
 async function runAsk(
   q: string,
-  transport: Transport,
-  transcript: ChatTranscript,
+  chats: ChatManager,
   meter: SessionMeter,
-  retriever: Retriever | null,
+  getSources: () => RetrievedChunk[], // the chunks the grounding provider last fetched
   modelId?: string,
   onAnswered?: (question: string, answer: string, modelId: string) => void,
 ): Promise<void> {
-  const turn = transcript.begin(q);
-
-  // RAG grounding via the broker-proxied retriever (#84). The proxy derives the
-  // tenant + scope filter from the verified token; this client supplies only the
-  // query. We capture the retrieved chunks so the answer can show a Sources footer
-  // whose [n] markers line up with the grounding order.
-  let sources: RetrievedChunk[] = [];
-  const contextProvider = retriever
-    ? async (query: string) => {
-        sources = await retriever.retrieve(query);
-        return withContext([], sources);
-      }
-    : undefined;
+  const turn = chats.current.transcript.begin(q);
 
   // A pinned (entitled) model wins; else the configured default (the server-side
   // entitlement-aware router, #122, will refine this once wired into the live path).
+  // The active chat's ChatSession carries the multi-turn history; rebuilt only if the
+  // model changed (so switching models keeps the conversation).
   const chosenModel = modelId ?? config.defaultModelId;
-  const session = new ChatSession(
-    transport, chosenModel, undefined, undefined, contextProvider,
-  );
+  const session = chats.sessionFor(chosenModel);
   // Stream raw text live (so the user sees progress immediately), then render the
   // accumulated answer as Markdown + math once the stream completes — re-rendering
   // mid-stream would repeatedly try to typeset half-finished formulae.
@@ -909,14 +952,17 @@ async function runAsk(
       onReasoning: () => turn.thinking(),
       onDelta: (d) => turn.appendDelta(d),
     });
-    turn.finalize(result.text, sources, {
+    turn.finalize(result.text, getSources(), {
       usage: result.usage,
       cost: result.cost,
       budget: result.budget,
       modelId: chosenModel,
     });
     meter.record(result.cost, result.budget);
-    if (result.text.trim()) onAnswered?.(q, result.text, chosenModel);
+    if (result.text.trim()) {
+      chats.recordTurn(q, result.text);
+      onAnswered?.(q, result.text, chosenModel);
+    }
   } catch (err) {
     turn.fail((err as Error).message);
     throw err;

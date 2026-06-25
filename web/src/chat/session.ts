@@ -25,7 +25,7 @@ export interface SendCallbacks {
 }
 
 export class ChatSession {
-  private readonly history: ChatMessage[] = [];
+  private readonly history: ChatMessage[];
 
   constructor(
     private readonly transport: Transport,
@@ -36,9 +36,15 @@ export class ChatSession {
     // the user's own in-scope documents; retrieved context is sent for that turn
     // only and never persisted to history (it is re-derived per question).
     private readonly contextProvider?: ContextProvider,
+    // Optional external history array to ADOPT (not copy) — the multi-session manager
+    // passes the chat's own array so the conversation survives rebuilding the session
+    // (e.g. on a model change) and the manager can read the accumulated turns. When
+    // omitted, the session keeps its own private history.
+    sharedHistory?: ChatMessage[],
   ) {
-    if (system) {
-      this.history.push({ role: "system", content: system });
+    this.history = sharedHistory ?? [];
+    if (system && !this.history.some((m) => m.role === "system")) {
+      this.history.unshift({ role: "system", content: system });
     }
   }
 

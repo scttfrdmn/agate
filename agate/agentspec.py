@@ -190,6 +190,22 @@ register_capability(
         grant=CapabilityGrant(actions=_GATEWAY_INVOKE, resource_kind="gateway-tool"),
     )
 )
+# Reach BEYOND the corpus to the open web — a single allowlisted HTTPS URL, read-only
+# (#192). Off unless a spec explicitly lists it (deny-by-absence). Like the campus MCP
+# tools it's a `gateway-tool`, so the same two-layer authz applies: IAM fences WHICH tool
+# the agent may invoke (the Gateway action on the tool ARN) and AgentCore Cedar permits
+# the CallTool; the fetch's EFFECT is bounded server-side by an institution host allowlist
+# + an SSRF guard (https-only, no private/IMDS hosts, no redirect to private) + the budget
+# cascade (a fetch is a priced action). The flagship "should this AI action be allowed?"
+# capability — the same claims→tags→Cedar pipeline that fences data decides web reach.
+register_capability(
+    Capability(
+        name="web-fetch",
+        title="Fetch one allowlisted HTTPS URL (read-only; SSRF-guarded, no redirects to "
+        "private hosts). Off unless explicitly granted.",
+        grant=CapabilityGrant(actions=_GATEWAY_INVOKE, resource_kind="gateway-tool"),
+    )
+)
 
 
 # --- spec field types -------------------------------------------------------

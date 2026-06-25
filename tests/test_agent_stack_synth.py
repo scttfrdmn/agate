@@ -28,11 +28,24 @@ def template():
 
 def test_gateway_target_oauth_and_lambda_synthesize(template):
     t, _ = template
-    # One gateway, one MCP target, one Slurm Lambda, the existing Runtime — all present.
+    # One gateway; two core MCP targets (Slurm + web-fetch #192); the Runtime — all present.
     assert len(t.find_resources("AWS::BedrockAgentCore::Gateway")) == 1
-    assert len(t.find_resources("AWS::BedrockAgentCore::GatewayTarget")) == 1
+    assert len(t.find_resources("AWS::BedrockAgentCore::GatewayTarget")) == 2
     assert len(t.find_resources("AWS::BedrockAgentCore::Runtime")) == 1
-    assert len(t.find_resources("AWS::Lambda::Function")) >= 1
+    assert len(t.find_resources("AWS::Lambda::Function")) >= 2  # slurm + webfetch tools
+
+
+def test_webfetch_tool_wired_with_allowlist(template):
+    # The web-fetch tool Lambda (#192) carries the host allowlist env; default = empty
+    # (deny-all until an institution configures `-c webfetch_allowlist=`).
+    t, _ = template
+    fns = t.find_resources("AWS::Lambda::Function")
+    webfetch = next(
+        f
+        for f in fns.values()
+        if f["Properties"].get("Handler") == "infra.functions.webfetch.handler.handler"
+    )
+    assert "AGATE_WEBFETCH_ALLOWLIST" in webfetch["Properties"]["Environment"]["Variables"]
 
 
 # --- memory hook (#130b, opt-in) --------------------------------------------
@@ -176,10 +189,10 @@ def test_workload_identity_synthesizes_tenant_named(template):
 
 
 def test_no_connector_targets_or_oauth_without_deploy_config(template):
-    # Default (no oauth/connector context): only the Slurm target, no OAuth provider — absent
-    # config produces no connector target (NO CLOCKS; a target is per-request).
+    # Default (no oauth/connector context): the two core targets (Slurm + web-fetch), no OAuth
+    # provider — absent config produces no CONNECTOR target (NO CLOCKS; a target is per-request).
     t, _ = template
-    assert len(t.find_resources("AWS::BedrockAgentCore::GatewayTarget")) == 1  # slurm only
+    assert len(t.find_resources("AWS::BedrockAgentCore::GatewayTarget")) == 2  # slurm + webfetch
     assert len(t.find_resources("AWS::BedrockAgentCore::OAuth2CredentialProvider")) == 0
 
 
@@ -201,4 +214,9 @@ def test_connector_targets_wired_to_oauth_when_configured():
         v["Properties"]["Name"]
         for v in t.find_resources("AWS::BedrockAgentCore::GatewayTarget").values()
     )
-    assert names == ["agate-connector-box", "agate-connector-gdrive", "agate-slurm"]
+    assert names == [
+        "agate-connector-box",
+        "agate-connector-gdrive",
+        "agate-slurm",
+        "agate-webfetch",
+    ]

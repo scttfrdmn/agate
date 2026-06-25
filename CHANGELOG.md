@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Gated `web-fetch` capability — governed reach beyond the corpus (#192).** A new agent tool that
+  fetches **one allowlisted HTTPS URL**, governed exactly like every other agate capability:
+  deny-by-absence (off unless a spec lists `web-fetch`), the same `gateway-tool` IAM fence +
+  AgentCore Cedar `CallTool` as the campus tools, and an institution host **allowlist** (empty =
+  deny-all). It runs as a second MCP-Lambda target on the agent gateway (mirrors the slurm tool).
+  Because the Lambda has no VPC, the `agate.webfetch` SSRF guard is the boundary: https-only,
+  allowlist (segment-wise, so `evil-example.edu` ≠ `example.edu`), **public-IP-only** (blocks the
+  cloud metadata endpoint, private/loopback/link-local/reserved/CGNAT, IPv4-mapped IPv6), the socket
+  **pinned to the guard-validated IP** (no second DNS lookup — DNS-rebinding/TOCTOU defence), and
+  **no automatic redirects** (each `Location` re-validated by hand, hop-capped). New `agate/webfetch.py`
+  (pure, adversarially tested), `infra/functions/webfetch/handler.py`, the `web-fetch` capability,
+  and the gateway target in `infra/stacks/agent.py` (allowlist via `-c webfetch_allowlist=`). Pricing/
+  budget-gating of fetches is a noted follow-up; today's controls are the allowlist + SSRF guard +
+  IAM/Cedar deny-by-absence.
 - **Corpus: upload + browse your in-scope documents (#191).** A new **Documents** screen lets an
   authenticated user upload material into — and list — their own tenant+scope subtree of the docs
   bucket; an uploaded doc auto-embeds via the existing ingest trigger and becomes retrievable.

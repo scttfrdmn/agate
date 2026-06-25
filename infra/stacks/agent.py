@@ -436,6 +436,69 @@ class AgentStack(Stack):
         slurm_target.add_dependency(gateway)
         slurm_target.node.add_dependency(slurm_invoke_grant)
 
+        # --- Web-fetch tool (#192) — gated reach beyond the corpus --------
+        # A SECOND MCP-Lambda target on the same gateway. The capability is off unless an
+        # agent spec lists `web-fetch` (deny-by-absence) AND the institution configures a
+        # host allowlist (`-c webfetch_allowlist=...`); an empty allowlist denies every
+        # fetch. The Lambda has no VPC (NO CLOCKS), so the agate.webfetch SSRF guard is the
+        # boundary: https-only, allowlisted host, public-IP only (blocks the metadata
+        # endpoint), no auto-redirect (each hop re-validated). Same gateway-tool IAM fence +
+        # AgentCore Cedar CallTool as the campus tools.
+        webfetch_allowlist = self.node.try_get_context("webfetch_allowlist") or ""
+        webfetch_fn = lambda_.Function(
+            self,
+            "WebFetchTool",
+            function_name=f"{HANDLE}-webfetch",
+            runtime=lambda_.Runtime.PYTHON_3_13,
+            handler="infra.functions.webfetch.handler.handler",
+            code=pip_bundled_code("agate", "infra", "cost", "meter"),
+            timeout=cdk.Duration.seconds(30),
+            memory_size=256,
+            environment={
+                "AGATE_WEBFETCH_ALLOWLIST": webfetch_allowlist,
+                "AGATE_OIDC_ISSUER": oidc_discovery_url or "",
+                "AGATE_OIDC_AUDIENCE": allowed_audience or "",
+            },
+            description="agate web-fetch MCP server - SSRF-guarded, allowlisted HTTPS reach (#192)",
+        )
+        _str_schema = agentcore.CfnGatewayTarget.SchemaDefinitionProperty(type="string")
+        webfetch_target = agentcore.CfnGatewayTarget(
+            self,
+            "WebFetchTarget",
+            gateway_identifier=gateway.attr_gateway_identifier,
+            name=f"{HANDLE}-webfetch",
+            target_configuration=agentcore.CfnGatewayTarget.TargetConfigurationProperty(
+                mcp=agentcore.CfnGatewayTarget.McpTargetConfigurationProperty(
+                    lambda_=agentcore.CfnGatewayTarget.McpLambdaTargetConfigurationProperty(
+                        lambda_arn=webfetch_fn.function_arn,
+                        tool_schema=agentcore.CfnGatewayTarget.ToolSchemaProperty(
+                            inline_payload=[
+                                _tool(
+                                    "web-fetch",
+                                    "Fetch one allowlisted HTTPS URL (read-only, SSRF-guarded)",
+                                    {"url": _str_schema},
+                                ),
+                            ]
+                        ),
+                    )
+                )
+            ),
+            credential_provider_configurations=[
+                agentcore.CfnGatewayTarget.CredentialProviderConfigurationProperty(
+                    credential_provider_type="GATEWAY_IAM_ROLE",
+                )
+            ],
+            description="agate web-fetch MCP target (#192)",
+        )
+        webfetch_invoke_grant = webfetch_fn.grant_invoke(execution_role)
+        webfetch_fn.add_permission(
+            "AllowGatewayInvoke",
+            principal=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
+            action="lambda:InvokeFunction",
+        )
+        webfetch_target.add_dependency(gateway)
+        webfetch_target.node.add_dependency(webfetch_invoke_grant)
+
         # --- Connector targets (#133 data plane, user-delegated OAuth) ----
         # The user-oauth connectors (Drive/Box/Teams/Discord) reach their content APIs AS the
         # verified user via the OAuth provider above — the source's own ACL composes with

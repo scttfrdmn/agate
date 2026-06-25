@@ -14,6 +14,7 @@
 
 import "@fontsource/atkinson-hyperlegible/400.css";
 import "@fontsource/atkinson-hyperlegible/700.css";
+import "katex/dist/katex.min.css";
 import "./styles/agate.css";
 
 import { fetchAdmin, renderAdmin } from "./admin/view";
@@ -30,6 +31,7 @@ import { renderMembers, renderMessages } from "./rooms/view";
 import { reduce, type RunState, emptyRunState } from "./events/collector";
 import type { RunEvent } from "./events/protocol";
 import { renderCells, renderPanel } from "./panes/render";
+import { renderInto } from "./render/markdown";
 import { withContext } from "./rag/context";
 import { Retriever } from "./rag/retriever";
 import { AgentCoreTransport } from "./transport/agentcore";
@@ -697,7 +699,15 @@ async function runAsk(
   const log = document.createElement("div");
   log.className = "answer-log";
   out.appendChild(log);
-  log.textContent = `> ${q}\n`;
+  // The echoed question (plain text, never parsed as markdown) and a separate
+  // answer body we fill as the reply streams. Splitting them keeps the user's
+  // literal question verbatim and confines markdown rendering to the model output.
+  const question = document.createElement("div");
+  question.className = "answer-question";
+  question.textContent = `> ${q}`;
+  const answer = document.createElement("div");
+  answer.className = "answer-body";
+  log.append(question, answer);
 
   // RAG grounding via the broker-proxied retriever (#84). The proxy derives the
   // tenant + scope filter from the verified token; this client supplies only the
@@ -716,10 +726,33 @@ async function runAsk(
   const session = new ChatSession(
     transport, modelId ?? config.defaultModelId, undefined, undefined, contextProvider,
   );
-  await session.send(q, {
-    onReasoning: () => (log.textContent += log.textContent.includes("[thinking…]") ? "" : "[thinking…] "),
-    onDelta: (d) => (log.textContent += d),
+  // Stream raw text live (so the user sees progress immediately), then render the
+  // accumulated answer as Markdown + math once the stream completes — re-rendering
+  // mid-stream would repeatedly try to typeset half-finished formulae.
+  let acc = "";
+  let thinking = false;
+  const result = await session.send(q, {
+    onReasoning: () => {
+      if (!thinking) {
+        thinking = true;
+        answer.textContent = "[thinking…] ";
+      }
+    },
+    onDelta: (d) => {
+      if (thinking) {
+        thinking = false;
+        answer.textContent = "";
+      }
+      acc += d;
+      answer.textContent = acc; // live plain-text stream
+    },
   });
+  // Final pass: typeset the completed answer (Markdown + LaTeX). Falls back to the
+  // streamed plain text if there was no content.
+  if (result.text.trim()) {
+    renderInto(answer, result.text);
+    answer.classList.add("rendered");
+  }
 }
 
 // --- Panel / Analyze (agent path, event stream -> panes) --------------------

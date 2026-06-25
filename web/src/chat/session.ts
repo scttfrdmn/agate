@@ -17,6 +17,10 @@ export interface SendResult {
   // the metered choke point. Undefined for browser-direct Bedrock.
   cost?: number;
   budget?: BudgetStatus;
+  // The model that actually answered + routing rationale (set by the choke point,
+  // especially under "auto" where the server picks). Undefined otherwise.
+  model?: string;
+  modelRoute?: { model: string; reason: string; degraded: boolean };
 }
 
 export interface SendCallbacks {
@@ -77,6 +81,8 @@ export class ChatSession {
     let usage: SendResult["usage"];
     let cost: SendResult["cost"];
     let budget: SendResult["budget"];
+    let model: SendResult["model"];
+    let modelRoute: SendResult["modelRoute"];
     // Snapshot history so the transport never sees a live reference that mutates
     // (we append the assistant turn below) during a lazy stream.
     for await (const chunk of this.transport.converse({
@@ -97,9 +103,11 @@ export class ChatSession {
       if (c.usage) usage = c.usage;
       if (c.cost !== undefined) cost = c.cost;
       if (c.budget) budget = c.budget;
+      if (c.model) model = c.model;
+      if (c.modelRoute) modelRoute = c.modelRoute;
     }
 
     this.history.push({ role: "assistant", content: text });
-    return { text, usage, cost, budget };
+    return { text, usage, cost, budget, model, modelRoute };
   }
 }

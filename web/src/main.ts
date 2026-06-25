@@ -880,10 +880,10 @@ function main(): void {
 
     try {
       const pattern = selected.startsWith("pattern:") ? selected.slice("pattern:".length) : null;
-      // Resolve the model pin: a chosen entitled model wins; "auto" (or anything not
-      // in the picker's entitled list) falls back to routing/default. The picker only
-      // ever lists entitled models, so this can't escape the tier.
-      const pin = modelSel.value === AUTO ? undefined : modelSel.value;
+      // Resolve the model: a chosen entitled model wins; "auto" sends the literal
+      // "auto" so the SERVER routes within the verified tier + budget (#190). The
+      // picker only lists entitled models, so a pin can't escape the tier either.
+      const pin = modelSel.value === AUTO ? AUTO : modelSel.value;
       if (!pattern && selected === "ask") {
         await runAsk(q, chats, meter, () => lastSources, pin, (question, answer, m) => {
           // Dynamic follow-up chips (opt-in). Generate after the answer; on failure
@@ -938,12 +938,11 @@ async function runAsk(
 ): Promise<void> {
   const turn = chats.current.transcript.begin(q);
 
-  // A pinned (entitled) model wins; else the configured default (the server-side
-  // entitlement-aware router, #122, will refine this once wired into the live path).
-  // The active chat's ChatSession carries the multi-turn history; rebuilt only if the
-  // model changed (so switching models keeps the conversation).
-  const chosenModel = modelId ?? config.defaultModelId;
-  const session = chats.sessionFor(chosenModel);
+  // The requested model: a pin, "auto" (server routes within tier+budget, #190), or
+  // the configured default. The active chat's ChatSession carries the multi-turn
+  // history; rebuilt only if the requested model changed (so switching keeps history).
+  const requested = modelId ?? config.defaultModelId;
+  const session = chats.sessionFor(requested);
   // Stream raw text live (so the user sees progress immediately), then render the
   // accumulated answer as Markdown + math once the stream completes — re-rendering
   // mid-stream would repeatedly try to typeset half-finished formulae.
@@ -952,16 +951,21 @@ async function runAsk(
       onReasoning: () => turn.thinking(),
       onDelta: (d) => turn.appendDelta(d),
     });
+    // The server reports which model actually ran (esp. under "auto"); show that,
+    // with the routing rationale as a tooltip when present.
+    const ranModel = result.model ?? (requested === AUTO ? undefined : requested);
     turn.finalize(result.text, getSources(), {
       usage: result.usage,
       cost: result.cost,
       budget: result.budget,
-      modelId: chosenModel,
+      modelId: ranModel,
+      modelReason: result.modelRoute?.reason,
     });
     meter.record(result.cost, result.budget);
     if (result.text.trim()) {
       chats.recordTurn(q, result.text);
-      onAnswered?.(q, result.text, chosenModel);
+      // Follow-ups need a concrete model id, not "auto" — use the one that ran.
+      onAnswered?.(q, result.text, ranModel ?? config.defaultModelId);
     }
   } catch (err) {
     turn.fail((err as Error).message);

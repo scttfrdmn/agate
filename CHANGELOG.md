@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **"Auto" model routing is now live (#190).** Selecting **Auto (entitlement-aware)** for Ask now
+  actually routes: the SPA sends the literal `auto`, and the **choke point** picks the model
+  server-side via `agate.router.select_model` — bounded by the **verified** tier (from the token, not
+  the request) and the **remaining budget** across the cascade nodes. It can never select above the
+  session's tier or beyond budget (if nothing's affordable it degrades to the cheapest entitled model
+  and the gate makes the real call). The response now reports the model that actually ran + the
+  routing rationale; the answer's model tag shows it with a ⚡ and the reason on hover. Previously
+  "Auto" silently used a single static default (`gpt-oss-20b`). A missing `model` field is treated as
+  `auto` rather than rejected. (The difficulty classifier is left at its cheap default on the Ask path
+  — no extra LLM call per question; `select_model` still honors policy/difficulty when supplied.)
 - **Multiple chat sessions + context-usage gauge.** Ask is now multi-session: a sidebar **Chats**
   list with a **+ New** button starts a fresh conversation, and clicking a chat switches to it (each
   keeps its own transcript, multi-turn history, and token tally — switching hides one pane and shows

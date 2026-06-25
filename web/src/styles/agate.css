@@ -627,6 +627,15 @@ button {
   border-radius: 20px;
   padding: 0.1rem 0.5rem;
 }
+/* server-routed (auto) model: a subtle accent + a ⚡ hint that it was auto-picked. */
+.model-tag.routed {
+  border-color: var(--accent);
+  color: var(--accent);
+  cursor: help;
+}
+.model-tag.routed::before {
+  content: "⚡ ";
+}
 
 /* "Thinking …" indicator: a label plus the bouncing dots. */
 .thinking {

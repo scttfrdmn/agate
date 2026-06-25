@@ -14,6 +14,9 @@ export interface AnswerMeta {
   cost?: number;
   budget?: BudgetStatus;
   modelId?: string;
+  // Why the server routed to this model (shown as a tooltip on the model tag when
+  // "auto" was used). Undefined for a pinned model.
+  modelReason?: string;
 }
 
 // One assistant turn's live handle: the caller streams text in, then finalizes.
@@ -104,6 +107,11 @@ export class ChatTranscript {
         clearThinking();
         if (meta.modelId) {
           modelTag.textContent = modelLabel(meta.modelId);
+          // When the server routed (auto), show the rationale on hover + an "auto" hint.
+          if (meta.modelReason) {
+            modelTag.title = `Auto-routed: ${meta.modelReason}`;
+            modelTag.classList.add("routed");
+          }
           modelTag.hidden = false;
         }
         if (text.trim()) {

@@ -33,6 +33,7 @@ import boto3
 from agate.entitlements import tier_for_model
 from agate.jwt_verify import TokenError, config_from_env, verify_token
 from agate.rag import ancestors
+from agate.router import select_model
 from agate.tags import ClaimsError, claims_to_tags
 from cost import estimate_call_cost, evaluate_cascade
 from cost.pricing import default_pricebook
@@ -56,6 +57,27 @@ def estimate_input_tokens(messages: list[dict]) -> int:
     trusts a client-supplied count — a small lie would shrink the pre-call gate."""
     chars = sum(len(str(m.get("content", ""))) for m in messages)
     return int(math.ceil(chars / 4)) + 1
+
+
+def is_auto(model: str | None) -> bool:
+    """Whether the request defers model choice to the server-side router (#190).
+    A missing model or the literal "auto" means "you pick, within my entitlement"."""
+    return not model or model.strip().lower() == "auto"
+
+
+def _remaining_budget(nodes: list[tuple[str, float, float | None]]) -> float | None:
+    """The tightest remaining headroom across the cascade nodes (min of budget-spend),
+    for the router's affordability filter. None when NO node sets a budget (unbounded).
+    A node with no budget imposes no cap, so it's skipped; a node already over budget
+    yields 0 (the router then degrades to the cheapest entitled model and the cascade
+    gate makes the real reject decision)."""
+    remaining: float | None = None
+    for _label, spend, budget in nodes:
+        if budget is None:
+            continue
+        headroom = max(0.0, budget - spend)
+        remaining = headroom if remaining is None else min(remaining, headroom)
+    return remaining
 
 
 def to_converse_messages(messages: list[dict]) -> list[dict]:
@@ -194,10 +216,12 @@ def process(req: dict, *, period: str | None = None) -> dict:
     user = str(claims.get("sub") or claims.get("subject") or "agate-user")
     period = period or _period_now()
 
-    model_id = req.get("model")
+    requested_model = req.get("model")
     messages = req.get("messages") or []
-    if not model_id or not messages:
-        raise ChokepointError("request missing model/messages")
+    # A missing model is allowed — it means "auto" (the server routes, #190). Only the
+    # messages are strictly required.
+    if not messages:
+        raise ChokepointError("request missing messages")
 
     max_tokens = int(req.get("max_tokens", DEFAULT_MAX_TOKENS))
     input_tokens = estimate_input_tokens(messages)  # server-side only
@@ -223,6 +247,24 @@ def process(req: dict, *, period: str | None = None) -> dict:
                 lookup_scope_budget(tenant, node, period),
             )
         )
+
+    # Auto routing (#122/#190): when the client asks for "auto" (or sends no model), the
+    # SERVER picks the model — bounded by the VERIFIED tier and the remaining budget,
+    # never a client-supplied tier. A concrete model id is used as-is (the picker only
+    # ever offers entitled models; the cascade + IAM are the real gate regardless).
+    model_route: dict | None = None
+    if is_auto(requested_model):
+        choice = select_model(
+            tier=tags.tier,
+            remaining_budget_usd=_remaining_budget(nodes),
+            input_tokens=input_tokens,
+            max_tokens=max_tokens,
+            pricebook=pricebook,
+        )
+        model_id = choice.model_id
+        model_route = {"model": model_id, "reason": choice.reason, "degraded": choice.degraded}
+    else:
+        model_id = requested_model
 
     fallback_tier = tier_for_model(model_id)  # price unlisted ids at their tier (#88)
     gate = evaluate_cascade(
@@ -263,17 +305,23 @@ def process(req: dict, *, period: str | None = None) -> dict:
     # value read above predates this call; add this call's actual cost for a
     # close (still non-authoritative) running figure. budget is None = no cap set.
     spend_after = user_spend + actual_cost
-    return {
+    result = {
         "text": text,
         "usage": {"inputTokens": in_tok, "outputTokens": out_tok},
         "estimated_cost": gate.estimated_cost,
         "cost": actual_cost,
+        # The model that actually ran (so the UI shows it even under "auto"), plus the
+        # routing rationale when the server picked it.
+        "model": model_id,
         "budget": {
             "period": period,
             "spend_usd": round(spend_after, 6),
             "budget_usd": round(user_budget, 6) if user_budget is not None else None,
         },
     }
+    if model_route is not None:
+        result["model_route"] = model_route
+    return result
 
 
 def handler(event: dict, context: object) -> dict:

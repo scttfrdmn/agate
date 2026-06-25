@@ -52,6 +52,22 @@ describe("responseToChunks", () => {
     expect(chunks[1].usage).toEqual({ inputTokens: 12, outputTokens: 8 });
   });
 
+  it("surfaces the routed model + rationale on the final chunk (auto mode)", () => {
+    const chunks = responseToChunks(200, {
+      text: "answer",
+      usage: { inputTokens: 5, outputTokens: 3 },
+      model: "openai.gpt-oss-20b-1:0",
+      model_route: { model: "openai.gpt-oss-20b-1:0", reason: "thrifty: SIMPLE", degraded: false },
+    });
+    const final = chunks[chunks.length - 1];
+    expect(final.model).toBe("openai.gpt-oss-20b-1:0");
+    expect(final.modelRoute).toEqual({
+      model: "openai.gpt-oss-20b-1:0",
+      reason: "thrifty: SIMPLE",
+      degraded: false,
+    });
+  });
+
   it("surfaces a 402 budget rejection as terminal answer text", () => {
     const chunks = responseToChunks(402, { error: "budget_rejected", detail: "would exceed budget" });
     expect(chunks).toHaveLength(1);

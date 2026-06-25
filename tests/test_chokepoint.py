@@ -21,9 +21,11 @@ from chokepoint import handler as cp  # noqa: E402
 class _FakeBedrock:
     def __init__(self):
         self.calls = 0
+        self.last_model = None  # the modelId the choke point invoked Converse with
 
     def converse(self, modelId, messages, inferenceConfig):  # noqa: N803
         self.calls += 1
+        self.last_model = modelId
         return {
             "output": {"message": {"content": [{"text": "answer"}]}},
             "usage": {"inputTokens": 12, "outputTokens": 8},
@@ -45,6 +47,10 @@ class _Wired:
     @property
     def calls(self) -> int:
         return self._br.calls
+
+    @property
+    def last_model(self) -> str | None:
+        return self._br.last_model
 
 
 @pytest.fixture
@@ -115,6 +121,49 @@ def test_allows_and_invokes_when_within_budget(wired):
     sent = {t["Key"]: t["Value"] for t in wired.assumed_tags.to_sts_tags()}
     assert sent["agate:tenant"] == "chem"
     assert sent["agate:tier"] == "oss"
+
+
+def test_auto_routes_to_an_entitled_model(wired):
+    # "auto" → the server picks within the verified tier (student → oss). With budget
+    # headroom + default difficulty, thrifty picks the cheapest oss model. The model is
+    # NEVER above the tier, and the response reports the routed choice.
+    wired.spend, wired.budget = 0.0, 100.0
+    out = cp.process(_req(model="auto"), period="2026-06")
+    assert out["text"] == "answer"
+    assert wired.last_model == "openai.gpt-oss-20b-1:0"  # an oss-tier model
+    assert out["model"] == "openai.gpt-oss-20b-1:0"
+    assert out["model_route"]["model"] == "openai.gpt-oss-20b-1:0"
+    assert "reason" in out["model_route"]
+
+
+def test_auto_with_no_model_field_also_routes(wired):
+    wired.spend, wired.budget = 0.0, 100.0
+    req = _req()
+    del req["model"]  # omitted entirely → treated as auto
+    cp.process(req, period="2026-06")
+    assert wired.last_model == "openai.gpt-oss-20b-1:0"
+
+
+def test_auto_never_exceeds_tier_for_faculty(wired):
+    # faculty → mid tier; auto must pick from the entitled (oss+mid) set, never a
+    # frontier-only model. (models_for_tier is cumulative; frontier-only = the two
+    # not present at the mid tier.)
+    from agate.entitlements import models_for_tier
+
+    wired.spend, wired.budget = 0.0, 100.0
+    cp.process(_req(token=_token(affiliation="faculty"), model="auto"), period="2026-06")
+    mid = set(models_for_tier("mid"))
+    frontier_only = set(models_for_tier("frontier")) - mid
+    assert wired.last_model in mid
+    assert wired.last_model not in frontier_only
+
+
+def test_explicit_model_is_not_rerouted(wired):
+    # A concrete (non-auto) model id passes through unchanged — no routing, no model_route.
+    wired.spend, wired.budget = 1.0, 100.0
+    out = cp.process(_req(model="openai.gpt-oss-120b-1:0"), period="2026-06")
+    assert wired.last_model == "openai.gpt-oss-120b-1:0"
+    assert "model_route" not in out
 
 
 def test_response_reports_spend_and_budget_for_the_ui(wired):
@@ -195,11 +244,14 @@ def test_token_without_tenant_fails_closed(wired):
     assert wired.calls == 0
 
 
-def test_missing_model_or_messages_rejected(wired):
-    with pytest.raises(cp.ChokepointError):
-        cp.process(_req(model=None), period="2026-06")
+def test_missing_messages_rejected(wired):
+    # Messages are required; a missing model is NOT an error (it means auto, #190).
     with pytest.raises(cp.ChokepointError):
         cp.process(_req(messages=[]), period="2026-06")
+    # model=None routes via auto rather than rejecting.
+    wired.spend, wired.budget = 0.0, 100.0
+    out = cp.process(_req(model=None), period="2026-06")
+    assert out["text"] == "answer"
 
 
 def test_estimate_input_tokens_is_server_side():

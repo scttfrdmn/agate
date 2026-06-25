@@ -70,6 +70,14 @@ export function responseToChunks(status: number, payload: Record<string, unknown
           budgetUsd: typeof b.budget_usd === "number" ? b.budget_usd : null,
         }
       : undefined;
+  const model = typeof payload.model === "string" ? payload.model : undefined;
+  const mr = payload.model_route as
+    | { model?: string; reason?: string; degraded?: boolean }
+    | undefined;
+  const modelRoute =
+    mr && typeof mr.model === "string"
+      ? { model: mr.model, reason: String(mr.reason ?? ""), degraded: Boolean(mr.degraded) }
+      : undefined;
   return [
     { delta: text, done: false },
     {
@@ -78,6 +86,8 @@ export function responseToChunks(status: number, payload: Record<string, unknown
       usage: { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 },
       cost,
       budget,
+      model,
+      modelRoute,
     },
   ];
 }

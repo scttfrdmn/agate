@@ -39,6 +39,10 @@ export interface ConverseChunk {
   usage?: { inputTokens: number; outputTokens: number };
   cost?: number;
   budget?: BudgetStatus;
+  // The model that actually answered (set by the choke point — especially under
+  // "auto", where the server routes), and the routing rationale when it picked.
+  model?: string;
+  modelRoute?: { model: string; reason: string; degraded: boolean };
 }
 
 export interface Transport {

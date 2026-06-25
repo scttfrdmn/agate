@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Rendered Markdown + typeset math in answers.** Assistant replies (Ask / Panel / Analyze) were
+  shown as raw text, so Markdown and LaTeX appeared literally (`**bold**`, `\[ dU = Q - W \]`). The
+  SPA now renders the completed answer with `marked` (GFM Markdown) → `DOMPurify` (the XSS boundary —
+  model output is untrusted) → `KaTeX` (typeset `$…$` / `\(…\)` inline and `$$…$$` / `\[…\]` display
+  math) — fit for an academic/research audience that needs real notation. New
+  `web/src/render/markdown.ts` (pure `renderMarkdown`/`renderInto`): math spans are extracted before
+  Markdown parsing so backslashes/underscores in formulae survive, then typeset into the sanitized
+  DOM (malformed TeX renders as text, never raw HTML; a lone `$5` isn't treated as math). Answers
+  stream as plain text live, then render once complete (no half-parsed-formula flicker). Adds
+  `marked` + `dompurify` + `katex` deps (bundle ~165 KB gzipped).
 - **Tier-0 "Ask" routes through the choke point — gated, metered, browser-reachable.** Browser-
   direct Bedrock can't work from a web origin (no CORS on `bedrock-runtime`), and a security-first
   gateway's default path arguably *should* be server-enforced anyway. So when `VITE_CHOKEPOINT_URL`

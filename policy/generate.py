@@ -201,6 +201,80 @@ def agent_write_policy(bucket: str | None = None) -> dict:
     }
 
 
+def corpus_rw_policy(bucket: str | None = None) -> dict:
+    """Get+Put+List for USER-UPLOADED DOCUMENTS, scoped to `{tenant}/{scope}/*` (#191).
+
+    The corpus endpoint assumes a role carrying this policy (with the verified `agate:`
+    session tags) so an authenticated user can upload into — and list — ONLY their own
+    tenant (and, when scoped, their own subtree). Same `${aws:PrincipalTag/...}` discipline
+    as `data_scope_policy`, but adds the write side. The broadly-vended browser role is
+    unaffected (its boundary explicitly denies PutObject); this authority lives only on the
+    corpus-writer role the endpoint assumes.
+
+    Confinement mirrors §80: a `Null:false`-guarded Deny fences a scoped session's writes to
+    `{tenant}/{scope}/*`; an unscoped session may write anywhere in its tenant. A missing
+    tenant tag denies outright (fail closed). Listing is bounded the same way via the
+    `s3:prefix` condition, so a user can only enumerate their own subtree."""
+    docs_bucket = bucket or f"{DOCS_BUCKET_PREFIX}-*"
+    tenant_tag = f"${{aws:PrincipalTag/{tag_key('tenant')}}}"
+    scope_tag = f"${{aws:PrincipalTag/{tag_key('scope')}}}"
+    return {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                # Read + write documents only under the session's own tenant prefix.
+                "Sid": "RWOwnTenantDocs",
+                "Effect": "Allow",
+                "Action": ["s3:GetObject", "s3:PutObject"],
+                "Resource": f"arn:aws:s3:::{docs_bucket}/{tenant_tag}/*",
+            },
+            {
+                # List only within the tenant prefix (browse the corpus).
+                "Sid": "ListOwnTenantDocs",
+                "Effect": "Allow",
+                "Action": ["s3:ListBucket"],
+                "Resource": f"arn:aws:s3:::{docs_bucket}",
+                "Condition": {
+                    "StringLike": {"s3:prefix": [f"{tenant_tag}/*", f"{tenant_tag}"]}
+                },
+            },
+            {
+                # Fail closed: no tenant tag -> no corpus access at all.
+                "Sid": "DenyCorpusWhenNoTenantTag",
+                "Effect": "Deny",
+                "Action": ["s3:GetObject", "s3:PutObject", "s3:ListBucket"],
+                "Resource": "*",
+                "Condition": {"Null": {f"aws:PrincipalTag/{tag_key('tenant')}": "true"}},
+            },
+            {
+                # Scope confinement (#80, read/write side): when the session carries an
+                # `agate:scope` tag, deny any read/write OUTSIDE `{tenant}/{scope}/*`.
+                # Null:false-guarded -> an unscoped session may write anywhere in its tenant.
+                "Sid": "DenyCorpusOutsideScopeSubtree",
+                "Effect": "Deny",
+                "Action": ["s3:GetObject", "s3:PutObject"],
+                "NotResource": [f"arn:aws:s3:::{docs_bucket}/{tenant_tag}/{scope_tag}/*"],
+                "Condition": {"Null": {f"aws:PrincipalTag/{tag_key('scope')}": "false"}},
+            },
+            {
+                # Scope confinement, LIST side (parity with data_scope_policy): a scoped
+                # session may only ListBucket within its own `{tenant}/{scope}/` prefix.
+                # Defense-in-depth — the corpus Lambda always lists the verified prefix,
+                # but the credential itself is fenced too so it can't enumerate a sibling
+                # scope even if the code were wrong.
+                "Sid": "DenyCorpusListOutsideScopeSubtree",
+                "Effect": "Deny",
+                "Action": ["s3:ListBucket"],
+                "Resource": "*",
+                "Condition": {
+                    "StringNotLike": {"s3:prefix": [f"{tenant_tag}/{scope_tag}/*"]},
+                    "Null": {f"aws:PrincipalTag/{tag_key('scope')}": "false"},
+                },
+            },
+        ],
+    }
+
+
 def room_rw_policy(bucket: str | None = None) -> dict:
     """Get+PutObject for COLLABORATIVE ROOMS, confined to `{tenant}/_rooms/*` (#116).
 

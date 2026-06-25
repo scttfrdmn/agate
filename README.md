@@ -157,6 +157,7 @@ cd web && VITE_BROKER_URL=<broker-url> VITE_AWS_REGION=<region> \
   VITE_DEPLOY_URL=<deploy-url> \
   VITE_AUTHORING_URL=<authoring-url> \
   VITE_ROOMS_URL=<rooms-url> \
+  VITE_CORPUS_URL=<corpus-url> \
   VITE_CHOKEPOINT_URL=<chokepoint-url> npm run build && cd ..
 npx cdk deploy agate-web                 # publishes web/dist to S3 + CloudFront
 ```
@@ -170,7 +171,9 @@ but the confirm button stays inert. `VITE_AUTHORING_URL` is the `agate-authoring
 output `AuthoringUrl` (#117) — the visual "Build an agent" screen (bounded menu +
 form); omit it to hide that screen. `VITE_ROOMS_URL` is the `agate-rooms` output
 `RoomsUrl` (#116) — the collaborative "Rooms" screen (polling transport); omit it to
-hide that screen. `VITE_CHOKEPOINT_URL` is the `agate-chokepoint` output `ChokepointUrl` —
+hide that screen. `VITE_CORPUS_URL` is the `agate-corpus` output `CorpusUrl` (#191) — the
+"Documents" screen to upload + browse your in-scope corpus; omit it to hide that screen.
+`VITE_CHOKEPOINT_URL` is the `agate-chokepoint` output `ChokepointUrl` —
 when set, **Tier-0 "Ask" routes through the choke point** (gated + metered, server-enforced)
 instead of browser-direct Bedrock; **required for Ask to work in the browser** (Bedrock's
 runtime endpoint has no CORS, so a web-origin call to it is blocked). Omit it and Ask stays

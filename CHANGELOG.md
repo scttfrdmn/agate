@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Corpus: upload + browse your in-scope documents (#191).** A new **Documents** screen lets an
+  authenticated user upload material into — and list — their own tenant+scope subtree of the docs
+  bucket; an uploaded doc auto-embeds via the existing ingest trigger and becomes retrievable.
+  New `agate-corpus` Function URL (AWS_IAM) that derives tenant/scope from the **verified token**
+  (never a request field) and reads/writes/lists through a tenant-fenced role it assumes with the
+  `agate:` tags — so the acting principal carries the tag `corpus_rw_policy`'s `${aws:PrincipalTag/…}`
+  fence binds; the browser role stays read-only (its boundary denies `PutObject`). Filenames are
+  sanitised to a single safe segment (no traversal, no reserved-namespace collision); uploads are
+  size-capped. New `agate/corpus.py` (pure key/prefix helpers), `infra/functions/corpus/handler.py`,
+  `infra/stacks/corpus.py`, `policy.generate.corpus_rw_policy`, and the SPA
+  `web/src/corpus/{client,view}.ts` (gated on `VITE_CORPUS_URL`). $0-idle (per-request S3), a
+  default-fleet stack.
 - **"Auto" model routing is now live (#190).** Selecting **Auto (entitlement-aware)** for Ask now
   actually routes: the SPA sends the literal `auto`, and the **choke point** picks the model
   server-side via `agate.router.select_model` — bounded by the **verified** tier (from the token, not

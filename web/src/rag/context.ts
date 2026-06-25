@@ -11,6 +11,10 @@ export interface RetrievedChunk {
   key: string;
   text: string;
   sourceKey?: string;
+  // Connector provenance (#133): for a chunk ingested via a connector, the source
+  // SYSTEM + item it came from, shown in the answer's Sources footer.
+  sourceSystem?: string;
+  sourceItem?: string;
   distance?: number;
 }
 

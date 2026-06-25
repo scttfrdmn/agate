@@ -36,7 +36,11 @@ describe("renderPanel", () => {
     renderPanel(runStateFrom(events), target);
     const panes = target.querySelectorAll(".agate-pane");
     expect(panes).toHaveLength(2);
-    expect(target.querySelector('[data-pane="frontier"] .agate-pane-body')?.textContent).toBe("answer A");
+    // A done pane renders its text as Markdown (so "answer A" is wrapped in a <p>);
+    // assert the visible text rather than exact node text (which carries a newline).
+    expect(
+      target.querySelector('[data-pane="frontier"] .agate-pane-body')?.textContent?.trim(),
+    ).toBe("answer A");
     expect(target.querySelector(".agate-divergence")).not.toBeNull();
   });
 

@@ -210,8 +210,10 @@ def process(req: dict, *, period: str | None = None) -> dict:
     # imposes no cap (evaluate_cascade skips it). scope rows here are the running
     # totals THIS choke point maintains (the async log meter keys only tenant/user).
     scope_nodes = ancestors(tags.scope)
+    user_spend = read_spend(tenant, user, period)
+    user_budget = lookup_budget(tenant, user, period)
     nodes: list[tuple[str, float, float | None]] = [
-        ("user", read_spend(tenant, user, period), lookup_budget(tenant, user, period)),
+        ("user", user_spend, user_budget),
     ]
     for node in scope_nodes:
         nodes.append(
@@ -256,10 +258,21 @@ def process(req: dict, *, period: str | None = None) -> dict:
     )
     for node in scope_nodes:
         _increment_scope_spend(tenant, node, period, actual_cost)
+    # Report the period's spend/budget so the UI can show where the user stands.
+    # The async log meter owns the authoritative user/tenant spend rows, so the
+    # value read above predates this call; add this call's actual cost for a
+    # close (still non-authoritative) running figure. budget is None = no cap set.
+    spend_after = user_spend + actual_cost
     return {
         "text": text,
         "usage": {"inputTokens": in_tok, "outputTokens": out_tok},
         "estimated_cost": gate.estimated_cost,
+        "cost": actual_cost,
+        "budget": {
+            "period": period,
+            "spend_usd": round(spend_after, 6),
+            "budget_usd": round(user_budget, 6) if user_budget is not None else None,
+        },
     }
 
 

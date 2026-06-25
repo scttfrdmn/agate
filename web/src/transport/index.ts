@@ -16,17 +16,29 @@ export interface ConverseRequest {
   maxTokens?: number;
 }
 
+// The period spend/budget the choke point reports so the UI can show where the
+// session stands. budgetUsd is null when no cap is configured. All server-derived.
+export interface BudgetStatus {
+  period: string;
+  spendUsd: number;
+  budgetUsd: number | null;
+}
+
 // A streamed token plus optional usage on the final chunk (used by the
 // non-authoritative client-side cost estimate — design §7.2).
 //
 // `delta` is answer text. Reasoning models (e.g. gpt-oss) also stream
 // chain-of-thought as `reasoning` deltas before the answer; they are surfaced on
 // a separate channel so the answer stays clean and the UI can show "thinking…".
+// The final chunk may also carry this call's `cost` (USD) and the running
+// `budget` status, when the transport is the metered choke point (Tier 1).
 export interface ConverseChunk {
   delta: string;
   reasoning?: string;
   done: boolean;
   usage?: { inputTokens: number; outputTokens: number };
+  cost?: number;
+  budget?: BudgetStatus;
 }
 
 export interface Transport {

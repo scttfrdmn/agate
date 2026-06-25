@@ -117,6 +117,24 @@ def test_allows_and_invokes_when_within_budget(wired):
     assert sent["agate:tier"] == "oss"
 
 
+def test_response_reports_spend_and_budget_for_the_ui(wired):
+    # The UI shows "where you stand": spend_after = prior spend + this call's cost,
+    # plus the period budget (None when no cap is configured).
+    wired.spend, wired.budget = 2.0, 50.0
+    out = cp.process(_req(), period="2026-06")
+    b = out["budget"]
+    assert b["period"] == "2026-06"
+    assert b["budget_usd"] == 50.0
+    assert b["spend_usd"] >= 2.0  # prior spend + this call's actual cost
+    assert out["cost"] >= 0.0
+
+
+def test_response_budget_is_null_when_no_cap(wired):
+    wired.spend, wired.budget = 0.0, None  # no budget row configured
+    out = cp.process(_req(), period="2026-06")
+    assert out["budget"]["budget_usd"] is None
+
+
 def test_rejects_pre_call_when_over_budget(wired):
     wired.spend, wired.budget = 99.999, 100.0
     with pytest.raises(cp.ChokepointError, match="budget"):

@@ -6,6 +6,7 @@
 
 import type { RunState, PaneState, AnalyzeCell } from "../events/collector";
 import type { DivergenceClaim, DivergencePayload } from "../events/protocol";
+import { renderInto } from "../render/markdown";
 
 function el(tag: string, attrs: Record<string, string> = {}, text?: string): HTMLElement {
   const node = document.createElement(tag);
@@ -44,7 +45,16 @@ function renderPane(pane: PaneState): HTMLElement {
   // role=status so the running→done transition is announced.
   head.appendChild(el("span", { class: "pane-status", role: "status" }, status));
   col.appendChild(head);
-  col.appendChild(el("div", { class: "agate-pane-body" }, pane.text));
+  // Render Markdown + math once the pane is done; while streaming show plain text
+  // (re-typesetting half-finished output on every repaint would thrash + flicker).
+  const body = el("div", { class: "agate-pane-body" });
+  if (done && pane.text.trim()) {
+    renderInto(body, pane.text);
+    body.classList.add("rendered");
+  } else {
+    body.textContent = pane.text;
+  }
+  col.appendChild(body);
   return col;
 }
 

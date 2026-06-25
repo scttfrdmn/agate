@@ -31,8 +31,9 @@ import { renderMembers, renderMessages } from "./rooms/view";
 import { reduce, type RunState, emptyRunState } from "./events/collector";
 import type { RunEvent } from "./events/protocol";
 import { renderCells, renderPanel } from "./panes/render";
-import { renderInto } from "./render/markdown";
-import { withContext } from "./rag/context";
+import { ChatTranscript } from "./chat/ui";
+import { SessionMeter } from "./chat/meter";
+import { type RetrievedChunk, withContext } from "./rag/context";
 import { Retriever } from "./rag/retriever";
 import { AgentCoreTransport } from "./transport/agentcore";
 import { BedrockTransport } from "./transport/bedrock";
@@ -65,62 +66,91 @@ function render(app: HTMLElement): void {
   // Semantic landmarks (header / main / aside) + labelled controls + an ARIA
   // live region so screen-reader users hear the streamed answer and run progress.
   app.innerHTML = `
-    <div class="layout">
-      <header class="app-header">
-        <div>
-          <h1>agate</h1>
-          <p class="subtitle">AWS-native GenAI gateway · governed by your campus identity</p>
-        </div>
-      </header>
-
+    <div class="layout chat-layout">
       <main id="main" class="main-col" tabindex="-1">
-        <p id="scope" class="cost-line" role="status" aria-live="polite"></p>
+        <!-- Scrolling transcript of question/answer pairs fills this region; the
+             composer sits pinned at the bottom. ChatTranscript appends here. -->
+        <section id="out" class="answer-region" aria-live="polite" aria-atomic="false"
+                 aria-label="Conversation"></section>
 
-        <form id="f" class="composer" aria-label="Ask agate">
-          <div class="field">
-            <label for="mode">Mode</label>
-            <select id="mode">
+        <div id="empty" class="empty-state">
+          <p id="scope" class="empty-hint" role="status" aria-live="polite"></p>
+        </div>
+
+        <!-- Suggestion chips (entitlement-aware sample questions). -->
+        <div id="chips" class="suggestions" role="group" aria-label="Suggested questions"></div>
+
+        <form id="f" class="composer composer-bar" aria-label="Ask agate">
+          <div class="composer-controls">
+            <select id="mode" aria-label="Mode">
               ${UI_MODES.map((m) => `<option value="${m.value}">${m.label}</option>`).join("")}
               <optgroup label="Reasoning patterns">
                 <option value="pattern:lit-review">Pattern · Literature synthesis</option>
                 <option value="pattern:red-team">Pattern · Steel-man / red-team</option>
               </optgroup>
             </select>
-          </div>
-          <div class="field">
-            <label for="model">Model</label>
-            <select id="model" title="Auto routes within your entitlement + budget; or pin a model">
+            <select id="model" aria-label="Model"
+                    title="Auto routes within your entitlement + budget; or pin a model">
               <option value="auto">Auto (entitlement-aware)</option>
             </select>
           </div>
-          <div class="field" style="flex:1">
-            <label for="q">Your question</label>
-            <div class="input-bar">
-              <input id="q" type="text" placeholder="Ask a research question…" autocomplete="off"
-                     aria-describedby="scope" />
-            </div>
+          <div class="input-bar">
+            <textarea id="q" rows="1" placeholder="Ask a research question…"
+                      autocomplete="off" aria-label="Your question"
+                      aria-describedby="scope"></textarea>
+            <button class="send-btn" type="submit" aria-label="Send" title="Send">&#x2191;</button>
           </div>
-          <button class="btn" type="submit">Send</button>
         </form>
-
-        <!-- The run output. aria-live=polite announces streamed answer + panes;
-             aria-busy is toggled while a run is in flight. -->
-        <section id="out" class="answer-region" aria-live="polite" aria-atomic="false"
-                 aria-label="Answer"></section>
       </main>
 
       <aside class="sidebar" aria-label="Session">
         <div class="panel">
+          <div class="panel-title">Session</div>
+          <div id="scope-chips" class="scope-chips" aria-label="Your access"></div>
+        </div>
+        <div class="panel">
           <div class="panel-title">Running cost</div>
           <div id="cost" class="meter-total" aria-live="polite">$0.0000</div>
-          <div class="meter-status">this session · billed per request</div>
+          <div id="cost-status" class="meter-status">this session · billed per request</div>
+          <div id="budget" class="budget" hidden>
+            <div class="budget-track"><div id="budget-bar" class="budget-fill"></div></div>
+            <div id="budget-text" class="budget-text"></div>
+          </div>
         </div>
       </aside>
     </div>`;
 }
 
-function showCost(total: number): void {
-  document.getElementById("cost")!.textContent = `$${(total || 0).toFixed(4)}`;
+// Render the session's verified access as chips (tier / tenant / affiliation /
+// courses). These are display-only echoes of the broker's scope — authority lives
+// server-side. Called once creds.scope is known.
+function renderScopeChips(scope: {
+  tier?: string;
+  tenant?: string;
+  affiliation?: string;
+  courses?: string[];
+}): void {
+  const host = document.getElementById("scope-chips");
+  if (!host) return;
+  const chips: Array<[string, string]> = [];
+  if (scope.tier) chips.push(["tier", scope.tier]);
+  if (scope.tenant) chips.push(["tenant", scope.tenant]);
+  if (scope.affiliation) chips.push(["role", scope.affiliation]);
+  for (const c of scope.courses ?? []) chips.push(["course", c]);
+  host.replaceChildren(
+    ...chips.map(([k, v]) => {
+      const chip = document.createElement("span");
+      chip.className = "scope-chip";
+      const key = document.createElement("span");
+      key.className = "scope-chip-key";
+      key.textContent = k;
+      const val = document.createElement("span");
+      val.className = "scope-chip-val";
+      val.textContent = v;
+      chip.append(key, val);
+      return chip;
+    }),
+  );
 }
 
 // Errors are announced assertively (role=alert) so a screen reader interrupts to
@@ -623,9 +653,76 @@ function main(): void {
   }
 
   const out = document.getElementById("out")!;
-  const input = document.getElementById("q") as HTMLInputElement;
+  const input = document.getElementById("q") as HTMLTextAreaElement;
   const modeSel = document.getElementById("mode") as HTMLSelectElement;
   const modelSel = document.getElementById("model") as HTMLSelectElement;
+  const emptyState = document.getElementById("empty");
+
+  // The scrolling chat transcript (Ask) + the session cost/budget meter live for the
+  // whole session, so history accumulates and the meter accrues across questions.
+  const transcript = new ChatTranscript(out);
+  const meter = new SessionMeter({
+    total: document.getElementById("cost")!,
+    status: document.getElementById("cost-status")!,
+    budgetWrap: document.getElementById("budget")!,
+    budgetBar: document.getElementById("budget-bar")!,
+    budgetText: document.getElementById("budget-text")!,
+  });
+
+  // Show the verified scope as chips once known (and refresh after the first vend).
+  const showScope = () => {
+    const s = creds.scope;
+    if (s) renderScopeChips(s);
+  };
+  showScope();
+
+  // A shared retriever for Ask grounding (created once if RAG is wired).
+  const retriever = config.retrievalProxyUrl
+    ? new Retriever(
+        { region: config.region, endpoint: config.retrievalProxyUrl },
+        () => creds.get(),
+        () => idpToken(),
+      )
+    : null;
+
+  // Textarea auto-grow + Enter-to-send (Shift+Enter for a newline), like a chatbot.
+  const autoGrow = () => {
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
+  };
+  input.addEventListener("input", autoGrow);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  });
+
+  // Suggestion chips: a few entitlement-neutral sample questions. Clicking one fills
+  // the box and sends it. (Kept simple; a server-provided per-tenant set can replace
+  // these later.) Hidden in Panel/Analyze modes where they don't apply.
+  const SAMPLE_QUESTIONS = [
+    "Summarize the key points in my documents.",
+    "What does the first law of thermodynamics state?",
+    "What topics do my documents cover?",
+  ];
+  const chipsHost = document.getElementById("chips");
+  if (chipsHost) {
+    chipsHost.replaceChildren(
+      ...SAMPLE_QUESTIONS.map((text) => {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "chip";
+        chip.textContent = text;
+        chip.addEventListener("click", () => {
+          input.value = text;
+          autoGrow();
+          form.requestSubmit();
+        });
+        return chip;
+      }),
+    );
+  }
 
   // Populate the model picker with the session's ENTITLED models (Auto + each model the
   // tier permits). The picker never lists an unentitled model, so a user can't pin past
@@ -643,16 +740,30 @@ function main(): void {
     );
   }
   populateModels(creds.scope?.tier);
-  // creds.scope is filled after the first vend; refresh the picker once available.
-  void creds.get().then(() => populateModels(creds.scope?.tier)).catch(() => {});
+  // creds.scope is filled after the first vend; refresh the picker + chips once available.
+  void creds
+    .get()
+    .then(() => {
+      populateModels(creds.scope?.tier);
+      showScope();
+    })
+    .catch(() => {});
+
+  // Chips only make sense for Ask; hide them in Panel/Analyze/pattern modes.
+  const syncChipsVisibility = () => {
+    if (chipsHost) chipsHost.hidden = modeSel.value !== "ask";
+  };
+  modeSel.addEventListener("change", syncChipsVisibility);
+  syncChipsVisibility();
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const q = input.value.trim();
     if (!q) return;
     input.value = "";
+    autoGrow();
+    if (emptyState) emptyState.hidden = true;
     const selected = modeSel.value; // "ask"|"panel"|"analyze" or "pattern:<key>"
-    out.replaceChildren();
     out.setAttribute("aria-busy", "true");
     const submitBtn = form.querySelector("button[type=submit]") as HTMLButtonElement;
     submitBtn.disabled = true;
@@ -664,7 +775,7 @@ function main(): void {
       // ever lists entitled models, so this can't escape the tier.
       const pin = modelSel.value === AUTO ? undefined : modelSel.value;
       if (!pattern && selected === "ask") {
-        await runAsk(q, askTransport, creds, out, pin);
+        await runAsk(q, askTransport, transcript, meter, retriever, pin);
       } else {
         if (!agent) {
           renderError(out, "Panel/Analyze/patterns need VITE_AGENT_RUNTIME_ARN (the deployed agent).");
@@ -673,16 +784,13 @@ function main(): void {
         // A pattern run sends {pattern}; a plain mode sends {mode}.
         await runAgent(q, pattern ? { pattern } : { mode: selected as UiMode }, agent, out);
       }
-      const s = creds.scope;
-      if (s) {
-        document.getElementById("scope")!.textContent =
-          `tier=${s.tier} · tenant=${s.tenant} · ${s.affiliation}`;
-      }
+      showScope();
     } catch (err) {
       renderError(out, (err as Error).message);
     } finally {
       out.setAttribute("aria-busy", "false");
       submitBtn.disabled = false;
+      input.focus();
     }
   });
 }
@@ -692,66 +800,49 @@ function main(): void {
 async function runAsk(
   q: string,
   transport: Transport,
-  creds: CredentialManager,
-  out: HTMLElement,
+  transcript: ChatTranscript,
+  meter: SessionMeter,
+  retriever: Retriever | null,
   modelId?: string,
 ): Promise<void> {
-  const log = document.createElement("div");
-  log.className = "answer-log";
-  out.appendChild(log);
-  // The echoed question (plain text, never parsed as markdown) and a separate
-  // answer body we fill as the reply streams. Splitting them keeps the user's
-  // literal question verbatim and confines markdown rendering to the model output.
-  const question = document.createElement("div");
-  question.className = "answer-question";
-  question.textContent = `> ${q}`;
-  const answer = document.createElement("div");
-  answer.className = "answer-body";
-  log.append(question, answer);
+  const turn = transcript.begin(q);
 
   // RAG grounding via the broker-proxied retriever (#84). The proxy derives the
   // tenant + scope filter from the verified token; this client supplies only the
-  // query. Tenant/scope are NOT taken from anything the browser controls.
-  let contextProvider;
-  if (config.retrievalProxyUrl) {
-    const retriever = new Retriever(
-      { region: config.region, endpoint: config.retrievalProxyUrl },
-      () => creds.get(),
-      () => idpToken(),
-    );
-    contextProvider = async (query: string) => withContext([], await retriever.retrieve(query));
-  }
+  // query. We capture the retrieved chunks so the answer can show a Sources footer
+  // whose [n] markers line up with the grounding order.
+  let sources: RetrievedChunk[] = [];
+  const contextProvider = retriever
+    ? async (query: string) => {
+        sources = await retriever.retrieve(query);
+        return withContext([], sources);
+      }
+    : undefined;
+
   // A pinned (entitled) model wins; else the configured default (the server-side
   // entitlement-aware router, #122, will refine this once wired into the live path).
+  const chosenModel = modelId ?? config.defaultModelId;
   const session = new ChatSession(
-    transport, modelId ?? config.defaultModelId, undefined, undefined, contextProvider,
+    transport, chosenModel, undefined, undefined, contextProvider,
   );
   // Stream raw text live (so the user sees progress immediately), then render the
   // accumulated answer as Markdown + math once the stream completes — re-rendering
   // mid-stream would repeatedly try to typeset half-finished formulae.
-  let acc = "";
-  let thinking = false;
-  const result = await session.send(q, {
-    onReasoning: () => {
-      if (!thinking) {
-        thinking = true;
-        answer.textContent = "[thinking…] ";
-      }
-    },
-    onDelta: (d) => {
-      if (thinking) {
-        thinking = false;
-        answer.textContent = "";
-      }
-      acc += d;
-      answer.textContent = acc; // live plain-text stream
-    },
-  });
-  // Final pass: typeset the completed answer (Markdown + LaTeX). Falls back to the
-  // streamed plain text if there was no content.
-  if (result.text.trim()) {
-    renderInto(answer, result.text);
-    answer.classList.add("rendered");
+  try {
+    const result = await session.send(q, {
+      onReasoning: () => turn.thinking(),
+      onDelta: (d) => turn.appendDelta(d),
+    });
+    turn.finalize(result.text, sources, {
+      usage: result.usage,
+      cost: result.cost,
+      budget: result.budget,
+      modelId: chosenModel,
+    });
+    meter.record(result.cost, result.budget);
+  } catch (err) {
+    turn.fail((err as Error).message);
+    throw err;
   }
 }
 
@@ -768,12 +859,15 @@ async function runAgent(
   const cells = document.createElement("div");
   out.append(panel, cells);
 
+  const costEl = document.getElementById("cost");
   const repaint = () => {
     // renderPanel draws one column per model pane PLUS the reconciliation
     // (divergence) column when present, so panes + divergence render together.
     if (state.panes.length || state.divergence) renderPanel(state, panel);
     if (state.cells.length) renderCells(state.cells, cells);
-    showCost(state.costTotal);
+    // The agent path reports its own running total (no budget cascade); show it in
+    // the same meter. (Ask uses the SessionMeter for per-call cost + budget.)
+    if (costEl) costEl.textContent = `$${(state.costTotal || 0).toFixed(4)}`;
   };
 
   const emit = (ev: RunEvent) => {

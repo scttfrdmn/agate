@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Suggestion chips fade out on submit and fade the new set in; follow-up cost is reported.**
+  Submitting a question fades the chips out immediately; the next set fades back in once the answer
+  (and any dynamic follow-ups) settle. When dynamic follow-ups are on, their generation is a real
+  metered call, so its cost now folds into the running-cost meter AND is reported in the Suggestions
+  box ("Last suggestions: $… · N in / N out"). The mode/model dropdowns now match the chips' font
+  size so the controls read as one family.
 - **Ask UX polish: answer bubbles, model attribution, dynamic follow-ups.** The assistant reply now
   sits in its **own bubble** mirroring the question ("You asked" → "Answer"), with the **model that
   replied** shown next to the Answer badge. The wait indicator reads **"Thinking …"** before the

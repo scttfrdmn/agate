@@ -128,6 +128,7 @@ function render(app: HTMLElement): void {
           </label>
           <p class="toggle-hint">Suggests next questions after each answer. Uses a small
             amount of extra tokens per answer.</p>
+          <div id="followups-cost" class="followups-cost" hidden></div>
         </div>
       </aside>
     </div>`;
@@ -723,8 +724,12 @@ function main(): void {
   ];
   const chipsHost = document.getElementById("chips");
   const followupsToggle = document.getElementById("followups-toggle") as HTMLInputElement | null;
+  const followupsCost = document.getElementById("followups-cost");
+  // Replace the chips, fading the new set in (each chip animates via CSS). Clears the
+  // `fading` class so the group is visible.
   const setChips = (questions: string[]): void => {
     if (!chipsHost) return;
+    chipsHost.classList.remove("fading");
     chipsHost.replaceChildren(
       ...questions.map((text) => {
         const chip = document.createElement("button");
@@ -740,6 +745,8 @@ function main(): void {
       }),
     );
   };
+  // Fade the current chips out immediately (on submit) — new ones fade in when ready.
+  const fadeChips = (): void => chipsHost?.classList.add("fading");
   setChips(SAMPLE_QUESTIONS);
 
   // Populate the model picker with the session's ENTITLED models (Auto + each model the
@@ -791,6 +798,9 @@ function main(): void {
     input.value = "";
     autoGrow();
     if (emptyState) emptyState.hidden = true;
+    // Fade the suggestion chips out the moment a question is submitted; the new set
+    // fades back in once the answer (and any follow-ups) settle.
+    fadeChips();
     const selected = modeSel.value; // "ask"|"panel"|"analyze" or "pattern:<key>"
     out.setAttribute("aria-busy", "true");
     const submitBtn = form.querySelector("button[type=submit]") as HTMLButtonElement;
@@ -806,10 +816,26 @@ function main(): void {
         await runAsk(q, askTransport, transcript, meter, retriever, pin, (question, answer, m) => {
           // Dynamic follow-up chips (opt-in). Generate after the answer; on failure
           // or empty result, fall back to the sample questions. Fire-and-forget so it
-          // never blocks the UI; it's metered like any other call (same transport).
-          if (!followupsToggle?.checked) return;
-          void suggestFollowups(askTransport, m, question, answer).then((qs) => {
-            setChips(qs.length ? qs : SAMPLE_QUESTIONS);
+          // never blocks the UI. It's a real metered call (same choke point), so fold
+          // its cost into the session meter AND report it in the Suggestions box.
+          if (!followupsToggle?.checked) {
+            setChips(SAMPLE_QUESTIONS); // toggle off → just restore the samples
+            return;
+          }
+          void suggestFollowups(askTransport, m, question, answer).then((r) => {
+            setChips(r.questions.length ? r.questions : SAMPLE_QUESTIONS);
+            meter.record(r.cost, r.budget); // the suggestion call is billed too
+            if (followupsCost) {
+              if (typeof r.cost === "number") {
+                const tok = r.usage
+                  ? ` · ${r.usage.inputTokens.toLocaleString()} in / ${r.usage.outputTokens.toLocaleString()} out`
+                  : "";
+                followupsCost.textContent = `Last suggestions: $${r.cost.toFixed(6)}${tok}`;
+                followupsCost.hidden = false;
+              } else {
+                followupsCost.hidden = true;
+              }
+            }
           });
         });
       } else {

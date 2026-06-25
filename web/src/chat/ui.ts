@@ -7,6 +7,7 @@
 import type { RetrievedChunk } from "../rag/context";
 import type { BudgetStatus } from "../transport";
 import { renderInto } from "../render/markdown";
+import { modelLabel } from "../router";
 
 export interface AnswerMeta {
   usage?: { inputTokens: number; outputTokens: number };
@@ -30,10 +31,16 @@ export interface AssistantTurn {
 export class ChatTranscript {
   private readonly history: HTMLElement;
 
-  constructor(private readonly scrollHost: HTMLElement) {
+  // `appendHost` is where the transcript DOM lives; `scrollHost` is the element that
+  // actually scrolls (the main column, since the composer flows beneath the
+  // transcript). They differ so new answers scroll the column, not just the region.
+  constructor(
+    appendHost: HTMLElement,
+    private readonly scrollHost: HTMLElement = appendHost,
+  ) {
     this.history = document.createElement("div");
     this.history.className = "chat-history";
-    scrollHost.appendChild(this.history);
+    appendHost.appendChild(this.history);
     this.watchScroll();
   }
 
@@ -44,17 +51,30 @@ export class ChatTranscript {
     const pair = el("div", "msg-pair");
 
     const userBubble = el("div", "user-bubble");
-    const qBadge = el("div", "q-badge");
+    const qBadge = el("div", "bubble-badge");
     qBadge.textContent = "You asked";
     const qText = el("div", "q-text");
     qText.textContent = question; // verbatim, never markdown
     userBubble.append(qBadge, qText);
 
+    // The assistant reply lives in its OWN bubble (mirroring the question bubble):
+    // a header row ("Answer" + the model that replied, filled in on finalize) and
+    // the answer body. While waiting, a "Thinking …" indicator sits in the body.
     const asst = el("div", "assistant-bubble");
+    const head = el("div", "bubble-head");
+    const aBadge = el("div", "bubble-badge");
+    aBadge.textContent = "Answer";
+    const modelTag = el("div", "model-tag");
+    modelTag.hidden = true;
+    head.append(aBadge, modelTag);
     const body = el("div", "answer-body");
-    const thinkingDots = el("div", "thinking-dot");
-    thinkingDots.innerHTML = "<span></span><span></span><span></span>";
-    asst.append(thinkingDots, body);
+    const thinking = el("div", "thinking");
+    const label = el("span", "thinking-label");
+    label.textContent = "Thinking";
+    const dotsEl = el("span", "thinking-dot");
+    dotsEl.innerHTML = "<span></span><span></span><span></span>";
+    thinking.append(label, dotsEl);
+    asst.append(head, thinking, body);
 
     pair.append(userBubble, asst);
     this.history.appendChild(pair);
@@ -62,26 +82,30 @@ export class ChatTranscript {
     this.scrollDown();
 
     let acc = "";
-    let dots: HTMLElement | null = thinkingDots;
-    const clearDots = () => {
-      if (dots) {
-        dots.remove();
-        dots = null;
+    let think: HTMLElement | null = thinking;
+    const clearThinking = () => {
+      if (think) {
+        think.remove();
+        think = null;
       }
     };
 
     return {
       thinking: () => {
-        /* dots are already shown */
+        /* the indicator is already shown */
       },
       appendDelta: (delta) => {
-        clearDots();
+        clearThinking();
         acc += delta;
         body.textContent = acc; // live plain-text stream
         this.scrollDown();
       },
       finalize: (text, sources, meta) => {
-        clearDots();
+        clearThinking();
+        if (meta.modelId) {
+          modelTag.textContent = modelLabel(meta.modelId);
+          modelTag.hidden = false;
+        }
         if (text.trim()) {
           renderInto(body, text);
           body.classList.add("rendered");
@@ -94,7 +118,7 @@ export class ChatTranscript {
         this.scrollDown();
       },
       fail: (message) => {
-        clearDots();
+        clearThinking();
         const err = el("div", "error-msg");
         err.setAttribute("role", "alert");
         err.textContent = `Error: ${message}`;

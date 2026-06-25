@@ -339,6 +339,14 @@ body {
   color: var(--muted);
   line-height: 1.4;
 }
+.followups-cost {
+  margin-top: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.72rem;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
 .meter-total {
   font-size: 2rem;
   font-weight: 800;
@@ -429,6 +437,9 @@ body {
 }
 .composer-controls select {
   flex: 1;
+  /* Match the suggestion chips' size so the controls read as one family. */
+  font-size: 0.78rem;
+  padding: 0.4rem 0.6rem;
 }
 select,
 .input-bar {
@@ -493,6 +504,11 @@ select,
   gap: 0.45rem;
   flex-wrap: wrap;
   flex-shrink: 0;
+  /* fade the whole group out on submit, in when new chips settle */
+  transition: opacity 0.2s ease;
+}
+.suggestions.fading {
+  opacity: 0;
 }
 .chip {
   background: var(--surface);
@@ -503,6 +519,7 @@ select,
   color: var(--text);
   white-space: nowrap;
   transition: border-color 0.15s;
+  animation: fadeSlideIn 0.4s ease;
 }
 .chip:hover {
   border-color: var(--accent);

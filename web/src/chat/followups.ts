@@ -9,7 +9,16 @@
 // no history) so it's cheap. Failures are swallowed: suggestions are a nicety, never
 // allowed to disrupt the answer.
 
-import type { Transport } from "../transport";
+import type { BudgetStatus, Transport } from "../transport";
+
+export interface FollowupResult {
+  questions: string[];
+  // The metered cost of generating these suggestions, so the UI can report it (the
+  // toggle warned this costs extra). Undefined when the transport doesn't meter.
+  cost?: number;
+  usage?: { inputTokens: number; outputTokens: number };
+  budget?: BudgetStatus;
+}
 
 // Pure: parse the model's reply into at most `max` trimmed, de-duplicated questions.
 // Accepts a newline or numbered list; strips bullets/numbering and surrounding quotes.
@@ -33,15 +42,19 @@ const PROMPT =
   "reader is most likely to ask next. Output ONLY the questions, one per line, no " +
   "numbering, no preamble. Each must be a single concise question ending in '?'.";
 
-/** Generate follow-up questions for a finished Q&A. Returns [] on any failure. */
+/** Generate follow-up questions for a finished Q&A. Returns empty questions (and no
+ *  cost) on any failure. */
 export async function suggestFollowups(
   transport: Transport,
   modelId: string,
   question: string,
   answer: string,
-): Promise<string[]> {
+): Promise<FollowupResult> {
   try {
     let text = "";
+    let cost: number | undefined;
+    let usage: FollowupResult["usage"];
+    let budget: BudgetStatus | undefined;
     // 512, not a tiny budget: gpt-oss-class reasoning models spend output tokens on
     // internal reasoning before the answer, so a small cap (e.g. 128) gets consumed
     // by reasoning and emits NO answer text — the suggestions came back empty and the
@@ -58,9 +71,12 @@ export async function suggestFollowups(
       ],
     })) {
       if (chunk.delta) text += chunk.delta;
+      if (chunk.usage) usage = chunk.usage;
+      if (chunk.cost !== undefined) cost = chunk.cost;
+      if (chunk.budget) budget = chunk.budget;
     }
-    return parseFollowups(text);
+    return { questions: parseFollowups(text), cost, usage, budget };
   } catch {
-    return [];
+    return { questions: [] };
   }
 }

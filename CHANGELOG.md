@@ -219,6 +219,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it still never guesses; only the refusal is legible.
 
 ### Fixed
+- **Math placeholders (`MATH0MATH`) leaked into rendered answers in the browser.** The markdown
+  renderer swaps each formula out for a spaced sentinel before parsing, then back to KaTeX after
+  sanitizing — but it matched the sentinel *with* its surrounding spaces, and the browser's HTML
+  parser trims that whitespace inside block elements, so every placeholder failed to match and
+  rendered as raw `MATHnMATH` text. (It only worked in the happy-dom test env, which doesn't trim.)
+  Now matches the space-free core, which survives both. Added a regression test using math in lists
+  and next to punctuation. Also added breathing room at the bottom of the transcript/window.
 - **Ask via the choke point returned 200 but a blank answer — the Function URL was streaming the
   proxy envelope verbatim.** The handler returns an API-Gateway-style proxy response
   (`{statusCode, headers, body}` with the real payload as a JSON string in `body`), but the URL was

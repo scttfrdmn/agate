@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Multiple chat sessions + context-usage gauge.** Ask is now multi-session: a sidebar **Chats**
+  list with a **+ New** button starts a fresh conversation, and clicking a chat switches to it (each
+  keeps its own transcript, multi-turn history, and token tally — switching hides one pane and shows
+  another). Chats are auto-titled from their first question. A new sidebar **Context** gauge shows
+  how full the active chat's context window is (`N / window tokens · % · turns`, colour-shifting
+  green→amber→red), using a per-model-family window estimate (`router.contextWindow`). As a side
+  effect, Ask now has **real multi-turn memory** — `ChatSession` adopts the chat's shared history
+  array, so follow-up questions see the prior turns (previously each question was independent), and
+  switching the model mid-chat preserves the conversation. New `web/src/chat/manager.ts`.
 - **Suggestion chips fade out on submit and fade the new set in; follow-up cost is reported.**
   Submitting a question fades the chips out (slow, gentle); the next set fades back in once the
   answer (and any dynamic follow-ups) settle. When dynamic follow-ups are on, their generation is a

@@ -903,6 +903,82 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+/* ── chat list (multi-session) ────────────────────────────────── */
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+.panel-head .panel-title {
+  margin-bottom: 0;
+}
+.btn-sm {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.72rem;
+  border-radius: 7px;
+}
+.chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+.chat-list-item {
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--text);
+  font-size: 0.8rem;
+  padding: 0.4rem 0.55rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-list-item:hover {
+  background: rgba(123, 150, 255, 0.1);
+}
+.chat-list-item.active {
+  background: rgba(123, 150, 255, 0.16);
+  border-color: var(--border);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── context usage gauge ──────────────────────────────────────── */
+.ctx-track {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.ctx-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+.panel[data-level="mid"] .ctx-fill {
+  background: var(--amber);
+}
+.panel[data-level="high"] .ctx-fill {
+  background: var(--red);
+}
+.ctx-text {
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Each chat's transcript pane; only the active one is shown. */
+.chat-pane[hidden] {
+  display: none;
+}
+
 .route-tag {
   display: inline-flex;
   align-items: center;

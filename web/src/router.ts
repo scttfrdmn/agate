@@ -99,6 +99,17 @@ export function modelOptions(tier: Tier): ReadonlyArray<{ value: string; label: 
   ];
 }
 
+// Approximate context window (in tokens) for a model id, for the UI's context-usage
+// indicator. These are conservative published figures; the server is the authority
+// on actual limits — this only drives a "how full is the context" gauge. Pure.
+export function contextWindow(modelId: string): number {
+  const id = modelId.toLowerCase();
+  if (id.includes("claude")) return 200_000;
+  if (id.includes("gpt-oss")) return 128_000;
+  if (id.includes("gemma")) return 8_192;
+  return 128_000; // sensible default
+}
+
 // A short human label for a model id (the wire id is long + provider-prefixed).
 // Used in the model picker and the answer's "which model replied" line. Pure.
 export function modelLabel(modelId: string): string {

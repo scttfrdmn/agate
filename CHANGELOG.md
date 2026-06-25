@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Chatbot-style Ask UX with citations, sources, cost + budget.** The Ask screen now behaves like a
+  conversation, not a single-shot box: a **scrolling transcript** of question/answer pairs (user
+  bubble right, assistant left), animated **thinking dots**, smooth auto-scroll that yields when you
+  scroll up to read, an auto-growing **textarea** (Enter sends, Shift+Enter newline), and
+  entitlement-neutral **suggestion chips**. Each answer renders Markdown + math (already added) and
+  now also: **citation markers `[n]`** become superscript links into a per-answer **Sources** footer
+  (built from the retrieved chunks, with connector provenance when present), a **Copy** button on
+  code blocks and a **Copy answer** button, and a **per-message receipt** (tokens + this question's
+  cost). New `web/src/chat/ui.ts` (`ChatTranscript`) and `web/src/chat/meter.ts` (`SessionMeter`);
+  citation/copy wiring in `web/src/render/markdown.ts`. The duplicate hero subtitle is gone (the top
+  bar already carries the brand). The sidebar shows the verified scope as **chips**
+  (tier / tenant / role / courses) and a **running cost** that now actually updates per call, plus a
+  **budget bar** ($ spent of $ cap · %, colour-shifting green→amber→red) when a period budget is set.
+  The choke point returns the (server-derived) per-call `cost` and period `budget` so the meter can
+  show where the session stands; Panel/Analyze answers render Markdown too. A demo tenant budget is
+  set so the bar is visible.
 - **Rendered Markdown + typeset math in answers.** Assistant replies (Ask / Panel / Analyze) were
   shown as raw text, so Markdown and LaTeX appeared literally (`**bold**`, `\[ dU = Q - W \]`). The
   SPA now renders the completed answer with `marked` (GFM Markdown) → `DOMPurify` (the XSS boundary —

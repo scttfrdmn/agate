@@ -71,6 +71,8 @@ export class Retriever {
         key: typeof o.key === "string" ? o.key : "",
         text: typeof o.text === "string" ? o.text : "",
         sourceKey: typeof o.sourceKey === "string" ? o.sourceKey : undefined,
+        sourceSystem: typeof o.sourceSystem === "string" ? o.sourceSystem : undefined,
+        sourceItem: typeof o.sourceItem === "string" ? o.sourceItem : undefined,
         distance: typeof o.distance === "number" ? o.distance : undefined,
       };
     });

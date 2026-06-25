@@ -56,12 +56,28 @@ export function responseToChunks(status: number, payload: Record<string, unknown
   }
   const text = typeof payload.text === "string" ? payload.text : "";
   const usage = (payload.usage ?? {}) as { inputTokens?: number; outputTokens?: number };
+  const cost = typeof payload.cost === "number" ? payload.cost : undefined;
+  // The choke point reports period spend/budget (snake_case) so the UI can show
+  // where the session stands; map it to the camelCase BudgetStatus.
+  const b = payload.budget as
+    | { period?: string; spend_usd?: number; budget_usd?: number | null }
+    | undefined;
+  const budget =
+    b && typeof b.spend_usd === "number"
+      ? {
+          period: typeof b.period === "string" ? b.period : "",
+          spendUsd: b.spend_usd,
+          budgetUsd: typeof b.budget_usd === "number" ? b.budget_usd : null,
+        }
+      : undefined;
   return [
     { delta: text, done: false },
     {
       delta: "",
       done: true,
       usage: { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 },
+      cost,
+      budget,
     },
   ];
 }

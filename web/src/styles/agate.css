@@ -126,6 +126,17 @@ body {
   gap: 0 1.75rem;
 }
 
+/* Chat layout: no header row (the top bar carries the brand); the main column is a
+   full-height flex column whose transcript scrolls and whose composer pins at the
+   bottom — like a chatbot. The whole shell is fixed to the viewport so only the
+   transcript scrolls, not the page. */
+.chat-layout {
+  grid-template-rows: 1fr;
+  grid-template-areas: "main sidebar";
+  height: calc(100vh - 49px); /* minus the sticky top bar */
+  min-height: 0;
+}
+
 /* On a narrow viewport the sidebar drops below the main column. */
 @media (max-width: 880px) {
   .layout {
@@ -134,6 +145,12 @@ body {
       "header"
       "main"
       "sidebar";
+  }
+  .chat-layout {
+    height: auto;
+    grid-template-areas:
+      "sidebar"
+      "main";
   }
 }
 
@@ -361,24 +378,44 @@ body {
   gap: 0.75rem;
 }
 
-/* ── controls: mode select + composer ─────────────────────────── */
-
-.composer {
-  display: flex;
-  gap: 0.55rem;
-  align-items: flex-end;
+/* The transcript region grows and scrolls; everything below it (chips + composer)
+   stays pinned at the bottom of the column. */
+.answer-region {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scroll-behavior: smooth;
 }
-.field {
+
+/* Empty-state hint shown before the first question. */
+.empty-state {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--muted);
+  padding: 2rem 1rem;
+}
+.empty-hint {
+  font-size: 0.95rem;
+  max-width: 32rem;
+}
+
+/* ── controls: mode/model selects + composer bar ──────────────── */
+
+.composer-bar {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.5rem;
+  flex-shrink: 0;
 }
-.field > label {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--muted);
-  font-weight: 700;
+.composer-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+.composer-controls select {
+  flex: 1;
 }
 select,
 .input-bar {
@@ -387,33 +424,75 @@ select,
   border-radius: var(--radius);
   color: var(--text);
   font-family: inherit;
-  font-size: 0.97rem;
-  padding: 0.6rem 0.8rem;
+  font-size: 0.9rem;
+  padding: 0.5rem 0.7rem;
   transition: border-color 0.15s;
 }
 .input-bar {
-  flex: 1;
   display: flex;
   align-items: flex-end;
   gap: 0.55rem;
-  padding: 0.6rem 0.6rem 0.6rem 1rem;
+  padding: 0.5rem 0.5rem 0.5rem 1rem;
 }
 .input-bar:focus-within {
   border-color: var(--accent);
 }
-.input-bar input,
 .input-bar textarea {
   flex: 1;
   background: none;
   border: none;
   outline: none;
+  resize: none;
   color: var(--text);
   font-family: inherit;
-  font-size: 0.97rem;
+  font-size: 1rem;
   line-height: 1.5;
+  min-height: 1.5em;
+  max-height: 160px;
+  overflow-y: auto;
 }
-.input-bar input::placeholder {
+.input-bar textarea::placeholder {
   color: var(--muted);
+}
+.send-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  font-size: 1rem;
+  flex-shrink: 0;
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s;
+}
+.send-btn:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+/* ── suggestion chips ─────────────────────────────────────────── */
+.suggestions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.chip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 0.32rem 0.8rem;
+  font-size: 0.78rem;
+  color: var(--text);
+  white-space: nowrap;
+  transition: border-color 0.15s;
+}
+.chip:hover {
+  border-color: var(--accent);
 }
 
 button {
@@ -440,22 +519,89 @@ button {
   color: var(--text);
 }
 
-/* ── streamed answer / log ────────────────────────────────────── */
+/* ── chat transcript (Ask) ────────────────────────────────────── */
 
-.answer-log {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1rem;
-  min-height: 6rem;
-  line-height: 1.7;
+.chat-history {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 0.25rem 0.25rem 0.5rem;
+}
+.msg-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  animation: fadeSlideIn 0.5s ease;
+}
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-/* The echoed question: kept verbatim (literal text, never markdown). */
-.answer-question {
+/* user bubble: right-aligned, the question verbatim and readable. */
+.user-bubble {
+  align-self: flex-end;
+  max-width: 78%;
+  background: var(--user-bg);
+  border: 1px solid #323768;
+  border-radius: 14px 14px 4px 14px;
+  padding: 0.7rem 1rem;
+}
+.user-bubble .q-badge {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+.user-bubble .q-text {
   white-space: pre-wrap;
-  color: var(--muted);
-  margin-bottom: 0.75rem;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+.assistant-bubble {
+  align-self: flex-start;
+  width: 100%;
+}
+
+/* thinking dots while waiting for the first token */
+.thinking-dot {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding: 0.4rem 0.25rem;
+}
+.thinking-dot span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  animation: thinkBounce 1.2s ease-in-out infinite;
+}
+.thinking-dot span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.thinking-dot span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes thinkBounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
 }
 
 /* The model answer. While streaming it holds plain text (pre-wrap preserves the
@@ -515,6 +661,180 @@ button {
   margin: 0.6rem 0;
   overflow-x: auto;
   overflow-y: hidden;
+}
+
+/* citation markers [n] → superscript links into the Sources list */
+.cite-ref {
+  font-size: 0.72em;
+  vertical-align: super;
+  line-height: 0;
+  color: var(--accent);
+  text-decoration: none;
+  padding: 0 0.05em;
+}
+.cite-ref:hover {
+  text-decoration: underline;
+}
+
+/* code block with a copy button */
+.code-block {
+  position: relative;
+  margin: 0.5rem 0;
+}
+.code-copy,
+.answer-copy {
+  font-size: 0.7rem;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.15rem 0.5rem;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+.code-copy {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+}
+.code-copy:hover,
+.answer-copy:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.answer-copy {
+  margin-top: 0.6rem;
+}
+
+/* ── sources footer ───────────────────────────────────────────── */
+.sources {
+  margin-top: 0.85rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}
+.sources-title {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 0.4rem;
+}
+.sources-list {
+  list-style: decimal;
+  padding-left: 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.source-item {
+  font-size: 0.8rem;
+  color: var(--muted);
+  scroll-margin-top: 1rem;
+}
+.source-item:target {
+  background: rgba(123, 150, 255, 0.12);
+  border-radius: 6px;
+}
+.source-label {
+  display: block;
+  color: var(--text);
+  font-weight: 600;
+}
+.source-snippet {
+  display: block;
+  font-size: 0.76rem;
+}
+
+/* ── per-message receipt ──────────────────────────────────────── */
+.msg-receipt {
+  margin-top: 0.6rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.msg-receipt-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.mr-label {
+  font-weight: 600;
+  color: var(--text);
+}
+.mr-cost {
+  font-variant-numeric: tabular-nums;
+}
+.msg-receipt-total {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--green);
+  font-variant-numeric: tabular-nums;
+  padding-top: 0.25rem;
+  margin-top: 0.1rem;
+  border-top: 1px solid var(--border);
+}
+
+/* ── sidebar: scope chips + budget bar ────────────────────────── */
+.scope-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 0.18rem 0.55rem;
+  font-size: 0.72rem;
+}
+.scope-chip-key {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.62rem;
+}
+.scope-chip-val {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.budget {
+  margin-top: 0.7rem;
+}
+.budget-track {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.budget-fill {
+  height: 100%;
+  width: 0;
+  background: var(--green);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+.budget[data-level="mid"] .budget-fill {
+  background: var(--amber);
+}
+.budget[data-level="high"] .budget-fill {
+  background: var(--red);
+}
+.budget-text {
+  margin-top: 0.35rem;
+  font-size: 0.74rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .route-tag {

@@ -3,7 +3,7 @@
 // on-demand) and AgentCore Memory come later; this keeps the turn loop pure and
 // transport-agnostic so swapping tiers never touches the chat logic.
 
-import type { ChatMessage, ConverseChunk, Transport } from "../transport";
+import type { BudgetStatus, ChatMessage, ConverseChunk, Transport } from "../transport";
 
 // Optional RAG hook: given the user's question, return extra messages (e.g. a
 // grounding system message from withContext()) to prepend for this turn only.
@@ -13,6 +13,10 @@ export type ContextProvider = (query: string) => Promise<ChatMessage[]>;
 export interface SendResult {
   text: string;
   usage?: { inputTokens: number; outputTokens: number };
+  // This call's cost (USD) and the running period budget, when the transport is
+  // the metered choke point. Undefined for browser-direct Bedrock.
+  cost?: number;
+  budget?: BudgetStatus;
 }
 
 export interface SendCallbacks {
@@ -65,6 +69,8 @@ export class ChatSession {
 
     let text = "";
     let usage: SendResult["usage"];
+    let cost: SendResult["cost"];
+    let budget: SendResult["budget"];
     // Snapshot history so the transport never sees a live reference that mutates
     // (we append the assistant turn below) during a lazy stream.
     for await (const chunk of this.transport.converse({
@@ -83,9 +89,11 @@ export class ChatSession {
         callbacks.onReasoning?.(c.reasoning);
       }
       if (c.usage) usage = c.usage;
+      if (c.cost !== undefined) cost = c.cost;
+      if (c.budget) budget = c.budget;
     }
 
     this.history.push({ role: "assistant", content: text });
-    return { text, usage };
+    return { text, usage, cost, budget };
   }
 }

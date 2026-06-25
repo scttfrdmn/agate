@@ -504,8 +504,8 @@ select,
   gap: 0.45rem;
   flex-wrap: wrap;
   flex-shrink: 0;
-  /* fade the whole group out on submit, in when new chips settle */
-  transition: opacity 0.2s ease;
+  /* fade the whole group out on submit, in when new chips settle (slow + gentle) */
+  transition: opacity 0.5s ease;
 }
 .suggestions.fading {
   opacity: 0;
@@ -519,7 +519,7 @@ select,
   color: var(--text);
   white-space: nowrap;
   transition: border-color 0.15s;
-  animation: fadeSlideIn 0.4s ease;
+  animation: fadeSlideIn 0.8s ease;
 }
 .chip:hover {
   border-color: var(--accent);

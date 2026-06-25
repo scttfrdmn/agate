@@ -749,6 +749,22 @@ function main(): void {
   const fadeChips = (): void => chipsHost?.classList.add("fading");
   setChips(SAMPLE_QUESTIONS);
 
+  // Running totals for the (opt-in) follow-up suggestions, shown in the Suggestions
+  // box. Separate from the main meter line, but ALSO folded into the running cost.
+  const followupsRunning = { cost: 0, inTok: 0, outTok: 0 };
+  const renderFollowupsCost = (): void => {
+    if (!followupsCost) return;
+    if (followupsRunning.cost <= 0) {
+      followupsCost.hidden = true;
+      return;
+    }
+    const t = followupsRunning;
+    followupsCost.textContent =
+      `Suggestions this session: $${t.cost.toFixed(6)} · ` +
+      `${t.inTok.toLocaleString()} in / ${t.outTok.toLocaleString()} out`;
+    followupsCost.hidden = false;
+  };
+
   // Populate the model picker with the session's ENTITLED models (Auto + each model the
   // tier permits). The picker never lists an unentitled model, so a user can't pin past
   // their tier; the server-side router (#122) clamps to entitlement + budget regardless.
@@ -824,18 +840,15 @@ function main(): void {
           }
           void suggestFollowups(askTransport, m, question, answer).then((r) => {
             setChips(r.questions.length ? r.questions : SAMPLE_QUESTIONS);
-            meter.record(r.cost, r.budget); // the suggestion call is billed too
-            if (followupsCost) {
-              if (typeof r.cost === "number") {
-                const tok = r.usage
-                  ? ` · ${r.usage.inputTokens.toLocaleString()} in / ${r.usage.outputTokens.toLocaleString()} out`
-                  : "";
-                followupsCost.textContent = `Last suggestions: $${r.cost.toFixed(6)}${tok}`;
-                followupsCost.hidden = false;
-              } else {
-                followupsCost.hidden = true;
-              }
+            // The suggestion call is billed too: fold it into the running cost meter
+            // and accumulate the Suggestions-box running total (cost + tokens).
+            meter.record(r.cost, r.budget);
+            if (typeof r.cost === "number") followupsRunning.cost += r.cost;
+            if (r.usage) {
+              followupsRunning.inTok += r.usage.inputTokens;
+              followupsRunning.outTok += r.usage.outputTokens;
             }
+            renderFollowupsCost();
           });
         });
       } else {

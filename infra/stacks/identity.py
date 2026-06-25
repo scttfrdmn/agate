@@ -262,6 +262,38 @@ class IdentityStack(Stack):
             )
         )
 
+        # Corpus endpoint (#191): same Function-URL invoke grant as the choke point —
+        # both actions, matched by the agate-corpus function ARN by name (no cross-stack
+        # dependency; the resource-policy side lives in agate-corpus). A boundaried role
+        # needs the identity-side grant too.
+        corpus_fn_arn = f"arn:aws:lambda:{region}:{account}:function:{HANDLE}-corpus"
+        authenticated_role.attach_inline_policy(
+            iam.Policy(
+                self,
+                "InvokeCorpus",
+                document=iam.PolicyDocument.from_json(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Sid": "InvokeCorpusUrl",
+                                "Effect": "Allow",
+                                "Action": "lambda:InvokeFunctionUrl",
+                                "Resource": corpus_fn_arn,
+                            },
+                            {
+                                "Sid": "InvokeCorpusFunction",
+                                "Effect": "Allow",
+                                "Action": "lambda:InvokeFunction",
+                                "Resource": corpus_fn_arn,
+                                "Condition": {"Bool": {"lambda:InvokedViaFunctionUrl": "true"}},
+                            },
+                        ],
+                    }
+                ),
+            )
+        )
+
         # --- Broker OIDC verification config -------------------------------
         # The broker verifies the inbound IdP token against a JWKS (SEC-4). Supply
         # the OIDC issuer/JWKS/audience as deploy-time context — the SAME keys work

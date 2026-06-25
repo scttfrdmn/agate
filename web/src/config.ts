@@ -38,6 +38,9 @@ export interface AppConfig {
   // routes through it (gated + metered, server-enforced) instead of browser-direct Bedrock
   // — required for Ask to work from the browser (Bedrock's endpoint has no CORS).
   chokepointUrl: string;
+  // Corpus endpoint (agate-corpus Function URL, #191). Empty = the "Documents" screen
+  // is hidden. Lets a user upload + browse their own in-scope documents.
+  corpusUrl: string;
 }
 
 const env = import.meta.env;
@@ -59,4 +62,5 @@ export const config: AppConfig = {
   authoringUrl: env.VITE_AUTHORING_URL ?? "",
   roomsUrl: env.VITE_ROOMS_URL ?? "",
   chokepointUrl: env.VITE_CHOKEPOINT_URL ?? "",
+  corpusUrl: env.VITE_CORPUS_URL ?? "",
 };

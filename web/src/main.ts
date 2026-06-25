@@ -27,6 +27,8 @@ import { buildSpecFromForm } from "./drafting/builder";
 import { DeployClient, DraftClient, renderDraft } from "./drafting/draft";
 import { RoomClient } from "./rooms/client";
 import { renderMembers, renderMessages } from "./rooms/view";
+import { CorpusClient } from "./corpus/client";
+import { renderCorpus } from "./corpus/view";
 import { reduce, type RunState, emptyRunState } from "./events/collector";
 import type { RunEvent } from "./events/protocol";
 import { renderCells, renderPanel } from "./panes/render";
@@ -231,6 +233,11 @@ function main(): void {
   if (config.roomsUrl) {
     navItems.push({ label: "Rooms", icon: "👥", href: "#", onSelect: () => showRoom() });
   }
+  // Corpus (#191). Upload + browse the user's own in-scope documents; the endpoint
+  // fences every read/write to the verified tenant/scope. Gated on VITE_CORPUS_URL.
+  if (config.corpusUrl) {
+    navItems.push({ label: "Documents", icon: "📄", href: "#", onSelect: () => showCorpus() });
+  }
   const { topbar } = mountChrome({
     brand: "agate",
     tag: "GenAI gateway",
@@ -270,6 +277,20 @@ function main(): void {
   let deployClient: DeployClient | null = null;
 
   // Render the natural-language drafting surface (#118c): a textarea to describe an agent,
+  // Corpus screen (#191): upload + browse the user's own in-scope documents. The endpoint
+  // fences every read/write to the verified tenant/scope; this view just drives it.
+  function showCorpus(): void {
+    const outEl = document.getElementById("out");
+    if (!outEl) return;
+    roomPollToken += 1; // leaving any polling view stops its loop
+    outEl.replaceChildren();
+    if (!corpusClient) {
+      renderError(outEl, "Log in to manage documents — the corpus is scoped to your access.");
+      return;
+    }
+    renderCorpus(corpusClient, outEl);
+  }
+
   // then the server-clamped bounded plan + a confirm step. The boundary is enforced
   // server-side — the model's draft has zero authority.
   function showDraft(): void {
@@ -480,6 +501,7 @@ function main(): void {
 
   // --- Collaborative rooms (#116) -------------------------------------------
   let roomClient: RoomClient | null = null;
+  let corpusClient: CorpusClient | null = null;
   // A monotonically-bumped token: each screen entry/nav bump cancels any prior poll loop, so
   // navigating away stops polling (no standing connection — NO CLOCKS on the client too).
   let roomPollToken = 0;
@@ -661,6 +683,15 @@ function main(): void {
   if (config.deployUrl) {
     deployClient = new DeployClient(
       { region: config.region, endpoint: config.deployUrl },
+      () => creds.get(),
+      () => idpToken(),
+    );
+  }
+  // The corpus client (#191) — upload + list the user's in-scope documents; the endpoint
+  // fences every read/write to the verified tenant/scope.
+  if (config.corpusUrl) {
+    corpusClient = new CorpusClient(
+      { region: config.region, endpoint: config.corpusUrl },
       () => creds.get(),
       () => idpToken(),
     );

@@ -42,11 +42,19 @@ export async function suggestFollowups(
 ): Promise<string[]> {
   try {
     let text = "";
+    // 512, not a tiny budget: gpt-oss-class reasoning models spend output tokens on
+    // internal reasoning before the answer, so a small cap (e.g. 128) gets consumed
+    // by reasoning and emits NO answer text — the suggestions came back empty and the
+    // UI fell back to the stock chips. 512 leaves headroom for the actual questions.
+    // The answer itself is trimmed to keep the prompt (and so the cost) modest.
     for await (const chunk of transport.converse({
       modelId,
-      maxTokens: 128,
+      maxTokens: 512,
       messages: [
-        { role: "user", content: `Question: ${question}\n\nAnswer: ${answer}\n\n${PROMPT}` },
+        {
+          role: "user",
+          content: `Question: ${question}\n\nAnswer: ${answer.slice(0, 1500)}\n\n${PROMPT}`,
+        },
       ],
     })) {
       if (chunk.delta) text += chunk.delta;

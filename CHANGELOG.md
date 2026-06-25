@@ -229,6 +229,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it still never guesses; only the refusal is legible.
 
 ### Fixed
+- **Dynamic follow-up questions came back empty (stock chips showed instead).** The follow-up call
+  capped output at 128 tokens, but the default oss model is a *reasoning* model — it spends output
+  tokens on internal reasoning before any answer text, so with a full Q&A in the prompt the cap was
+  consumed by reasoning and no questions were emitted (→ silent fallback to the sample chips). Raised
+  the cap to 512 (and trimmed the answer fed into the prompt to keep cost modest).
 - **Math placeholders (`MATH0MATH`) leaked into rendered answers in the browser.** The markdown
   renderer swaps each formula out for a spaced sentinel before parsing, then back to KaTeX after
   sanitizing — but it matched the sentinel *with* its surrounding spaces, and the browser's HTML

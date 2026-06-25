@@ -24,7 +24,9 @@ describe("buildContextMessage", () => {
     expect(msg.content).toContain("[1] (source: chem/bio.txt)");
     expect(msg.content).toContain("[2] (source: chem/bio2.txt)");
     expect(msg.content).toContain("photosynthesis converts light");
-    expect(msg.content).toContain("only the context below");
+    // Grounded-only instruction + a user-legible refusal that names the document scope.
+    expect(msg.content).toContain("only this context");
+    expect(msg.content).toContain("documents available to this session");
   });
 
   it("omits the citation when no sourceKey is present", () => {

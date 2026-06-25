@@ -182,6 +182,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   record/recall hook (`agent/server.py`) is a separate follow-up (#130b — needs a container
   rebuild).
 
+### Changed
+- **Clearer RAG "not in your documents" message.** When a question isn't answerable from the
+  retrieved excerpts, Ask used to reply with a terse "The provided context does not contain the
+  answer" — confusing to a user who doesn't know they're querying a scoped document corpus. The
+  grounding prompt (`web/src/rag/context.ts`) now tells the model to explain that the question is
+  outside the documents available to the session AND name the topics the excerpts actually cover
+  (e.g. "I couldn't find that in the documents available to you — the retrieved material covers
+  thermodynamics in chemistry. Try asking about that material."). Strict grounding is unchanged —
+  it still never guesses; only the refusal is legible.
+
 ### Fixed
 - **Ask via the choke point returned 200 but a blank answer — the Function URL was streaming the
   proxy envelope verbatim.** The handler returns an API-Gateway-style proxy response

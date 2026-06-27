@@ -108,3 +108,20 @@ def test_lambda_assumes_a_distinct_tenant_fenced_role(template):
 
 def test_cost_posture_output_is_marked_opt_in(template):
     template.has_output("CostPosture", {"Value": "billable-not-zero-idle-opt-in"})
+
+
+def test_browser_reachable_function_url_and_invoke_grants(template):
+    # #194: the memory tool is now reachable from the Ask SPA via an AWS_IAM Function URL,
+    # with the auth role granted BOTH invoke actions (the #190/#191 pattern).
+    urls = template.find_resources("AWS::Lambda::Url")
+    assert len(urls) == 1
+    assert next(iter(urls.values()))["Properties"]["AuthType"] == "AWS_IAM"
+    template.has_resource_properties(
+        "AWS::Lambda::Permission",
+        {"Action": "lambda:InvokeFunctionUrl", "FunctionUrlAuthType": "AWS_IAM"},
+    )
+    template.has_resource_properties(
+        "AWS::Lambda::Permission",
+        {"Action": "lambda:InvokeFunction", "InvokedViaFunctionUrl": True},
+    )
+    template.has_output("MemoryUrl", {})

@@ -41,6 +41,9 @@ export interface AppConfig {
   // Corpus endpoint (agate-corpus Function URL, #191). Empty = the "Documents" screen
   // is hidden. Lets a user upload + browse their own in-scope documents.
   corpusUrl: string;
+  // Memory endpoint (agate-memory Function URL, #194). Empty = Ask has no cross-session
+  // memory (browser-only history). Opt-in + billable: only set when agate-memory is deployed.
+  memoryUrl: string;
 }
 
 const env = import.meta.env;
@@ -63,4 +66,5 @@ export const config: AppConfig = {
   roomsUrl: env.VITE_ROOMS_URL ?? "",
   chokepointUrl: env.VITE_CHOKEPOINT_URL ?? "",
   corpusUrl: env.VITE_CORPUS_URL ?? "",
+  memoryUrl: env.VITE_MEMORY_URL ?? "",
 };

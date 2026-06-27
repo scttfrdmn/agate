@@ -294,6 +294,37 @@ class IdentityStack(Stack):
             )
         )
 
+        # Memory endpoint (#194): same Function-URL invoke grant — both actions, matched by
+        # the agate-memory-tool function ARN by name. Only takes effect when the opt-in
+        # agate-memory stack is deployed (and VITE_MEMORY_URL set); harmless otherwise.
+        memory_fn_arn = f"arn:aws:lambda:{region}:{account}:function:{HANDLE}-memory-tool"
+        authenticated_role.attach_inline_policy(
+            iam.Policy(
+                self,
+                "InvokeMemory",
+                document=iam.PolicyDocument.from_json(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Sid": "InvokeMemoryUrl",
+                                "Effect": "Allow",
+                                "Action": "lambda:InvokeFunctionUrl",
+                                "Resource": memory_fn_arn,
+                            },
+                            {
+                                "Sid": "InvokeMemoryFunction",
+                                "Effect": "Allow",
+                                "Action": "lambda:InvokeFunction",
+                                "Resource": memory_fn_arn,
+                                "Condition": {"Bool": {"lambda:InvokedViaFunctionUrl": "true"}},
+                            },
+                        ],
+                    }
+                ),
+            )
+        )
+
         # --- Broker OIDC verification config -------------------------------
         # The broker verifies the inbound IdP token against a JWKS (SEC-4). Supply
         # the OIDC issuer/JWKS/audience as deploy-time context — the SAME keys work

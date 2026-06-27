@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Ask chat wired to AgentCore Memory — cross-session recall (#194).** When the opt-in
+  `agate-memory` stack is deployed and `VITE_MEMORY_URL` is set, the Tier-0 Ask chat now recalls
+  the caller's **personal** memory before each turn (folded into the grounding alongside RAG) and
+  records the turn after — so a user's research continuity survives across sessions and devices,
+  not just the browser tab. The memory Lambda (already token-verified + namespace-fenced for the
+  agent path) is now **browser-reachable**: an AWS_IAM Function URL + the auth-role invoke grants
+  (the #190/#191 pattern). New `web/src/memory/client.ts` (SigV4 recall/record + pure mappers); each
+  chat carries a stable `sessionId` for the memory namespace. Namespaces stay **server-derived from
+  the verified token** — the client-supplied `tier`/`session_id` can only ever reach the caller's
+  own memory (`shared` fails closed when unscoped). Strictly opt-in + billable (managed Memory is
+  not $0-idle), so it stays out of the default fleet and off unless explicitly enabled; memory ops
+  are storage-priced and are NOT fed into the per-call cost meter.
 - **Gated `web-fetch` capability — governed reach beyond the corpus (#192).** A new agent tool that
   fetches **one allowlisted HTTPS URL**, governed exactly like every other agate capability:
   deny-by-absence (off unless a spec lists `web-fetch`), the same `gateway-tool` IAM fence +

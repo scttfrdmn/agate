@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Follow-ups to #192/#194:** (a) **web sources link out** — a citation whose source is a fetched
+  web URL (`sourceSystem="web"`) now renders as a clickable external link (↗) in the answer's Sources
+  footer, while corpus sources stay plain text; (b) **web fetches are budget-gated** — `web-fetch`
+  now prices each fetch (a non-zero default so the gate bites) and checks it against the budget
+  cascade BEFORE any bytes leave, rejecting an over-budget fetch pre-call and naming the breaching
+  node (the chokepoint/slurm pattern, #120/#81); the tool Lambda reads the spend/budget tables;
+  (c) **memory seed on chat open** — when memory is enabled, opening an empty chat recalls the
+  caller's personal memory once and shows a "From your earlier sessions" card, so returning users
+  see their continuity before asking (once per chat; billable-op-aware).
 - **Ask chat wired to AgentCore Memory — cross-session recall (#194).** When the opt-in
   `agate-memory` stack is deployed and `VITE_MEMORY_URL` is set, the Tier-0 Ask chat now recalls
   the caller's **personal** memory before each turn (folded into the grounding alongside RAG) and

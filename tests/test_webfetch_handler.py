@@ -28,9 +28,11 @@ def _raise():
     raise h.WebFetchToolError("missing idp_token")
 
 
-def _invoke(req, resolve, fetch, monkeypatch):
+def _invoke(req, resolve, fetch, monkeypatch, spend_reader=None):
     monkeypatch.setattr(h, "_real_resolve", resolve)
     monkeypatch.setattr(h, "_real_fetch", fetch)
+    # Default: a generous budget so the cascade allows (gate tested separately).
+    monkeypatch.setattr(h, "_real_spend_reader", spend_reader or (lambda label: (0.0, None)))
     resp = h.handler({"body": json.dumps(req)}, None)
     return {"status": resp["statusCode"], "body": json.loads(resp["body"])}
 
@@ -50,6 +52,37 @@ def test_fetch_allowlisted_public_host(wired):
     assert out["body"]["url"] == "https://arxiv.org/abs/1"
     assert out["body"]["source_system"] == "web"
     assert out["body"]["source_item"] == "https://arxiv.org/abs/1"
+
+
+def test_fetch_rejected_when_over_budget(wired):
+    # A scope node at/over its budget rejects the priced fetch BEFORE any bytes leave.
+    reached = {"fetched": False}
+
+    def fetch(url, ip):
+        reached["fetched"] = True
+        return (200, {}, b"leaked", None)
+
+    out = _invoke(
+        {"idp_token": "t", "url": "https://arxiv.org/a"},
+        lambda host: ["151.101.0.4"],
+        fetch,
+        wired,
+        spend_reader=lambda label: (5.0, 5.0),  # spent == budget → no headroom
+    )
+    assert out["status"] == 403
+    assert reached["fetched"] is False  # gated pre-fetch, nothing left
+
+
+def test_fetch_allowed_within_budget_reports_price(wired):
+    out = _invoke(
+        {"idp_token": "t", "url": "https://arxiv.org/a"},
+        lambda host: ["151.101.0.4"],
+        lambda u, ip: (200, {}, b"ok", None),
+        wired,
+        spend_reader=lambda label: (0.0, 100.0),
+    )
+    assert out["status"] == 200
+    assert out["body"]["price_usd"] == h.FETCH_PRICE_USD
 
 
 def test_fetch_is_pinned_to_the_validated_ip(wired):

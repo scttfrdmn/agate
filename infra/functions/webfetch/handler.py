@@ -24,11 +24,18 @@ from __future__ import annotations
 
 import json
 import os
+import time
 
 from agate.identity import acting_as_from_session
 from agate.jwt_verify import TokenError, config_from_env, verify_token
 from agate.tags import ClaimsError, claims_to_tags, role_session_name
-from agate.webfetch import WebFetchError, is_safe_ip, parse_allowlist, validate_url
+from agate.webfetch import (
+    WebFetchError,
+    gate_fetch,
+    is_safe_ip,
+    parse_allowlist,
+    validate_url,
+)
 
 # Institution-configured host allowlist (comma/space separated). EMPTY = deny all — the
 # capability is inert until an institution names the hosts an agent may reach.
@@ -36,6 +43,13 @@ ALLOWLIST = parse_allowlist(os.environ.get("AGATE_WEBFETCH_ALLOWLIST", ""))
 MAX_BYTES = int(os.environ.get("AGATE_WEBFETCH_MAX_BYTES", str(2 * 1024 * 1024)))
 MAX_REDIRECTS = int(os.environ.get("AGATE_WEBFETCH_MAX_REDIRECTS", "3"))
 TIMEOUT_S = int(os.environ.get("AGATE_WEBFETCH_TIMEOUT_S", "10"))
+# Flat per-fetch price for the budget cascade (#120). Non-zero default so the gate
+# actually bites — a $0 price always fits any budget (the gate would be a no-op). An
+# institution tunes it; vendor-quoted pricing for a paid API is a later refinement.
+FETCH_PRICE_USD = float(os.environ.get("AGATE_WEBFETCH_PRICE_USD", "0.001"))
+SPEND_TABLE = os.environ.get("AGATE_SPEND_TABLE", "")
+BUDGET_TABLE = os.environ.get("AGATE_BUDGET_TABLE", "")
+REGION = os.environ.get("AGATE_REGION") or os.environ.get("AWS_REGION") or "us-east-1"
 
 
 class WebFetchToolError(ValueError):
@@ -95,10 +109,20 @@ def safe_fetch(url: str, *, resolve, fetch) -> dict:
         }
 
 
-def fetch_tool(tags, subject, url: str, *, resolve, fetch) -> dict:
-    """`web-fetch`: validate + fetch one allowlisted URL, attributing the action to the
-    verified user (#137). The url's content is what the agent asked for; tenant/scope are
-    the verified credential's, used only for attribution + (future) per-scope allowlists."""
+def fetch_tool(tags, subject, url: str, *, resolve, fetch, spend_reader) -> dict:
+    """`web-fetch`: budget-gate, then validate + fetch one allowlisted URL, attributing the
+    action to the verified user (#137). The url's content is what the agent asked for;
+    tenant/scope are the verified credential's, used for attribution + the budget cascade."""
+    # Gate the (priced) fetch on the budget cascade BEFORE any bytes leave — over-budget is
+    # rejected pre-call, naming the breaching node (the chokepoint/slurm pattern, #120/#81).
+    decision = gate_fetch(
+        tenant=tags.tenant, scope=tags.scope, price_usd=FETCH_PRICE_USD, spend_lookup=spend_reader
+    )
+    if not decision.allowed:
+        raise WebFetchToolError(
+            f"fetch rejected: over budget at {decision.cascade.breaching_node!r} "
+            f"({decision.reason})"
+        )
     result = safe_fetch(url, resolve=resolve, fetch=fetch)
     session_name = role_session_name(tags.tenant, subject)
     acting = acting_as_from_session(
@@ -108,6 +132,7 @@ def fetch_tool(tags, subject, url: str, *, resolve, fetch) -> dict:
     )
     return {
         **result,
+        "price_usd": FETCH_PRICE_USD,
         "source_system": "web",
         "source_item": result["url"],
         "actingAs": acting.to_dict(),
@@ -164,10 +189,28 @@ def _real_fetch(url: str, pinned_ip: str):  # pragma: no cover
         conn.close()
 
 
+def _real_spend_reader(label: str) -> tuple[float, float | None]:  # pragma: no cover
+    """Read the live (spend, budget) for a cascade node from the spend/budget tables. A
+    missing budget row => (spend, None) = no cap at that node. Wired at deploy."""
+    import boto3
+
+    ddb = boto3.resource("dynamodb", region_name=REGION)
+    period = time.strftime("%Y-%m", time.gmtime())
+    spend_item = ddb.Table(SPEND_TABLE).get_item(Key={"pk": f"scope#{label}#{period}"}).get("Item")
+    budget_item = (
+        ddb.Table(BUDGET_TABLE).get_item(Key={"pk": f"scope#{label}#{period}"}).get("Item")
+    )
+    spend = float(spend_item["spend_usd"]) if spend_item and "spend_usd" in spend_item else 0.0
+    budget = (
+        float(budget_item["budget_usd"]) if budget_item and "budget_usd" in budget_item else None
+    )
+    return spend, budget
+
+
 def process(req: dict) -> dict:
     """Route one MCP tool call. `req` carries the verified `idp_token`, the `tool`
     (`web-fetch`), and the `url`. Tenant/scope come from the token; the url's host must be
-    allowlisted and resolve to a public address."""
+    allowlisted and resolve to a public address, and the fetch must fit the budget cascade."""
     claims = validate_idp_token(req.get("idp_token", ""))
     try:
         tags = claims_to_tags(claims)
@@ -181,7 +224,10 @@ def process(req: dict) -> dict:
     url = req.get("url")
     if not isinstance(url, str) or not url:
         raise WebFetchToolError("missing url")
-    return fetch_tool(tags, subject, url, resolve=_real_resolve, fetch=_real_fetch)
+    return fetch_tool(
+        tags, subject, url,
+        resolve=_real_resolve, fetch=_real_fetch, spend_reader=_real_spend_reader,
+    )
 
 
 def handler(event: dict, context: object) -> dict:

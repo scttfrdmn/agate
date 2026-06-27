@@ -21,7 +21,13 @@ each `Location`) to defeat DNS-rebinding / TOCTOU.
 from __future__ import annotations
 
 import ipaddress
+from dataclasses import dataclass
 from urllib.parse import urlsplit
+
+from cost.precall import CascadeResult, evaluate_priced_cascade
+
+from agate.budget import _clean_id, normalise_scope
+from agate.rag import ancestors
 
 
 class WebFetchError(ValueError):
@@ -81,6 +87,44 @@ def is_safe_ip(ip: str) -> bool:
     if mapped is not None:
         return is_safe_ip(str(mapped))
     return True
+
+
+@dataclass(frozen=True, slots=True)
+class FetchDecision:
+    """The budget-cascade verdict for a priced fetch — `allowed` plus the underlying
+    `CascadeResult` (which names the first breaching node + reason on reject)."""
+
+    allowed: bool
+    cascade: CascadeResult
+    reason: str
+
+
+def fetch_cascade_nodes(
+    tenant: str, scope: str, spend_lookup
+) -> list[tuple[str, float, float | None]]:
+    """The `evaluate_priced_cascade` node-list for a fetch: one `(label, spend, budget)`
+    row per scope ancestor (broad→specific), so a priced fetch must fit under EVERY node
+    above the caller — the same hierarchical rule the chat/slurm paths use (#81/#112).
+    `spend_lookup(label) -> (spend, budget|None)` is injected. Unscoped → the tenant node."""
+    node = normalise_scope(scope)
+    labels = ancestors(node) if node else [_clean_id(tenant)]
+    rows: list[tuple[str, float, float | None]] = []
+    for label in labels:
+        spend, budget = spend_lookup(label)
+        rows.append((label, spend, budget))
+    return rows
+
+
+def gate_fetch(*, tenant: str, scope: str, price_usd: float, spend_lookup) -> FetchDecision:
+    """Gate a web fetch on the budget cascade BEFORE any bytes leave (the chokepoint/slurm
+    pattern for a flat-priced action, #120). The fetch's `price_usd` is checked against every
+    budget node above the caller; the first to reject short-circuits and is named. A node with
+    no budget row imposes no cap. Returns the decision so the handler fetches only on allow."""
+    nodes = fetch_cascade_nodes(tenant, scope, spend_lookup)
+    result = evaluate_priced_cascade(price_usd=price_usd, nodes=nodes)
+    return FetchDecision(
+        allowed=result.decision == "allow", cascade=result, reason=result.reason
+    )
 
 
 def validate_url(url: str, allowlist: tuple[str, ...]) -> str:

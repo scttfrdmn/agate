@@ -456,10 +456,26 @@ class AgentStack(Stack):
             memory_size=256,
             environment={
                 "AGATE_WEBFETCH_ALLOWLIST": webfetch_allowlist,
+                "AGATE_SPEND_TABLE": spend_table,
+                "AGATE_BUDGET_TABLE": budget_table,
+                "AGATE_REGION": region,
                 "AGATE_OIDC_ISSUER": oidc_discovery_url or "",
                 "AGATE_OIDC_AUDIENCE": allowed_audience or "",
             },
             description="agate web-fetch MCP server - SSRF-guarded, allowlisted HTTPS reach (#192)",
+        )
+        # Read the spend/budget tables for the priced-fetch cascade gate (#120). No write —
+        # the spend meter records the debit out-of-band, exactly as slurm + the chat path do.
+        webfetch_fn.add_to_role_policy(
+            iam.PolicyStatement(
+                sid="ReadSpendAndBudget",
+                effect=iam.Effect.ALLOW,
+                actions=["dynamodb:GetItem", "dynamodb:Query"],
+                resources=[
+                    f"arn:aws:dynamodb:{region}:{account}:table/{spend_table}",
+                    f"arn:aws:dynamodb:{region}:{account}:table/{budget_table}",
+                ],
+            )
         )
         _str_schema = agentcore.CfnGatewayTarget.SchemaDefinitionProperty(type="string")
         webfetch_target = agentcore.CfnGatewayTarget(

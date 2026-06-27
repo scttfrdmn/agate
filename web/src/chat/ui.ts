@@ -175,15 +175,31 @@ function renderSources(chunks: RetrievedChunk[]): HTMLElement {
   chunks.forEach((c, i) => {
     const li = el("li", "source-item");
     li.id = `cite-${i + 1}`; // citation anchors ([n]) scroll here
-    const label = el("span", "source-label");
-    label.textContent = sourceLabel(c);
+    li.append(sourceLabelNode(c));
     const snippet = el("span", "source-snippet");
     snippet.textContent = c.text.length > 160 ? c.text.slice(0, 160).trimEnd() + "…" : c.text;
-    li.append(label, snippet);
+    li.append(snippet);
     list.appendChild(li);
   });
   box.appendChild(list);
   return box;
+}
+
+// A web source (sourceSystem === "web", sourceItem = the fetched https URL) renders as a
+// clickable external link; everything else is plain text (corpus docs aren't web-served).
+function sourceLabelNode(c: RetrievedChunk): HTMLElement {
+  if (c.sourceSystem === "web" && c.sourceItem && /^https:\/\//.test(c.sourceItem)) {
+    const a = document.createElement("a");
+    a.className = "source-label source-link";
+    a.href = c.sourceItem;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.textContent = c.sourceItem;
+    return a;
+  }
+  const label = el("span", "source-label");
+  label.textContent = sourceLabel(c);
+  return label;
 }
 
 function sourceLabel(c: RetrievedChunk): string {

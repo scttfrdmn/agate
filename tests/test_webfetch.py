@@ -10,6 +10,8 @@ from __future__ import annotations
 import pytest
 from agate.webfetch import (
     WebFetchError,
+    fetch_cascade_nodes,
+    gate_fetch,
     is_allowed_host,
     is_safe_ip,
     parse_allowlist,
@@ -104,3 +106,30 @@ def test_validate_url_rejects_empty_or_hostless():
 def test_validate_url_empty_allowlist_denies():
     with pytest.raises(WebFetchError):
         validate_url("https://example.edu/x", ())
+
+
+# --- budget gate (#120 priced cascade) -------------------------------------
+
+
+def test_gate_fetch_allows_within_budget():
+    d = gate_fetch(tenant="chem", scope="chem-101", price_usd=0.001,
+                   spend_lookup=lambda label: (0.0, 100.0))
+    assert d.allowed is True
+
+
+def test_gate_fetch_rejects_over_budget_naming_node():
+    d = gate_fetch(tenant="chem", scope="chemistry/chem-101", price_usd=1.0,
+                   spend_lookup=lambda label: (100.0, 100.0))  # no headroom anywhere
+    assert d.allowed is False
+    assert d.cascade.breaching_node is not None
+
+
+def test_gate_fetch_no_budget_row_is_uncapped():
+    d = gate_fetch(tenant="chem", scope="", price_usd=999.0,
+                   spend_lookup=lambda label: (0.0, None))  # no cap
+    assert d.allowed is True
+
+
+def test_fetch_cascade_nodes_unscoped_is_tenant_only():
+    rows = fetch_cascade_nodes("chem", "", lambda label: (0.0, None))
+    assert [r[0] for r in rows] == ["chem"]

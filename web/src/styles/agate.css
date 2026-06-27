@@ -423,6 +423,32 @@ body {
   max-width: 32rem;
 }
 
+/* "From your earlier sessions" memory seed (#194) — a soft recall card in the empty state. */
+.memory-seed {
+  max-width: 40rem;
+  margin: 1rem auto 0;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 0.7rem 1rem;
+}
+.memory-seed-title {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+.memory-seed-body {
+  font-size: 0.85rem;
+  color: var(--text);
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
 /* ── controls: mode/model selects + composer bar ──────────────── */
 
 .composer-bar {
@@ -816,6 +842,19 @@ button {
   display: block;
   color: var(--text);
   font-weight: 600;
+}
+/* a web source links out (↗); corpus sources stay plain text */
+.source-link {
+  color: var(--accent);
+  text-decoration: none;
+  word-break: break-all;
+}
+.source-link:hover {
+  text-decoration: underline;
+}
+.source-link::after {
+  content: " ↗";
+  color: var(--muted);
 }
 .source-snippet {
   display: block;

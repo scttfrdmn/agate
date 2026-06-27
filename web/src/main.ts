@@ -188,6 +188,28 @@ function renderScopeChips(scope: {
   );
 }
 
+// Show the recalled "what I remember about you" block in the empty-chat state (#194
+// follow-up), so a returning user sees their continuity before asking. Replaces any prior
+// seed; cleared when a turn arrives (the empty state hides).
+function renderMemorySeed(text: string): void {
+  const empty = document.getElementById("empty");
+  if (!empty || empty.hidden) return;
+  let seed = document.getElementById("memory-seed");
+  if (!seed) {
+    seed = document.createElement("div");
+    seed.id = "memory-seed";
+    seed.className = "memory-seed";
+    empty.appendChild(seed);
+  }
+  const title = document.createElement("div");
+  title.className = "memory-seed-title";
+  title.textContent = "From your earlier sessions";
+  const body = document.createElement("div");
+  body.className = "memory-seed-body";
+  body.textContent = text.replace(/^Relevant remembered context:\n/, "");
+  seed.replaceChildren(title, body);
+}
+
 // Errors are announced assertively (role=alert) so a screen reader interrupts to
 // read them, rather than waiting for the polite answer queue.
 function renderError(out: HTMLElement, message: string): void {
@@ -789,6 +811,9 @@ function main(): void {
   // transcript DOM + ChatSession (multi-turn history) + token tally. "New chat" starts
   // fresh; the sidebar list switches between them. Transcripts render into #out; the
   // main COLUMN scrolls (the composer flows beneath).
+  // Remember which chats we've already shown the memory seed for, so switching back and
+  // forth doesn't re-recall (a billable op).
+  const seededChats = new Set<number>();
   chats = new ChatManager({
     appendHost: out,
     scrollHost: mainCol,
@@ -798,6 +823,17 @@ function main(): void {
     onActiveChange: (chat) => {
       renderContext(chat, contextWindowFor(chat.modelId));
       if (emptyState) emptyState.hidden = chat.turns > 0;
+      // Memory seed (#194 follow-up): on first view of an EMPTY chat, recall the caller's
+      // personal memory once and show what the assistant remembers — so continuity is
+      // visible before the first question. Best-effort, billable-op-aware (once per chat).
+      if (memoryClient && chat.turns === 0 && !seededChats.has(chat.id)) {
+        seededChats.add(chat.id);
+        void memoryClient
+          .recall({ tier: "personal", query: "", sessionId: chat.sessionId })
+          .then((remembered) => {
+            if (remembered && chat.turns === 0) renderMemorySeed(remembered);
+          });
+      }
     },
   });
   document.getElementById("new-chat")?.addEventListener("click", () => {

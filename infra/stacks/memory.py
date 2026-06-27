@@ -35,7 +35,7 @@ from aws_cdk import (
     aws_lambda as lambda_,
 )
 from constructs import Construct
-from infra.assets import oidc_env_from_context, pip_bundled_code
+from infra.assets import function_url_cors, oidc_env_from_context, pip_bundled_code
 from policy.generate import memory_access_policy
 
 
@@ -161,10 +161,34 @@ class MemoryStack(Stack):
         )
         memory_fn.add_environment("AGATE_MEMORY_ACCESS_ROLE_ARN", memory_access_role.role_arn)
 
+        # --- Browser-reachable Function URL (#194) ------------------------
+        # So the Tier-0 Ask chat can recall/record memory directly (the SPA SigV4-signs with
+        # broker-vended creds), the same way it reaches the corpus/chokepoint. The agent
+        # path still invokes the bare ARN via its execution role (unchanged). AWS_IAM-authed;
+        # the auth role gets both invoke actions (the #190/#191 pattern).
+        url = memory_fn.add_function_url(
+            auth_type=lambda_.FunctionUrlAuthType.AWS_IAM,
+            cors=function_url_cors(self.node),
+        )
+        auth_role_arn = f"arn:aws:iam::{self.account}:role/{HANDLE}-authenticated"
+        memory_fn.add_permission(
+            "InvokeUrlFromAuthRole",
+            principal=iam.ArnPrincipal(auth_role_arn),
+            action="lambda:InvokeFunctionUrl",
+            function_url_auth_type=lambda_.FunctionUrlAuthType.AWS_IAM,
+        )
+        memory_fn.add_permission(
+            "InvokeFunctionFromAuthRole",
+            principal=iam.ArnPrincipal(auth_role_arn),
+            action="lambda:InvokeFunction",
+            invoked_via_function_url=True,
+        )
+
         # --- Outputs -------------------------------------------------------
         cdk.CfnOutput(self, "MemoryId", value=memory.attr_memory_id)
         cdk.CfnOutput(self, "MemoryArn", value=memory.attr_memory_arn)
         cdk.CfnOutput(self, "MemoryToolArn", value=memory_fn.function_arn)
+        cdk.CfnOutput(self, "MemoryUrl", value=url.url)
         cdk.CfnOutput(self, "MemoryAccessRoleArn", value=memory_access_role.role_arn)
         cdk.CfnOutput(
             self,

@@ -29,6 +29,7 @@ import { RoomClient } from "./rooms/client";
 import { renderMembers, renderMessages } from "./rooms/view";
 import { CorpusClient } from "./corpus/client";
 import { renderCorpus } from "./corpus/view";
+import { MemoryClient } from "./memory/client";
 import { reduce, type RunState, emptyRunState } from "./events/collector";
 import type { RunEvent } from "./events/protocol";
 import { renderCells, renderPanel } from "./panes/render";
@@ -730,15 +731,46 @@ function main(): void {
         () => idpToken(),
       )
     : null;
+  // Cross-session memory client (#194), opt-in (only when VITE_MEMORY_URL set + the
+  // billable agate-memory stack deployed). recall folds into grounding; record fires after
+  // a turn. Namespaces are server-derived from the verified token.
+  const memoryClient = config.memoryUrl
+    ? new MemoryClient(
+        { region: config.region, endpoint: config.memoryUrl },
+        () => creds.get(),
+        () => idpToken(),
+      )
+    : null;
+  // `chats` is created below; the grounding provider reads the active chat's sessionId
+  // lazily (the provider only runs per-turn, after `chats` exists).
+  let chats: ChatManager;
   // Capture the last turn's retrieved chunks (for the Sources footer) — the context
   // provider runs inside ChatSession.send, so we stash them here per turn.
   let lastSources: RetrievedChunk[] = [];
-  const groundingProvider = retrieverForGrounding
-    ? async (query: string) => {
-        lastSources = await retrieverForGrounding.retrieve(query);
-        return withContext([], lastSources);
-      }
-    : undefined;
+  // The grounding provider folds BOTH RAG chunks and recalled memory into the turn's
+  // prepended context (mirrors how the agent path folds memory into `evidence`). Present
+  // when either RAG or memory is wired.
+  const groundingProvider =
+    retrieverForGrounding || memoryClient
+      ? async (query: string) => {
+          const messages: import("./transport").ChatMessage[] = [];
+          if (retrieverForGrounding) {
+            lastSources = await retrieverForGrounding.retrieve(query);
+            messages.push(...withContext([], lastSources));
+          } else {
+            lastSources = [];
+          }
+          if (memoryClient) {
+            const remembered = await memoryClient.recall({
+              tier: "personal",
+              query,
+              sessionId: chats.current.sessionId,
+            });
+            if (remembered) messages.unshift({ role: "system", content: remembered });
+          }
+          return messages;
+        }
+      : undefined;
 
   // Context-usage gauge (#2): show how full the active chat's context window is.
   const ctxBar = document.getElementById("ctx-bar")!;
@@ -757,7 +789,7 @@ function main(): void {
   // transcript DOM + ChatSession (multi-turn history) + token tally. "New chat" starts
   // fresh; the sidebar list switches between them. Transcripts render into #out; the
   // main COLUMN scrolls (the composer flows beneath).
-  const chats = new ChatManager({
+  chats = new ChatManager({
     appendHost: out,
     scrollHost: mainCol,
     listHost: document.getElementById("chat-list")!,
@@ -916,7 +948,21 @@ function main(): void {
       // picker only lists entitled models, so a pin can't escape the tier either.
       const pin = modelSel.value === AUTO ? AUTO : modelSel.value;
       if (!pattern && selected === "ask") {
+        // The active chat's stable id for memory (#194) — captured before the turn so a
+        // mid-turn chat switch can't misattribute the record.
+        const askSessionId = chats.current.sessionId;
         await runAsk(q, chats, meter, () => lastSources, pin, (question, answer, m) => {
+          // Cross-session memory (#194), opt-in: record the finished turn so a future
+          // session can recall it. Fire-and-forget; namespace is server-derived.
+          if (memoryClient) {
+            void memoryClient.record({
+              sessionId: askSessionId,
+              payload: [
+                { role: "user", text: question },
+                { role: "assistant", text: answer },
+              ],
+            });
+          }
           // Dynamic follow-up chips (opt-in). Generate after the answer; on failure
           // or empty result, fall back to the sample questions. Fire-and-forget so it
           // never blocks the UI. It's a real metered call (same choke point), so fold

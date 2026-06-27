@@ -11,9 +11,20 @@ import { contextWindow } from "../router";
 
 let nextId = 1;
 
+// A stable, unguessable conversation id for the memory namespace. crypto.randomUUID is
+// available in every target browser; the fallback keeps non-secure-context/test envs working.
+function newSessionId(): string {
+  const c = globalThis.crypto;
+  if (c && "randomUUID" in c) return c.randomUUID();
+  return `sess-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+}
+
 export interface ChatRecord {
   id: number;
   title: string;
+  // A stable conversation id for cross-session memory (#194) — the namespace key the
+  // memory tool records/recalls under. Distinct from the numeric `id` (a UI handle).
+  sessionId: string;
   transcript: ChatTranscript;
   el: HTMLElement; // the per-chat transcript container (shown/hidden on switch)
   history: ChatMessage[]; // accumulated turns (for rebuilding the ChatSession)
@@ -69,6 +80,7 @@ export class ChatManager {
     const chat: ChatRecord = {
       id: nextId++,
       title: "New chat",
+      sessionId: newSessionId(),
       transcript,
       el,
       history,

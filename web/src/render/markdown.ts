@@ -136,9 +136,9 @@ function escapeHtml(s: string): string {
  * result). The single place answer HTML is injected, so the XSS boundary is here.
  * After rendering, wires up affordances (citation markers, code copy buttons).
  */
-export function renderInto(el: HTMLElement, src: string): void {
+export function renderInto(el: HTMLElement, src: string, idPrefix = ""): void {
   el.innerHTML = renderMarkdown(src);
-  markCitations(el);
+  markCitations(el, idPrefix);
   addCopyButtons(el);
 }
 
@@ -146,7 +146,7 @@ export function renderInto(el: HTMLElement, src: string): void {
 // scroll to the matching source in the answer's Sources list (#id `cite-<n>` set by
 // the caller). Operates on text nodes only — never on existing markup/links — so it
 // can't break code, KaTeX, or anchors.
-export function markCitations(root: HTMLElement): void {
+export function markCitations(root: HTMLElement, idPrefix = ""): void {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       const p = node.parentElement;
@@ -168,7 +168,7 @@ export function markCitations(root: HTMLElement): void {
       if (m) {
         const a = document.createElement("a");
         a.className = "cite-ref";
-        a.href = `#cite-${m[1]}`;
+        a.href = `#${idPrefix}cite-${m[1]}`;
         a.textContent = part;
         a.dataset.cite = m[1];
         frag.appendChild(a);

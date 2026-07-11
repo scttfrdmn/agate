@@ -36,6 +36,9 @@ import { renderCells, renderPanel } from "./panes/render";
 import { ChatManager } from "./chat/manager";
 import { SessionMeter } from "./chat/meter";
 import { suggestFollowups } from "./chat/followups";
+import { type NotebookCell, newCell } from "./chat/notebook";
+import { renderNotebook } from "./chat/notebook-ui";
+import { runCell } from "./chat/notebook-run";
 import { type RetrievedChunk, withContext } from "./rag/context";
 import { Retriever } from "./rag/retriever";
 import { AgentCoreTransport } from "./transport/agentcore";
@@ -93,6 +96,11 @@ function render(app: HTMLElement): void {
              (the whole column scrolls). -->
         <form id="f" class="composer composer-bar" aria-label="Ask agate">
           <div class="composer-controls">
+            <!-- Chat | Notebook view toggle (#185): a view of the current chat. -->
+            <div id="view-toggle" class="view-toggle" role="group" aria-label="View">
+              <button type="button" class="view-btn active" data-view="chat" aria-pressed="true">Chat</button>
+              <button type="button" class="view-btn" data-view="notebook" aria-pressed="false">Notebook</button>
+            </div>
             <select id="mode" aria-label="Mode">
               ${UI_MODES.map((m) => `<option value="${m.value}">${m.label}</option>`).join("")}
               <optgroup label="Reasoning patterns">
@@ -961,6 +969,71 @@ function main(): void {
   };
   modeSel.addEventListener("change", syncModeUi);
   syncModeUi();
+
+  // --- Notebook view (#185) -------------------------------------------------
+  // A view of the current chat: the transcript projected into editable prompt cells, each
+  // re-runnable as a STANDALONE metered call (not a ChatSession turn, so it never pollutes
+  // the transcript). The context gauge stays chat-scoped (cell runs don't touch history).
+  const resolvePin = (): string => (modelSel.value === AUTO ? AUTO : modelSel.value);
+  const paintNotebook = (): void => {
+    const chat = chats.current;
+    const nb = chats.notebookFor(chat);
+    renderNotebook(nb, chat.notebookEl, {
+      onRun: (cellId, prompt) => void runNotebookCell(cellId, prompt),
+      onAddCell: () => {
+        nb.cells.push(newCell());
+        paintNotebook();
+        const last = chat.notebookEl.querySelector<HTMLTextAreaElement>(
+          ".notebook-cell:last-of-type .notebook-cell-prompt",
+        );
+        last?.focus();
+      },
+    });
+  };
+  const runNotebookCell = async (cellId: string, prompt: string): Promise<void> => {
+    const chat = chats.current;
+    const nb = chats.notebookFor(chat);
+    const cell = nb.cells.find((c: NotebookCell) => c.id === cellId);
+    if (!cell || !prompt.trim()) return;
+    cell.prompt = prompt;
+    cell.state = "running";
+    cell.error = undefined;
+    paintNotebook();
+    try {
+      const result = await runCell(askTransport, resolvePin(), prompt, groundingProvider);
+      cell.answer = result.text;
+      cell.sources = lastSources.slice();
+      cell.meta = {
+        usage: result.usage,
+        cost: result.cost,
+        budget: result.budget,
+        modelId: result.model ?? (resolvePin() === AUTO ? undefined : resolvePin()),
+        modelReason: result.modelRoute?.reason,
+      };
+      cell.state = "idle";
+      meter.record(result.cost, result.budget); // same fold-in as a chat turn
+    } catch (err) {
+      cell.state = "error";
+      cell.error = (err as Error).message;
+    }
+    paintNotebook();
+  };
+  const setView = (view: "chat" | "notebook"): void => {
+    chats.setView(chats.current.id, view);
+    document.querySelectorAll<HTMLButtonElement>(".view-btn").forEach((b) => {
+      const on = b.dataset.view === view;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
+    });
+    // The composer belongs to the chat view; hide it in the notebook (cells run themselves).
+    form.hidden = view === "notebook";
+    if (chipsHost) chipsHost.hidden = view === "notebook" || modeSel.value !== "ask";
+    if (emptyState) emptyState.hidden = view === "notebook" || chats.current.turns > 0;
+    if (view === "notebook") paintNotebook();
+  };
+  document.querySelectorAll<HTMLButtonElement>(".view-btn").forEach((b) => {
+    b.addEventListener("click", () => setView((b.dataset.view as "chat" | "notebook") ?? "chat"));
+  });
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();

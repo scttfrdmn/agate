@@ -7,7 +7,10 @@
 import type { ChatMessage, Transport } from "../transport";
 import { ChatSession, type ContextProvider } from "./session";
 import { ChatTranscript } from "./ui";
+import { type Notebook, cellsFromHistory } from "./notebook";
 import { contextWindow } from "../router";
+
+export type ChatView = "chat" | "notebook";
 
 let nextId = 1;
 
@@ -33,6 +36,12 @@ export interface ChatRecord {
   // Running context estimate: tokens of conversation history sent on the NEXT turn.
   contextTokens: number;
   turns: number;
+  // Notebook view (#185): a second projection of this chat. `notebookEl` is a sibling DOM
+  // container shown/hidden opposite `el`; `notebook` is lazily built from `history` on
+  // first open; `view` is which of the two is showing.
+  notebookEl: HTMLElement;
+  notebook?: Notebook;
+  view: ChatView;
 }
 
 export interface ManagerDeps {
@@ -75,6 +84,10 @@ export class ChatManager {
     const el = document.createElement("div");
     el.className = "chat-pane";
     this.deps.appendHost.appendChild(el);
+    const notebookEl = document.createElement("div");
+    notebookEl.className = "notebook-pane";
+    notebookEl.hidden = true;
+    this.deps.appendHost.appendChild(notebookEl);
     const transcript = new ChatTranscript(el, this.deps.scrollHost);
     const history: ChatMessage[] = [];
     const chat: ChatRecord = {
@@ -89,6 +102,8 @@ export class ChatManager {
         this.deps.contextProvider, history),
       contextTokens: 0,
       turns: 0,
+      notebookEl,
+      view: "chat",
     };
     this.chats.push(chat);
     this.switchTo(chat.id);
@@ -100,9 +115,32 @@ export class ChatManager {
     const chat = this.chats.find((c) => c.id === id);
     if (!chat) return;
     this.active = chat;
-    for (const c of this.chats) c.el.hidden = c.id !== id;
+    // Show only the active chat, and only its current view's pane.
+    for (const c of this.chats) {
+      const activeChat = c.id === id;
+      c.el.hidden = !activeChat || c.view !== "chat";
+      c.notebookEl.hidden = !activeChat || c.view !== "notebook";
+    }
     this.renderList();
     this.deps.onActiveChange?.(chat);
+  }
+
+  /** Lazily project the active chat's history into a Notebook (built once, then reused so
+   *  per-cell edits/answers survive a view toggle). */
+  notebookFor(chat: ChatRecord = this.active): Notebook {
+    if (!chat.notebook) chat.notebook = { cells: cellsFromHistory(chat.history) };
+    return chat.notebook;
+  }
+
+  /** Flip the active chat between the chat transcript and the notebook view. */
+  setView(id: number, view: ChatView): void {
+    const chat = this.chats.find((c) => c.id === id);
+    if (!chat) return;
+    chat.view = view;
+    if (chat.id === this.active?.id) {
+      chat.el.hidden = view !== "chat";
+      chat.notebookEl.hidden = view !== "notebook";
+    }
   }
 
   /** The active chat's ChatSession, rebuilt against `modelId` if it changed (so a

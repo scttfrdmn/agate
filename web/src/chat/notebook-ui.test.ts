@@ -92,20 +92,58 @@ describe("renderNotebook", () => {
     expect(ids).toEqual(["a-cite-1", "b-cite-1"]); // per-cell prefix, no collision
   });
 
-  it("renders a code cell with a disabled Run and no transport wiring", () => {
+  it("renders a code cell whose Run fires onRunCode with the edited source", () => {
     const nb: Notebook = {
       cells: [{ id: "c", kind: "code", prompt: "print('hi')", state: "idle" }],
     };
     const target = host();
-    let ran = false;
-    renderNotebook(nb, target, { onRun: () => (ran = true) });
+    const calls: Array<[string, string]> = [];
+    renderNotebook(nb, target, { onRunCode: (id, code) => calls.push([id, code]) });
     const cell = target.querySelector<HTMLElement>('.notebook-cell[data-kind="code"]')!;
     expect(cell).not.toBeNull();
     const src = cell.querySelector<HTMLTextAreaElement>(".notebook-cell-code-src")!;
     expect(src.value).toBe("print('hi')");
+    src.value = "print('bye')";
     const run = cell.querySelector<HTMLButtonElement>(".notebook-cell-run")!;
+    expect(run.disabled).toBe(false);
+    run.click();
+    expect(calls).toEqual([["c", "print('bye')"]]);
+  });
+
+  it("renders code output: stdout, last-expr value, and errors", () => {
+    const nb: Notebook = {
+      cells: [
+        {
+          id: "c",
+          kind: "code",
+          prompt: "x=1\nx+1",
+          state: "idle",
+          output: { stdout: "log line\n", stderr: "", result: "2" },
+        },
+        {
+          id: "e",
+          kind: "code",
+          prompt: "boom",
+          state: "error",
+          output: { stdout: "", stderr: "", error: "Traceback: NameError: boom" },
+        },
+      ],
+    };
+    const target = host();
+    renderNotebook(nb, target);
+    expect(target.querySelector(".notebook-code-stdout")?.textContent).toBe("log line");
+    expect(target.querySelector(".notebook-code-result")?.textContent).toBe("2");
+    expect(target.querySelector(".notebook-code-error")?.textContent).toContain("NameError");
+  });
+
+  it("shows a running/loading state for a code cell in flight", () => {
+    const nb: Notebook = {
+      cells: [{ id: "c", kind: "code", prompt: "1", state: "running", error: "Downloading…" }],
+    };
+    const target = host();
+    renderNotebook(nb, target);
+    const run = target.querySelector<HTMLButtonElement>(".notebook-cell-run")!;
     expect(run.disabled).toBe(true);
-    run.click(); // disabled + inert — must not fire onRun
-    expect(ran).toBe(false);
+    expect(target.querySelector(".notebook-code-loading")?.textContent).toBe("Downloading…");
   });
 });

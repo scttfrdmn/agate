@@ -10,10 +10,17 @@ import type { RetrievedChunk } from "../rag/context";
 import type { ChatMessage } from "../transport";
 
 // A cell is either a "prompt" cell (an AI turn — billed, routed through the transport) or a
-// "code" cell (local computation). Phase-2 slice 1 introduces the discriminator and renders a
-// static code cell; the pyodide executor for code cells arrives in a later slice (#200). The
-// two kinds stay in one model so a notebook can interleave them.
+// "code" cell (local Python, run in a client-side pyodide worker, #200). The two kinds share
+// one model so a notebook can interleave them.
 export type CellKind = "prompt" | "code";
+
+// Captured output of a code cell run (client-side WASM; stdout / last-expr repr / traceback).
+export interface CodeOutput {
+  stdout: string;
+  stderr: string;
+  result?: string; // repr() of the last expression, when the final statement is an expression
+  error?: string; // Python traceback when the code raised
+}
 
 export interface NotebookCell {
   id: string; // stable client id (for DOM keys + per-cell citation namespacing)
@@ -22,6 +29,7 @@ export interface NotebookCell {
   answer?: string; // the assistant answer, rendered as Markdown (prompt cells; undefined until run)
   sources?: RetrievedChunk[]; // per-cell citations (populated on a run)
   meta?: AnswerMeta; // model / usage / cost (populated on a run)
+  output?: CodeOutput; // code cells: captured run output (undefined until run)
   state: "idle" | "running" | "error";
   error?: string;
 }

@@ -1,0 +1,3 @@
+# Self-hosted pyodide runtime, copied from node_modules by scripts/copy-pyodide.mjs at
+# build time (#200). Vendored, not source — regenerated on every build, never committed.
+public/pyodide/

@@ -39,6 +39,7 @@ import { suggestFollowups } from "./chat/followups";
 import { type NotebookCell, newCell } from "./chat/notebook";
 import { renderNotebook } from "./chat/notebook-ui";
 import { runCell } from "./chat/notebook-run";
+import { CodeKernel } from "./notebook/kernel";
 import { type RetrievedChunk, withContext } from "./rag/context";
 import { Retriever } from "./rag/retriever";
 import { AgentCoreTransport } from "./transport/agentcore";
@@ -1071,6 +1072,7 @@ function main(): void {
     const nb = chats.notebookFor(chat);
     renderNotebook(nb, chat.notebookEl, {
       onRun: (cellId, prompt) => void runNotebookCell(cellId, prompt),
+      onRunCode: (cellId, code) => void runNotebookCode(cellId, code),
       onAddCell: (kind) => {
         nb.cells.push(newCell("", kind));
         paintNotebook();
@@ -1107,6 +1109,43 @@ function main(): void {
     } catch (err) {
       cell.state = "error";
       cell.error = (err as Error).message;
+    }
+    paintNotebook();
+  };
+  // Code cells (#200, slice 2): run Python in a lazily-spawned client-side pyodide worker.
+  // The kernel (and its ~10 MB runtime) is created on the FIRST run, not at page load, so the
+  // base SPA stays light. No server, no network from the cell (NO CLOCKS; no new surface).
+  let codeKernel: CodeKernel | null = null;
+  const runNotebookCode = async (cellId: string, code: string): Promise<void> => {
+    const chat = chats.current;
+    const nb = chats.notebookFor(chat);
+    const cell = nb.cells.find((c: NotebookCell) => c.id === cellId);
+    if (!cell || cell.kind !== "code" || !code.trim()) return;
+    cell.prompt = code;
+    cell.state = "running";
+    cell.output = undefined;
+    cell.error = "Running…";
+    if (!codeKernel) {
+      codeKernel = new CodeKernel({
+        onStatus: (status, detail) => {
+          // While the runtime downloads on first use, surface progress in any running cell.
+          if (status !== "ready" && detail) {
+            for (const c of nb.cells) if (c.kind === "code" && c.state === "running") c.error = detail;
+            paintNotebook();
+          }
+        },
+      });
+    }
+    paintNotebook();
+    try {
+      const out = await codeKernel.run(code);
+      cell.output = out;
+      cell.state = out.error ? "error" : "idle";
+      cell.error = undefined;
+    } catch (err) {
+      cell.state = "error";
+      cell.output = { stdout: "", stderr: "", error: (err as Error).message };
+      cell.error = undefined;
     }
     paintNotebook();
   };

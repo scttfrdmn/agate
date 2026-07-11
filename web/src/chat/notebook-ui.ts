@@ -10,6 +10,7 @@ import { renderInto } from "../render/markdown";
 
 export interface NotebookCallbacks {
   onRun?: (cellId: string, prompt: string) => void;
+  onRunCode?: (cellId: string, code: string) => void;
   onAddCell?: (kind: CellKind) => void;
 }
 
@@ -44,7 +45,7 @@ export function renderNotebook(
 }
 
 function renderCell(cell: NotebookCell, cb: NotebookCallbacks): HTMLElement {
-  return cell.kind === "code" ? renderCodeCell(cell) : renderPromptCell(cell, cb);
+  return cell.kind === "code" ? renderCodeCell(cell, cb) : renderPromptCell(cell, cb);
 }
 
 function renderPromptCell(cell: NotebookCell, cb: NotebookCallbacks): HTMLElement {
@@ -106,11 +107,11 @@ function renderPromptCell(cell: NotebookCell, cb: NotebookCallbacks): HTMLElemen
   return wrap;
 }
 
-// A code cell: an editable code source + a (currently disabled) Run control. Execution is a
-// later slice (#200) — a lazily-loaded, sandboxed pyodide worker will run the code entirely
-// client-side (no server kernel, so NO CLOCKS holds). This slice proves the cell-kind model
-// end to end; the editor never executes and never touches the transport, so it's inert.
-function renderCodeCell(cell: NotebookCell): HTMLElement {
+// A code cell: an editable Python source + a Run control that executes it in a client-side
+// pyodide worker (#200, slice 2). No server, no network from the cell — stdout / the last
+// expression's value / a traceback come back and render below. All output is set via
+// textContent (never innerHTML), so nothing here is an XSS sink.
+function renderCodeCell(cell: NotebookCell, cb: NotebookCallbacks): HTMLElement {
   const wrap = el("div", "notebook-cell notebook-cell-code");
   wrap.dataset.cellId = cell.id;
   wrap.dataset.kind = "code";
@@ -124,20 +125,58 @@ function renderCodeCell(cell: NotebookCell): HTMLElement {
   editor.spellcheck = false;
   editor.rows = Math.max(3, cell.prompt.split("\n").length);
   editor.value = cell.prompt;
-  editor.placeholder = "# Python — runs client-side (coming soon)";
+  editor.placeholder = "# Python — runs in your browser";
   wrap.append(label, editor);
 
-  // Run is present but disabled until the pyodide executor lands, so the affordance reads as
-  // "not yet" rather than missing.
   const bar = el("div", "notebook-cell-bar");
   const run = el("button", "btn notebook-cell-run") as HTMLButtonElement;
   run.type = "button";
-  run.textContent = "Run";
-  run.disabled = true;
-  run.title = "Code execution is coming soon";
+  run.textContent = cell.state === "running" ? "Running…" : "Run";
+  run.disabled = cell.state === "running";
+  run.addEventListener("click", () => cb.onRunCode?.(cell.id, editor.value));
   const note = el("span", "notebook-code-note");
-  note.textContent = "Local code cells run in your browser — execution ships soon.";
+  note.textContent = "Runs locally in your browser (Python stdlib).";
   bar.append(run, note);
   wrap.appendChild(bar);
+
+  // Output pane: loading hint, or captured stdout / value / traceback. textContent only.
+  if (cell.state === "running") {
+    const loading = el("div", "notebook-code-out notebook-code-loading");
+    loading.textContent = cell.error || "Running…"; // error field doubles as a live status
+    wrap.appendChild(loading);
+  } else if (cell.output) {
+    wrap.appendChild(renderCodeOutput(cell.output));
+  }
   return wrap;
+}
+
+function renderCodeOutput(out: NonNullable<NotebookCell["output"]>): HTMLElement {
+  const box = el("div", "notebook-code-out");
+  if (out.stdout) {
+    const pre = el("pre", "notebook-code-stdout");
+    pre.textContent = out.stdout.replace(/\n$/, "");
+    box.appendChild(pre);
+  }
+  if (out.result !== undefined) {
+    const pre = el("pre", "notebook-code-result");
+    pre.textContent = out.result;
+    box.appendChild(pre);
+  }
+  if (out.stderr && !out.error) {
+    const pre = el("pre", "notebook-code-stderr");
+    pre.textContent = out.stderr.replace(/\n$/, "");
+    box.appendChild(pre);
+  }
+  if (out.error) {
+    const pre = el("pre", "notebook-code-error");
+    pre.setAttribute("role", "alert");
+    pre.textContent = out.error.replace(/\n$/, "");
+    box.appendChild(pre);
+  }
+  if (!box.children.length) {
+    const empty = el("div", "notebook-code-empty");
+    empty.textContent = "(no output)";
+    box.appendChild(empty);
+  }
+  return box;
 }

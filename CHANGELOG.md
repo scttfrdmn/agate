@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Notebook code cells now execute — client-side Python (#200, phase 2 slice 2).** A code cell's
+  **Run** now evaluates its Python in a lazily-spawned, sandboxed **pyodide** Web Worker and renders
+  the captured stdout, the last expression's value (REPL-style), and any traceback below the cell.
+  Everything is **client-side WASM** — no server kernel (NO CLOCKS holds) and no network from the
+  cell (no new server/SSRF surface; stdlib only this slice). The ~13 MB runtime is **self-hosted**
+  (copied from `node_modules` into `dist/pyodide/` at build time — no third-party origin at runtime,
+  per the design decision on #200) and **lazy-loaded** on the first run, so the base SPA bundle is
+  unchanged (+~9 KB; the worker is its own 1.7 KB chunk). New `web/src/notebook/` (`kernel.ts`
+  main-thread client, `pyodide.worker.ts`, `protocol.ts`) + `scripts/copy-pyodide.mjs` prebuild step.
 - **Context management for chats — clear / window / compress.** The Context panel now controls what
   history is actually SENT to the model each turn (the transcript on screen is untouched, so nothing
   is lost visually), which is what the token bill and the gauge reflect: **Clear** starts the next

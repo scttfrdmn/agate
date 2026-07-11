@@ -1177,7 +1177,7 @@ button {
 .notebook-answer-body {
   line-height: 1.7;
 }
-/* Code cells: monospace source + a "coming soon" note. Execution ships in a later slice. */
+/* Code cells: monospace source + a client-side-run output pane (#200). */
 .notebook-cell-code {
   border-left: 3px solid var(--accent);
 }
@@ -1192,6 +1192,51 @@ button {
   font-size: 0.75rem;
   color: var(--muted);
   font-style: italic;
+}
+.notebook-code-out {
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.5rem;
+}
+.notebook-code-out pre {
+  margin: 0.2rem 0;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+.notebook-code-stdout {
+  background: var(--bg);
+  color: var(--text);
+}
+.notebook-code-result {
+  background: rgba(123, 150, 255, 0.1);
+  color: var(--accent);
+}
+.notebook-code-stderr {
+  background: var(--bg);
+  color: var(--amber, #d8a657);
+}
+.notebook-code-error {
+  background: rgba(255, 107, 107, 0.1);
+  color: #ff8f8f;
+}
+.notebook-code-loading,
+.notebook-code-empty {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-style: italic;
+}
+.notebook-add-bar {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.25rem;
+}
+.notebook-add {
+  font-size: 0.82rem;
 }
 .notebook-add-bar {
   display: flex;

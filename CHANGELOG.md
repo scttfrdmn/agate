@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Context management for chats — clear / window / compress.** The Context panel now controls what
+  history is actually SENT to the model each turn (the transcript on screen is untouched, so nothing
+  is lost visually), which is what the token bill and the gauge reflect: **Clear** starts the next
+  turn from empty context; a **Send** window (All / last 3 / 6 / 10 turns) caps how much history goes
+  up the wire for free; **Compress** makes one metered call to summarize earlier turns into a compact
+  note and then sends `[summary + recent turns]` — cheaper on every subsequent turn. New pure
+  `web/src/chat/context.ts` (`selectContext` / `bodyLength`) decides the send set; `ChatSession` gains
+  a mutable context policy (`sentMessages` / `setContextPolicy`) and `ChatManager` gains
+  `clearContext` / `setWindow` / `applySummary`. The gauge now reads "N tokens sent".
 - **Delete + rename chats.** Each chat in the sidebar now has hover-revealed **✎ rename**
   (inline edit; Enter/blur commits, Escape cancels; double-click the title also renames) and
   **✕ delete** (confirmed when the chat has turns; an empty scratch chat deletes in one click).

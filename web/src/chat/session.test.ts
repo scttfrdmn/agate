@@ -73,6 +73,36 @@ describe("ChatSession", () => {
     expect(t.lastRequest?.messages.map((m) => m.role)).toEqual(["system", "user"]);
   });
 
+  it("applies a context policy: a sliding window narrows what is SENT, not history", async () => {
+    const t = new FakeTransport([{ delta: "x", done: true }]);
+    const s = new ChatSession(t, "m");
+    await s.send("q1");
+    await s.send("q2");
+    // Window to the last 1 turn — the next send carries only q3 (+ its answer isn't sent yet).
+    s.setContextPolicy({ maxTurns: 1 });
+    await s.send("q3");
+    const sentUsers = t.lastRequest!.messages.filter((m) => m.role === "user").map((m) => m.content);
+    expect(sentUsers).toEqual(["q3"]); // q1/q2 dropped from the wire
+    // But the full history is intact.
+    expect(s.messages.filter((m) => m.role === "user").map((m) => m.content)).toEqual([
+      "q1",
+      "q2",
+      "q3",
+    ]);
+  });
+
+  it("clear-context via floor sends only turns after the floor", async () => {
+    const t = new FakeTransport([{ delta: "x", done: true }]);
+    const s = new ChatSession(t, "m");
+    await s.send("old1");
+    await s.send("old2");
+    // Floor at the current body length (4 msgs) → next turn starts fresh.
+    s.setContextPolicy({ floor: 4 });
+    await s.send("fresh");
+    const sentUsers = t.lastRequest!.messages.filter((m) => m.role === "user").map((m) => m.content);
+    expect(sentUsers).toEqual(["fresh"]);
+  });
+
   it("prepends RAG context for the turn without persisting it to history", async () => {
     const t = new FakeTransport([{ delta: "grounded", done: true }]);
     const provider = async (q: string) => [

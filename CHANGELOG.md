@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Notebook code cells — model + static cell (#200, phase 2 slice 1).** Notebook cells now carry a
+  `kind` (`"prompt"` | `"code"`). Prompt cells are the existing AI turns (billed, routed through the
+  transport); a new **code cell** renders a monospace, client-side source editor with a
+  (deliberately disabled) Run and a "runs in your browser — execution ships soon" note. The add
+  affordance is now **+ Prompt** / **+ Code**. No execution yet: code cells never touch the
+  transport, so this slice is inert — it proves the cell-kind model end to end ahead of the
+  lazily-loaded, sandboxed pyodide executor (client-side, no server kernel → NO CLOCKS holds).
+  Decision recorded in #200: agate builds its own thin code-cell layer on pyodide rather than
+  taking a marimo (framework) dependency.
 - **Notebook mode for Ask (#185, phase 1).** A **Chat | Notebook** toggle on the Ask screen turns
   the current conversation into an editable notebook: each turn becomes a cell (editable prompt +
   rendered Markdown answer + a per-cell receipt), with **per-cell re-run**, **+ Cell**, and a

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
-import type { Notebook } from "./notebook";
+import type { CellKind, Notebook } from "./notebook";
 import { renderNotebook } from "./notebook-ui";
 
 function host(): HTMLElement {
@@ -14,8 +14,8 @@ describe("renderNotebook", () => {
   it("renders one editable textarea per cell seeded with the prompt", () => {
     const nb: Notebook = {
       cells: [
-        { id: "a", prompt: "one?", state: "idle" },
-        { id: "b", prompt: "two?", state: "idle" },
+        { id: "a", kind: "prompt", prompt: "one?", state: "idle" },
+        { id: "b", kind: "prompt", prompt: "two?", state: "idle" },
       ],
     };
     const target = host();
@@ -28,7 +28,7 @@ describe("renderNotebook", () => {
   });
 
   it("Run fires onRun with the (possibly edited) prompt + cell id", () => {
-    const nb: Notebook = { cells: [{ id: "a", prompt: "orig", state: "idle" }] };
+    const nb: Notebook = { cells: [{ id: "a", kind: "prompt", prompt: "orig", state: "idle" }] };
     const target = host();
     const calls: Array<[string, string]> = [];
     renderNotebook(nb, target, { onRun: (id, p) => calls.push([id, p]) });
@@ -43,6 +43,7 @@ describe("renderNotebook", () => {
       cells: [
         {
           id: "a",
+          kind: "prompt",
           prompt: "q?",
           answer: "**bold** answer",
           state: "idle",
@@ -59,7 +60,7 @@ describe("renderNotebook", () => {
 
   it("renders an error state", () => {
     const nb: Notebook = {
-      cells: [{ id: "a", prompt: "q?", state: "error", error: "boom" }],
+      cells: [{ id: "a", kind: "prompt", prompt: "q?", state: "error", error: "boom" }],
     };
     const target = host();
     renderNotebook(nb, target);
@@ -67,26 +68,44 @@ describe("renderNotebook", () => {
     expect(err?.textContent).toContain("boom");
   });
 
-  it("+ Cell fires onAddCell", () => {
-    const nb: Notebook = { cells: [{ id: "a", prompt: "q?", state: "idle" }] };
+  it("+ Prompt and + Code fire onAddCell with the right kind", () => {
+    const nb: Notebook = { cells: [{ id: "a", kind: "prompt", prompt: "q?", state: "idle" }] };
     const target = host();
-    let added = 0;
-    renderNotebook(nb, target, { onAddCell: () => (added += 1) });
-    target.querySelector<HTMLButtonElement>(".notebook-add")!.click();
-    expect(added).toBe(1);
+    const kinds: CellKind[] = [];
+    renderNotebook(nb, target, { onAddCell: (k) => kinds.push(k) });
+    target.querySelector<HTMLButtonElement>(".notebook-add:not(.notebook-add-code)")!.click();
+    target.querySelector<HTMLButtonElement>(".notebook-add-code")!.click();
+    expect(kinds).toEqual(["prompt", "code"]);
   });
 
   it("namespaces citation source ids per cell so they don't collide", () => {
     const chunk = { key: "k", text: "some source text" };
     const nb: Notebook = {
       cells: [
-        { id: "a", prompt: "q1", answer: "see [1]", state: "idle", sources: [chunk] },
-        { id: "b", prompt: "q2", answer: "see [1]", state: "idle", sources: [chunk] },
+        { id: "a", kind: "prompt", prompt: "q1", answer: "see [1]", state: "idle", sources: [chunk] },
+        { id: "b", kind: "prompt", prompt: "q2", answer: "see [1]", state: "idle", sources: [chunk] },
       ],
     };
     const target = host();
     renderNotebook(nb, target);
     const ids = Array.from(target.querySelectorAll(".source-item")).map((li) => li.id);
     expect(ids).toEqual(["a-cite-1", "b-cite-1"]); // per-cell prefix, no collision
+  });
+
+  it("renders a code cell with a disabled Run and no transport wiring", () => {
+    const nb: Notebook = {
+      cells: [{ id: "c", kind: "code", prompt: "print('hi')", state: "idle" }],
+    };
+    const target = host();
+    let ran = false;
+    renderNotebook(nb, target, { onRun: () => (ran = true) });
+    const cell = target.querySelector<HTMLElement>('.notebook-cell[data-kind="code"]')!;
+    expect(cell).not.toBeNull();
+    const src = cell.querySelector<HTMLTextAreaElement>(".notebook-cell-code-src")!;
+    expect(src.value).toBe("print('hi')");
+    const run = cell.querySelector<HTMLButtonElement>(".notebook-cell-run")!;
+    expect(run.disabled).toBe(true);
+    run.click(); // disabled + inert — must not fire onRun
+    expect(ran).toBe(false);
   });
 });

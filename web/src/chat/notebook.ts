@@ -9,10 +9,17 @@ import type { AnswerMeta } from "./ui";
 import type { RetrievedChunk } from "../rag/context";
 import type { ChatMessage } from "../transport";
 
+// A cell is either a "prompt" cell (an AI turn — billed, routed through the transport) or a
+// "code" cell (local computation). Phase-2 slice 1 introduces the discriminator and renders a
+// static code cell; the pyodide executor for code cells arrives in a later slice (#200). The
+// two kinds stay in one model so a notebook can interleave them.
+export type CellKind = "prompt" | "code";
+
 export interface NotebookCell {
   id: string; // stable client id (for DOM keys + per-cell citation namespacing)
-  prompt: string; // the editable user prompt (textarea seed)
-  answer?: string; // the assistant answer, rendered as Markdown (undefined until run)
+  kind: CellKind; // "prompt" (AI turn) or "code" (local computation)
+  prompt: string; // the editable source: a question (prompt cell) or code (code cell)
+  answer?: string; // the assistant answer, rendered as Markdown (prompt cells; undefined until run)
   sources?: RetrievedChunk[]; // per-cell citations (populated on a run)
   meta?: AnswerMeta; // model / usage / cost (populated on a run)
   state: "idle" | "running" | "error";
@@ -31,9 +38,9 @@ export function newCellId(): string {
   return `cell-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
 }
 
-/** A fresh, empty (idle, answerless) cell — used by "+ Cell". Pure. */
-export function newCell(prompt = ""): NotebookCell {
-  return { id: newCellId(), prompt, state: "idle" };
+/** A fresh, empty (idle, answerless) cell of the given kind — used by "+ Cell". Pure. */
+export function newCell(prompt = "", kind: CellKind = "prompt"): NotebookCell {
+  return { id: newCellId(), kind, prompt, state: "idle" };
 }
 
 /**
@@ -54,12 +61,13 @@ export function cellsFromHistory(history: ChatMessage[]): NotebookCell[] {
     if (msg.role === "user") {
       if (pending !== null) {
         // Two users in a row (no answer between) — flush the first as answerless.
-        cells.push({ id: newCellId(), prompt: pending, state: "idle" });
+        cells.push({ id: newCellId(), kind: "prompt", prompt: pending, state: "idle" });
       }
       pending = msg.content;
     } else if (msg.role === "assistant") {
       cells.push({
         id: newCellId(),
+        kind: "prompt",
         prompt: pending ?? "",
         answer: msg.content,
         state: "idle",
@@ -68,7 +76,7 @@ export function cellsFromHistory(history: ChatMessage[]): NotebookCell[] {
     }
   }
   if (pending !== null) {
-    cells.push({ id: newCellId(), prompt: pending, state: "idle" });
+    cells.push({ id: newCellId(), kind: "prompt", prompt: pending, state: "idle" });
   }
   return cells;
 }

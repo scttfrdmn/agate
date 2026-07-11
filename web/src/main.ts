@@ -980,8 +980,8 @@ function main(): void {
     const nb = chats.notebookFor(chat);
     renderNotebook(nb, chat.notebookEl, {
       onRun: (cellId, prompt) => void runNotebookCell(cellId, prompt),
-      onAddCell: () => {
-        nb.cells.push(newCell());
+      onAddCell: (kind) => {
+        nb.cells.push(newCell("", kind));
         paintNotebook();
         const last = chat.notebookEl.querySelector<HTMLTextAreaElement>(
           ".notebook-cell:last-of-type .notebook-cell-prompt",
@@ -994,7 +994,8 @@ function main(): void {
     const chat = chats.current;
     const nb = chats.notebookFor(chat);
     const cell = nb.cells.find((c: NotebookCell) => c.id === cellId);
-    if (!cell || !prompt.trim()) return;
+    // Only prompt cells run through the transport; code-cell execution is a later slice (#200).
+    if (!cell || cell.kind !== "prompt" || !prompt.trim()) return;
     cell.prompt = prompt;
     cell.state = "running";
     cell.error = undefined;

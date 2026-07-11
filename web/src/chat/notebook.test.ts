@@ -18,6 +18,8 @@ describe("cellsFromHistory", () => {
       "Entropy measures disorder.",
     ]);
     expect(cells.every((c) => c.state === "idle")).toBe(true);
+    // Projected turns are always prompt (AI) cells.
+    expect(cells.every((c) => c.kind === "prompt")).toBe(true);
   });
 
   it("skips leading system messages (grounding / memory seeds aren't turns)", () => {
@@ -45,12 +47,20 @@ describe("cellsFromHistory", () => {
 });
 
 describe("newCell", () => {
-  it("produces an idle, answerless cell with a unique id", () => {
+  it("produces an idle, answerless cell with a unique id (prompt by default)", () => {
     const a = newCell("q?");
     const b = newCell();
     expect(a.state).toBe("idle");
+    expect(a.kind).toBe("prompt");
     expect(a.prompt).toBe("q?");
     expect(a.answer).toBeUndefined();
     expect(a.id).not.toBe(b.id);
+  });
+
+  it("produces a code cell when asked", () => {
+    const c = newCell("print(1)", "code");
+    expect(c.kind).toBe("code");
+    expect(c.prompt).toBe("print(1)");
+    expect(c.state).toBe("idle");
   });
 });

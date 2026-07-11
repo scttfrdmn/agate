@@ -1080,7 +1080,9 @@ button {
 }
 .notebook-cell-bar {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 0.6rem;
   margin: 0.5rem 0;
 }
 .notebook-cell-run {
@@ -1090,9 +1092,28 @@ button {
 .notebook-answer-body {
   line-height: 1.7;
 }
-.notebook-add {
-  align-self: flex-start;
+/* Code cells: monospace source + a "coming soon" note. Execution ships in a later slice. */
+.notebook-cell-code {
+  border-left: 3px solid var(--accent);
+}
+.notebook-cell-code-src {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.86rem;
+  white-space: pre;
+  overflow-x: auto;
+}
+.notebook-code-note {
+  margin-right: auto;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-style: italic;
+}
+.notebook-add-bar {
+  display: flex;
+  gap: 0.5rem;
   margin: 0.25rem;
+}
+.notebook-add {
   font-size: 0.82rem;
 }
 

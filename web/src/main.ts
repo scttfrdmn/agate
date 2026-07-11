@@ -44,7 +44,7 @@ import { Retriever } from "./rag/retriever";
 import { AgentCoreTransport } from "./transport/agentcore";
 import { BedrockTransport } from "./transport/bedrock";
 import { OpenAITransport } from "./transport/openai";
-import type { Transport } from "./transport";
+import type { BudgetStatus, Transport } from "./transport";
 import {
   AUTO,
   type Tier,
@@ -136,6 +136,24 @@ function render(app: HTMLElement): void {
           <div class="panel-title">Context</div>
           <div class="ctx-track"><div id="ctx-bar" class="ctx-fill"></div></div>
           <div id="ctx-text" class="ctx-text">0 tokens · empty</div>
+          <div class="ctx-controls">
+            <label class="ctx-window">
+              <span>Send</span>
+              <select id="ctx-window" aria-label="How much history to send">
+                <option value="0">All turns</option>
+                <option value="3">Last 3 turns</option>
+                <option value="6">Last 6 turns</option>
+                <option value="10">Last 10 turns</option>
+              </select>
+            </label>
+            <div class="ctx-btns">
+              <button id="ctx-compress" type="button" class="btn ghost btn-sm"
+                title="Summarize earlier turns into a compact note (one metered call), then send that plus recent turns">Compress</button>
+              <button id="ctx-clear" type="button" class="btn ghost btn-sm"
+                title="Keep the transcript on screen but start the next turn from empty context">Clear</button>
+            </div>
+            <div id="ctx-note" class="ctx-note" hidden></div>
+          </div>
         </div>
         <div class="panel">
           <div class="panel-title">Session</div>
@@ -810,9 +828,13 @@ function main(): void {
     ctxBar.style.width = `${pct.toFixed(1)}%`;
     const wrap = ctxBar.parentElement!.parentElement!;
     wrap.dataset.level = pct >= 90 ? "high" : pct >= 70 ? "mid" : "ok";
+    // contextTokens now reflects what's actually SENT next turn (after clear/window/summary),
+    // which may be less than the full transcript.
     ctxText.textContent = chat.contextTokens
-      ? `${chat.contextTokens.toLocaleString()} / ${windowTokens.toLocaleString()} tokens · ${Math.round(pct)}% · ${chat.turns} turn${chat.turns === 1 ? "" : "s"}`
-      : "empty · new chat";
+      ? `${chat.contextTokens.toLocaleString()} / ${windowTokens.toLocaleString()} tokens sent · ${Math.round(pct)}% · ${chat.turns} turn${chat.turns === 1 ? "" : "s"}`
+      : chat.turns > 0
+        ? "0 tokens sent · context cleared"
+        : "empty · new chat";
   };
 
   // Multi-session manager (#1): each chat is an independent conversation with its own
@@ -848,6 +870,74 @@ function main(): void {
   document.getElementById("new-chat")?.addEventListener("click", () => {
     chats.newChat(modelSel?.value && modelSel.value !== AUTO ? modelSel.value : undefined);
     input.focus();
+  });
+
+  // Context controls (#2): clear / sliding window / compress. All operate on the active
+  // chat's send-policy — the transcript is untouched; only what's sent to the model changes.
+  const ctxWindow = document.getElementById("ctx-window") as HTMLSelectElement | null;
+  const ctxClear = document.getElementById("ctx-clear");
+  const ctxCompress = document.getElementById("ctx-compress") as HTMLButtonElement | null;
+  const ctxNote = document.getElementById("ctx-note");
+  const showCtxNote = (msg: string): void => {
+    if (!ctxNote) return;
+    ctxNote.textContent = msg;
+    ctxNote.hidden = false;
+  };
+  ctxWindow?.addEventListener("change", () => {
+    const n = Number(ctxWindow.value);
+    chats.setWindow(n > 0 ? n : undefined);
+    showCtxNote(n > 0 ? `Sending only the last ${n} turns.` : "Sending all turns.");
+  });
+  ctxClear?.addEventListener("click", () => {
+    chats.clearContext();
+    if (ctxWindow) ctxWindow.value = "0";
+    showCtxNote("Context cleared — the next turn starts fresh (transcript kept).");
+  });
+  ctxCompress?.addEventListener("click", async () => {
+    // Summarize the whole conversation body up to now, then send [summary + later turns].
+    const body = chats.current.history.filter((m) => m.role !== "system");
+    if (body.length < 2) {
+      showCtxNote("Nothing to compress yet.");
+      return;
+    }
+    ctxCompress.disabled = true;
+    ctxCompress.textContent = "Compressing…";
+    try {
+      const transcript = body.map((m) => `${m.role}: ${m.content}`).join("\n");
+      const model = modelSel?.value && modelSel.value !== AUTO ? modelSel.value : config.defaultModelId;
+      let summary = "";
+      let cost: number | undefined;
+      let budget: BudgetStatus | undefined;
+      for await (const chunk of askTransport.converse({
+        modelId: model,
+        maxTokens: 512,
+        messages: [
+          {
+            role: "user",
+            content:
+              `Summarize the following conversation compactly, preserving key facts, ` +
+              `decisions, and open questions so it can stand in for the earlier turns. ` +
+              `Use terse bullet points.\n\n${transcript.slice(0, 8000)}`,
+          },
+        ],
+      })) {
+        if (chunk.delta) summary += chunk.delta;
+        if (chunk.cost !== undefined) cost = chunk.cost;
+        if (chunk.budget) budget = chunk.budget;
+      }
+      if (summary.trim()) {
+        chats.applySummary(summary.trim());
+        meter.record(cost, budget);
+        showCtxNote("Compressed earlier turns into a summary (transcript kept).");
+      } else {
+        showCtxNote("Compression produced no summary — context unchanged.");
+      }
+    } catch (err) {
+      showCtxNote(`Compression failed: ${(err as Error).message}`);
+    } finally {
+      ctxCompress.disabled = false;
+      ctxCompress.textContent = "Compress";
+    }
   });
 
   const meter = new SessionMeter({

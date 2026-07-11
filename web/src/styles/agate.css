@@ -1071,6 +1071,41 @@ button {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+.ctx-controls {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.ctx-window {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.ctx-window select {
+  flex: 1 1 auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.72rem;
+  padding: 0.25rem 0.4rem;
+}
+.ctx-btns {
+  display: flex;
+  gap: 0.4rem;
+}
+.ctx-btns .btn {
+  flex: 1 1 auto;
+  font-size: 0.72rem;
+}
+.ctx-note {
+  font-size: 0.68rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
 
 /* Each chat's transcript pane; only the active one is shown. */
 .chat-pane[hidden] {

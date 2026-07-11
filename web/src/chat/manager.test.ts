@@ -93,6 +93,35 @@ describe("ChatManager", () => {
     expect(m.current.title).toBe("Thermo notes"); // blank ignored
   });
 
+  it("clearContext floors the send at the current body length", async () => {
+    const m = new ChatManager(hosts());
+    await m.sessionFor("openai.gpt-oss-20b-1:0").send("q1"); // 2 body msgs
+    m.clearContext();
+    expect(m.current.contextPolicy.floor).toBe(2);
+    // The session now sends only leading system messages (none here) → empty body.
+    expect(m.current.session.sentMessages.filter((x) => x.role !== "system")).toHaveLength(0);
+  });
+
+  it("setWindow installs a sliding window on the policy", async () => {
+    const m = new ChatManager(hosts());
+    await m.sessionFor("openai.gpt-oss-20b-1:0").send("q1");
+    m.setWindow(3);
+    expect(m.current.contextPolicy.maxTurns).toBe(3);
+    m.setWindow(undefined);
+    expect(m.current.contextPolicy.maxTurns).toBeUndefined();
+  });
+
+  it("applySummary floors the send and installs the summary note", async () => {
+    const m = new ChatManager(hosts());
+    await m.sessionFor("openai.gpt-oss-20b-1:0").send("q1");
+    m.applySummary("earlier: talked about q1");
+    expect(m.current.contextPolicy.summary).toContain("q1");
+    const sent = m.current.session.sentMessages;
+    expect(sent.some((x) => x.role === "system" && x.content.includes("earlier: talked about q1"))).toBe(
+      true,
+    );
+  });
+
   it("recordTurn titles the chat from the first question and counts turns", () => {
     const m = new ChatManager(hosts());
     m.recordTurn("What is the first law of thermodynamics about energy?", "…");

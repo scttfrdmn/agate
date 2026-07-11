@@ -4,6 +4,7 @@
 // transport-agnostic so swapping tiers never touches the chat logic.
 
 import type { BudgetStatus, ChatMessage, ConverseChunk, Transport } from "../transport";
+import { type ContextPolicy, selectContext } from "./context";
 
 // Optional RAG hook: given the user's question, return extra messages (e.g. a
 // grounding system message from withContext()) to prepend for this turn only.
@@ -30,6 +31,10 @@ export interface SendCallbacks {
 
 export class ChatSession {
   private readonly history: ChatMessage[];
+  // What of `history` is actually SENT to the model (clear-context floor / sliding window /
+  // summary). The full history is still kept for the transcript + memory; this only narrows
+  // the wire payload. Managed by the ChatManager so it survives session rebuilds.
+  private contextPolicy: ContextPolicy;
 
   constructor(
     private readonly transport: Transport,
@@ -45,16 +50,30 @@ export class ChatSession {
     // (e.g. on a model change) and the manager can read the accumulated turns. When
     // omitted, the session keeps its own private history.
     sharedHistory?: ChatMessage[],
+    // Optional initial context policy (adopted, then mutable via setContextPolicy). The
+    // manager passes the chat's policy so clear/window/summary survive a session rebuild.
+    contextPolicy: ContextPolicy = {},
   ) {
     this.history = sharedHistory ?? [];
     if (system && !this.history.some((m) => m.role === "system")) {
       this.history.unshift({ role: "system", content: system });
     }
+    this.contextPolicy = contextPolicy;
   }
 
   /** A copy of the conversation so far (system + turns). */
   get messages(): ChatMessage[] {
     return [...this.history];
+  }
+
+  /** The messages that WOULD be sent next turn under the current policy (for the gauge). */
+  get sentMessages(): ChatMessage[] {
+    return selectContext(this.history, this.contextPolicy);
+  }
+
+  /** Update the send policy (clear-context floor / sliding window / summary). */
+  setContextPolicy(policy: ContextPolicy): void {
+    this.contextPolicy = policy;
   }
 
   /**
@@ -83,11 +102,12 @@ export class ChatSession {
     let budget: SendResult["budget"];
     let model: SendResult["model"];
     let modelRoute: SendResult["modelRoute"];
-    // Snapshot history so the transport never sees a live reference that mutates
-    // (we append the assistant turn below) during a lazy stream.
+    // Apply the context policy (clear-context floor / sliding window / summary) to decide
+    // what history is actually sent — the full history stays for the transcript. Snapshot
+    // so the transport never sees a live reference that mutates (we append below).
     for await (const chunk of this.transport.converse({
       modelId: this.modelId,
-      messages: [...grounding, ...this.history],
+      messages: [...grounding, ...selectContext(this.history, this.contextPolicy)],
       maxTokens: this.maxTokens,
     })) {
       const c: ConverseChunk = chunk;

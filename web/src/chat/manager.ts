@@ -8,6 +8,7 @@ import type { ChatMessage, Transport } from "../transport";
 import { ChatSession, type ContextProvider } from "./session";
 import { ChatTranscript } from "./ui";
 import { type Notebook, cellsFromHistory } from "./notebook";
+import { type ContextPolicy, bodyLength, selectContext } from "./context";
 import { contextWindow } from "../router";
 
 export type ChatView = "chat" | "notebook";
@@ -42,6 +43,9 @@ export interface ChatRecord {
   notebookEl: HTMLElement;
   notebook?: Notebook;
   view: ChatView;
+  // Context send-policy (clear-context floor / sliding window / summary). Held here so it
+  // survives rebuilding the session on a model change; mirrored into the ChatSession.
+  contextPolicy: ContextPolicy;
 }
 
 export interface ManagerDeps {
@@ -93,6 +97,7 @@ export class ChatManager {
     this.deps.appendHost.appendChild(notebookEl);
     const transcript = new ChatTranscript(el, this.deps.scrollHost);
     const history: ChatMessage[] = [];
+    const contextPolicy: ContextPolicy = {};
     const chat: ChatRecord = {
       id: nextId++,
       title: "New chat",
@@ -102,11 +107,12 @@ export class ChatManager {
       history,
       modelId,
       session: new ChatSession(this.deps.transport, modelId, undefined, undefined,
-        this.deps.contextProvider, history),
+        this.deps.contextProvider, history, contextPolicy),
       contextTokens: 0,
       turns: 0,
       notebookEl,
       view: "chat",
+      contextPolicy,
     };
     this.chats.push(chat);
     this.switchTo(chat.id);
@@ -180,9 +186,56 @@ export class ChatManager {
     if (chat.modelId !== modelId) {
       chat.modelId = modelId;
       chat.session = new ChatSession(this.deps.transport, modelId, undefined, undefined,
-        this.deps.contextProvider, chat.history);
+        this.deps.contextProvider, chat.history, chat.contextPolicy);
     }
     return chat.session;
+  }
+
+  /** Tokens that would actually be SENT next turn under the active chat's policy — what
+   *  the CONTEXT gauge should reflect (vs the full transcript). */
+  get sentContextTokens(): number {
+    const chat = this.active;
+    return estimateTokens(selectContext(chat.history, chat.contextPolicy));
+  }
+
+  /** Clear-context: keep the transcript, but start the next turn from empty history by
+   *  flooring the send at the current body length. A summary (if compressed) is dropped
+   *  too — an explicit clear means "forget the earlier turns for context purposes." */
+  clearContext(chat: ChatRecord = this.active): void {
+    chat.contextPolicy = { ...chat.contextPolicy, floor: bodyLength(chat.history), summary: undefined };
+    chat.session.setContextPolicy(chat.contextPolicy);
+    chat.contextTokens = this.sentContextTokens;
+    this.deps.onActiveChange?.(chat);
+  }
+
+  /** Sliding window: send only the last `n` turns (undefined clears the window). */
+  setWindow(n: number | undefined, chat: ChatRecord = this.active): void {
+    chat.contextPolicy = { ...chat.contextPolicy, maxTurns: n };
+    chat.session.setContextPolicy(chat.contextPolicy);
+    chat.contextTokens = this.sentContextTokens;
+    this.deps.onActiveChange?.(chat);
+  }
+
+  /** Summarize-and-compress: adopt `summary` as a stand-in for the turns before the current
+   *  body length, and floor the send there. The one metered summary call is made by the
+   *  caller (main.ts) via the transport; this just installs the result. */
+  applySummary(summary: string, chat: ChatRecord = this.active): void {
+    chat.contextPolicy = {
+      ...chat.contextPolicy,
+      floor: bodyLength(chat.history),
+      summary,
+      maxTurns: undefined,
+    };
+    chat.session.setContextPolicy(chat.contextPolicy);
+    chat.contextTokens = this.sentContextTokens;
+    this.deps.onActiveChange?.(chat);
+  }
+
+  /** The turns hidden by the current floor — the text the caller summarizes. */
+  hiddenTurns(chat: ChatRecord = this.active): ChatMessage[] {
+    const floor = chat.contextPolicy.floor ?? 0;
+    const body = chat.history.filter((m) => m.role !== "system");
+    return body.slice(0, floor);
   }
 
   /** Record a completed turn into the active chat: history + context estimate + title. */
@@ -191,7 +244,7 @@ export class ChatManager {
     // ChatSession already pushed the user+assistant messages into `history` (shared
     // array reference), so just recompute the derived figures.
     chat.turns += 1;
-    chat.contextTokens = estimateTokens(chat.history);
+    chat.contextTokens = this.sentContextTokens;
     if (chat.turns === 1) {
       chat.title = question.length > 40 ? question.slice(0, 40).trimEnd() + "…" : question;
     }

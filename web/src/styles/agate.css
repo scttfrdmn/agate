@@ -973,11 +973,28 @@ button {
   max-height: 30vh;
   overflow-y: auto;
 }
-.chat-list-item {
-  text-align: left;
-  background: transparent;
+/* A list row: the switch button flexes to fill; rename/delete actions sit at the end
+   and reveal on hover/focus so the row stays clean at rest. */
+.chat-list-row {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
   border: 1px solid transparent;
   border-radius: 7px;
+}
+.chat-list-row:hover {
+  background: rgba(123, 150, 255, 0.1);
+}
+.chat-list-row.active {
+  background: rgba(123, 150, 255, 0.16);
+  border-color: var(--border);
+}
+.chat-list-item {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  border: none;
   color: var(--text);
   font-size: 0.8rem;
   padding: 0.4rem 0.55rem;
@@ -985,14 +1002,47 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.chat-list-item:hover {
-  background: rgba(123, 150, 255, 0.1);
-}
-.chat-list-item.active {
-  background: rgba(123, 150, 255, 0.16);
-  border-color: var(--border);
+.chat-list-row.active .chat-list-item {
   color: var(--accent);
   font-weight: 600;
+}
+.chat-list-action {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1;
+  padding: 0.25rem 0.3rem;
+  border-radius: 5px;
+  opacity: 0;
+  cursor: pointer;
+}
+.chat-list-row:hover .chat-list-action,
+.chat-list-row:focus-within .chat-list-action {
+  opacity: 1;
+}
+.chat-list-action:hover {
+  background: rgba(123, 150, 255, 0.18);
+  color: var(--text);
+}
+.chat-list-delete:hover {
+  background: rgba(255, 107, 107, 0.18);
+  color: #ff8f8f;
+}
+.chat-list-rename {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.8rem;
+  padding: 0.35rem 0.5rem;
+}
+.chat-list-rename:focus {
+  outline: none;
 }
 
 /* ── context usage gauge ──────────────────────────────────────── */

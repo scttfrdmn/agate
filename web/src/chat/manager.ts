@@ -54,6 +54,9 @@ export interface ManagerDeps {
   // Called when the active chat changes or its context usage updates, so the
   // surrounding UI (context gauge, empty-state) can refresh.
   onActiveChange?: (chat: ChatRecord) => void;
+  // Confirm a destructive delete (title -> proceed?). Injected so tests don't touch the
+  // DOM; main.ts wires it to window.confirm. Defaults to always-proceed.
+  confirmDelete: (title: string) => boolean;
 }
 
 // Conservative char/4 token estimate (matches the server's own estimator spirit).
@@ -132,6 +135,33 @@ export class ChatManager {
     return chat.notebook;
   }
 
+  /** Delete a chat, tearing down its DOM. If it was active, switch to a neighbour;
+   *  deleting the last chat starts a fresh empty one (the app always has one chat). */
+  deleteChat(id: number): void {
+    const idx = this.chats.findIndex((c) => c.id === id);
+    if (idx === -1) return;
+    const [removed] = this.chats.splice(idx, 1);
+    removed.el.remove();
+    removed.notebookEl.remove();
+    if (this.active?.id === id) {
+      const next = this.chats[idx] ?? this.chats[idx - 1];
+      if (next) this.switchTo(next.id);
+      else this.newChat(); // was the last one — newChat re-renders the list
+    } else {
+      this.renderList();
+    }
+  }
+
+  /** Rename a chat. An empty/whitespace title is ignored (keeps the existing one). */
+  renameChat(id: number, title: string): void {
+    const chat = this.chats.find((c) => c.id === id);
+    if (!chat) return;
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    chat.title = trimmed;
+    this.renderList();
+  }
+
   /** Flip the active chat between the chat transcript and the notebook view. */
   setView(id: number, view: ChatView): void {
     const chat = this.chats.find((c) => c.id === id);
@@ -171,16 +201,73 @@ export class ChatManager {
 
   private renderList(): void {
     const host = this.deps.listHost;
-    host.replaceChildren(
-      ...this.chats.map((c) => {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "chat-list-item" + (c.id === this.active?.id ? " active" : "");
-        btn.textContent = c.title;
-        btn.title = c.title;
-        btn.addEventListener("click", () => this.switchTo(c.id));
-        return btn;
-      }),
-    );
+    host.replaceChildren(...this.chats.map((c) => this.renderListItem(c)));
+  }
+
+  // One row: a switch button + rename (✎) and delete (✕) actions. Rename swaps the
+  // label for an inline text input (commit on Enter/blur, cancel on Escape). Delete is
+  // guarded by a confirm only when the chat has content, so an empty scratch chat goes
+  // away in one click.
+  private renderListItem(c: ChatRecord): HTMLElement {
+    const row = document.createElement("div");
+    row.className = "chat-list-row" + (c.id === this.active?.id ? " active" : "");
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "chat-list-item";
+    btn.textContent = c.title;
+    btn.title = c.title;
+    btn.addEventListener("click", () => this.switchTo(c.id));
+    btn.addEventListener("dblclick", () => beginRename());
+
+    const beginRename = (): void => {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "chat-list-rename";
+      input.value = c.title;
+      input.setAttribute("aria-label", "Rename chat");
+      let done = false;
+      const commit = (save: boolean): void => {
+        if (done) return;
+        done = true;
+        if (save) this.renameChat(c.id, input.value);
+        else this.renderList();
+      };
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") commit(true);
+        else if (e.key === "Escape") commit(false);
+      });
+      input.addEventListener("blur", () => commit(true));
+      row.replaceChildren(input);
+      input.focus();
+      input.select();
+    };
+
+    const rename = document.createElement("button");
+    rename.type = "button";
+    rename.className = "chat-list-action";
+    rename.textContent = "✎";
+    rename.title = "Rename";
+    rename.setAttribute("aria-label", "Rename chat");
+    rename.addEventListener("click", (e) => {
+      e.stopPropagation();
+      beginRename();
+    });
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "chat-list-action chat-list-delete";
+    del.textContent = "✕";
+    del.title = "Delete";
+    del.setAttribute("aria-label", "Delete chat");
+    del.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const needsConfirm = c.turns > 0;
+      if (needsConfirm && !this.deps.confirmDelete(c.title)) return;
+      this.deleteChat(c.id);
+    });
+
+    row.append(btn, rename, del);
+    return row;
   }
 }

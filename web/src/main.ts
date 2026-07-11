@@ -828,6 +828,7 @@ function main(): void {
     listHost: document.getElementById("chat-list")!,
     transport: askTransport,
     contextProvider: groundingProvider,
+    confirmDelete: (title) => window.confirm(`Delete “${title}”? This can't be undone.`),
     onActiveChange: (chat) => {
       renderContext(chat, contextWindowFor(chat.modelId));
       if (emptyState) emptyState.hidden = chat.turns > 0;
@@ -1081,7 +1082,11 @@ function main(): void {
             setChips(SAMPLE_QUESTIONS); // toggle off → just restore the samples
             return;
           }
-          void suggestFollowups(askTransport, m, question, answer).then((r) => {
+          // Ground the suggestions in the SAME corpus excerpts that grounded the answer,
+          // so we don't propose questions the retrieval-grounded assistant will then
+          // refuse. Empty when RAG returned nothing → falls back to the open-ended prompt.
+          const corpusContext = lastSources.map((c) => c.text).join("\n\n");
+          void suggestFollowups(askTransport, m, question, answer, corpusContext).then((r) => {
             setChips(r.questions.length ? r.questions : SAMPLE_QUESTIONS);
             // The suggestion call is billed too: fold it into the running cost meter
             // and accumulate the Suggestions-box running total (cost + tokens).

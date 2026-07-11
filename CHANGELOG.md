@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Delete + rename chats.** Each chat in the sidebar now has hover-revealed **✎ rename**
+  (inline edit; Enter/blur commits, Escape cancels; double-click the title also renames) and
+  **✕ delete** (confirmed when the chat has turns; an empty scratch chat deletes in one click).
+  Deleting the active chat switches to a neighbour; deleting the last chat starts a fresh one.
+
+### Fixed
+- **Follow-up suggestions stay within the corpus.** When RAG grounding is active, the follow-up
+  chips are now generated from the SAME retrieved excerpts that grounded the answer and constrained
+  to be answerable from them — so we no longer suggest good-looking questions the grounded assistant
+  then refuses with "I couldn't find that in the documents." Falls back to the open-ended prompt when
+  retrieval returned nothing.
+- **Follow-up suggestion chips no longer leak raw LaTeX.** Chips render as plain text (and the
+  clicked text is submitted verbatim as the next prompt), so a suggestion like `value of \(W\)?`
+  showed — and submitted — the raw `\(W\)`. `parseFollowups` now strips `$…$` / `$$…$$` / `\(…\)`
+  / `\[…\]` delimiters to their inner expression. (Answers were already rendered through KaTeX and
+  unaffected.)
+
+### Added
 - **Notebook code cells — model + static cell (#200, phase 2 slice 1).** Notebook cells now carry a
   `kind` (`"prompt"` | `"code"`). Prompt cells are the existing AI turns (billed, routed through the
   transport); a new **code cell** renders a monospace, client-side source editor with a

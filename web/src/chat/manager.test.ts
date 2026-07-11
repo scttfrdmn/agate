@@ -13,12 +13,12 @@ const fakeTransport: Transport = {
   },
 };
 
-function hosts() {
+function hosts(confirmDelete: (title: string) => boolean = () => true) {
   const appendHost = document.createElement("div");
   const scrollHost = document.createElement("div");
   const listHost = document.createElement("div");
   document.body.append(appendHost, scrollHost, listHost);
-  return { appendHost, scrollHost, listHost, transport: fakeTransport };
+  return { appendHost, scrollHost, listHost, transport: fakeTransport, confirmDelete };
 }
 
 describe("ChatManager", () => {
@@ -48,8 +48,49 @@ describe("ChatManager", () => {
     m.newChat();
     m.switchTo(a);
     expect(m.current.id).toBe(a);
-    const active = d.listHost.querySelector(".chat-list-item.active");
+    const active = d.listHost.querySelector(".chat-list-row.active");
     expect(active).not.toBeNull();
+  });
+
+  it("deleteChat removes a chat and switches to a neighbour when the active one goes", () => {
+    const d = hosts();
+    const m = new ChatManager(d);
+    const a = m.current.id;
+    const b = m.newChat().id; // active = b
+    m.deleteChat(b);
+    expect(m.current.id).toBe(a);
+    expect(d.appendHost.querySelectorAll(".chat-pane").length).toBe(1);
+  });
+
+  it("deleting the last chat starts a fresh empty one", () => {
+    const m = new ChatManager(hosts());
+    const only = m.current.id;
+    m.deleteChat(only);
+    expect(m.current.id).not.toBe(only);
+    expect(m.current.turns).toBe(0);
+  });
+
+  it("delete of a chat with turns is gated by confirmDelete", () => {
+    const d = hosts(() => false); // user declines
+    const m = new ChatManager(d);
+    m.recordTurn("a real question about thermodynamics?", "…");
+    const id = m.current.id;
+    m.newChat();
+    // rebuild list, find the delete button for the first (content) chat
+    const del = d.listHost.querySelectorAll<HTMLButtonElement>(".chat-list-delete")[0];
+    del.click();
+    // declined → still present
+    expect(d.appendHost.querySelectorAll(".chat-pane").length).toBe(2);
+    void id;
+  });
+
+  it("renameChat updates the title (ignoring blank)", () => {
+    const m = new ChatManager(hosts());
+    const id = m.current.id;
+    m.renameChat(id, "  Thermo notes  ");
+    expect(m.current.title).toBe("Thermo notes");
+    m.renameChat(id, "   ");
+    expect(m.current.title).toBe("Thermo notes"); // blank ignored
   });
 
   it("recordTurn titles the chat from the first question and counts turns", () => {

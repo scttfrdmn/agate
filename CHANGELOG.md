@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Notebook mode for Ask (#185, phase 1).** A **Chat | Notebook** toggle on the Ask screen turns
+  the current conversation into an editable notebook: each turn becomes a cell (editable prompt +
+  rendered Markdown answer + a per-cell receipt), with **per-cell re-run**, **+ Cell**, and a
+  toggle back to the transcript. A cell run is a *standalone* metered call (a single
+  `transport.converse`, not a multi-turn `ChatSession`), so re-running a cell never pollutes the
+  chat history — both views back the same `ChatRecord` — and its cost folds into the same running
+  meter as a chat turn. Auto-routing (#190) and RAG/memory grounding apply per cell; citations are
+  namespaced per cell so `[n]` anchors don't collide. New `web/src/chat/notebook.ts` (pure cell
+  model + `cellsFromHistory`), `notebook-run.ts` (`runCell`), `notebook-ui.ts` (renderer, reusing
+  the chat Sources/receipt markup + the XSS-reviewed `renderInto`). Client-side, no new deps, no
+  server change. Real marimo (reactive DAG / WASM kernel) is a deliberate later track — the cell
+  model + run path are isolated so a code-cell kind can slot in behind them.
 - **Follow-ups to #192/#194:** (a) **web sources link out** — a citation whose source is a fetched
   web URL (`sourceSystem="web"`) now renders as a clickable external link (↗) in the answer's Sources
   footer, while corpus sources stay plain text; (b) **web fetches are budget-gated** — `web-fetch`

@@ -72,4 +72,39 @@ describe("ChatManager", () => {
     // the rebuilt session carries the prior turns
     expect(s2.messages.length).toBeGreaterThanOrEqual(2);
   });
+
+  it("notebookFor lazily projects the chat history into cells (built once)", async () => {
+    const m = new ChatManager(hosts());
+    await m.sessionFor("openai.gpt-oss-20b-1:0").send("q?");
+    const nb1 = m.notebookFor();
+    expect(nb1.cells.length).toBe(1);
+    expect(nb1.cells[0].prompt).toBe("q?");
+    // built once — same object on the next call (per-cell edits survive a toggle)
+    expect(m.notebookFor()).toBe(nb1);
+  });
+
+  it("setView toggles the active chat's chat vs notebook pane", () => {
+    const d = hosts();
+    const m = new ChatManager(d);
+    const id = m.current.id;
+    // default: chat pane shown, notebook hidden
+    expect(m.current.el.hidden).toBe(false);
+    expect(m.current.notebookEl.hidden).toBe(true);
+    m.setView(id, "notebook");
+    expect(m.current.el.hidden).toBe(true);
+    expect(m.current.notebookEl.hidden).toBe(false);
+    m.setView(id, "chat");
+    expect(m.current.el.hidden).toBe(false);
+    expect(m.current.notebookEl.hidden).toBe(true);
+  });
+
+  it("notebook state is per-chat (a fresh chat has its own notebook)", async () => {
+    const m = new ChatManager(hosts());
+    await m.sessionFor("openai.gpt-oss-20b-1:0").send("first?");
+    const nbA = m.notebookFor();
+    m.newChat();
+    const nbB = m.notebookFor();
+    expect(nbB).not.toBe(nbA);
+    expect(nbB.cells.length).toBe(0); // fresh chat, empty history
+  });
 });

@@ -166,7 +166,10 @@ export class ChatTranscript {
 
 // --- pieces ----------------------------------------------------------------
 
-function renderSources(chunks: RetrievedChunk[]): HTMLElement {
+// Exported so the notebook view (web/src/chat/notebook-ui.ts) reuses the exact Sources /
+// receipt / copy markup. `idPrefix` namespaces the citation anchor ids so multiple cells
+// on one page don't collide (a chat transcript renders one answer at a time → default "").
+export function renderSources(chunks: RetrievedChunk[], idPrefix = ""): HTMLElement {
   const box = el("div", "sources");
   const title = el("div", "sources-title");
   title.textContent = `Sources (${chunks.length})`;
@@ -174,7 +177,7 @@ function renderSources(chunks: RetrievedChunk[]): HTMLElement {
   const list = el("ol", "sources-list");
   chunks.forEach((c, i) => {
     const li = el("li", "source-item");
-    li.id = `cite-${i + 1}`; // citation anchors ([n]) scroll here
+    li.id = `${idPrefix}cite-${i + 1}`; // citation anchors ([n]) scroll here
     li.append(sourceLabelNode(c));
     const snippet = el("span", "source-snippet");
     snippet.textContent = c.text.length > 160 ? c.text.slice(0, 160).trimEnd() + "…" : c.text;
@@ -208,7 +211,7 @@ function sourceLabel(c: RetrievedChunk): string {
   return c.key || "document";
 }
 
-function renderReceipt(meta: AnswerMeta): HTMLElement {
+export function renderReceipt(meta: AnswerMeta): HTMLElement {
   const box = el("div", "msg-receipt");
   const row = (label: string, value: string) => {
     const r = el("div", "msg-receipt-row");
@@ -239,7 +242,7 @@ function renderReceipt(meta: AnswerMeta): HTMLElement {
   return box;
 }
 
-function copyAnswerBtn(text: string): HTMLElement {
+export function copyAnswerBtn(text: string): HTMLElement {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "answer-copy";

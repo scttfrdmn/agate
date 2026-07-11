@@ -151,6 +151,8 @@ npx cdk deploy agate-governance          # Guardrails + Cedar policies (optional
 **4. Web (the SPA).** Build with the deployed endpoints, then host:
 ```bash
 cd web && VITE_BROKER_URL=<broker-url> VITE_AWS_REGION=<region> \
+  VITE_COGNITO_DOMAIN=<hosted-ui-domain> \
+  VITE_COGNITO_CLIENT_ID=<oidc-audience> \
   VITE_RETRIEVAL_URL=<retrieval-url> \
   VITE_AGENT_RUNTIME_ARN=<runtime-arn> \
   VITE_DRAFTING_URL=<drafting-url> \
@@ -162,7 +164,10 @@ cd web && VITE_BROKER_URL=<broker-url> VITE_AWS_REGION=<region> \
   VITE_CHOKEPOINT_URL=<chokepoint-url> npm run build && cd ..
 npx cdk deploy agate-web                 # publishes web/dist to S3 + CloudFront
 ```
-The `agate-web` output `SiteUrl` is the demo URL. `VITE_RETRIEVAL_URL` is the
+The `agate-web` output `SiteUrl` is the demo URL. `VITE_COGNITO_DOMAIN` (the `agate-demo-idp`
+output `HostedUiDomain`) and `VITE_COGNITO_CLIENT_ID` (its `OidcAudience` — the app client id)
+wire the **Log in / Log out** button to the demo Hosted UI; omit them and the SPA hides the auth
+control and expects a manually pasted `#idp_token=<jwt>` in the URL hash instead. `VITE_RETRIEVAL_URL` is the
 `agate-identity` output `RetrievalUrl` — the broker-proxied vector retriever that
 enforces sub-tenant scope (#84); omit it to disable RAG grounding. `VITE_DRAFTING_URL`
 is the `agate-drafting` output `DraftingUrl` (#118b) — the natural-language "Draft an

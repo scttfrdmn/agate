@@ -146,4 +146,33 @@ describe("renderNotebook", () => {
     expect(run.disabled).toBe(true);
     expect(target.querySelector(".notebook-code-loading")?.textContent).toBe("Downloading…");
   });
+
+  it("shows the {{cN}} reference name and a stale badge (#200 slice 3)", () => {
+    const nb: Notebook = {
+      cells: [
+        { id: "a", name: "c1", kind: "prompt", prompt: "q", answer: "a", state: "idle" },
+        { id: "b", name: "c2", kind: "prompt", prompt: "from {{c1}}", state: "idle", stale: true },
+      ],
+    };
+    const target = host();
+    renderNotebook(nb, target);
+    const names = Array.from(target.querySelectorAll(".notebook-cell-name")).map((n) => n.textContent);
+    expect(names).toEqual(["c1", "c2"]);
+    // Only the stale cell shows the badge + wrapper class.
+    expect(target.querySelectorAll(".notebook-cell-stale")).toHaveLength(1);
+    expect(target.querySelector('.notebook-cell[data-cell-id="b"]')?.classList.contains("stale")).toBe(
+      true,
+    );
+  });
+
+  it("fires onEdit when a cell's source changes", () => {
+    const nb: Notebook = { cells: [{ id: "a", name: "c1", kind: "prompt", prompt: "x", state: "idle" }] };
+    const target = host();
+    const edits: Array<[string, string]> = [];
+    renderNotebook(nb, target, { onEdit: (id, s) => edits.push([id, s]) });
+    const ta = target.querySelector<HTMLTextAreaElement>(".notebook-cell-prompt")!;
+    ta.value = "x2";
+    ta.dispatchEvent(new Event("input"));
+    expect(edits).toEqual([["a", "x2"]]);
+  });
 });

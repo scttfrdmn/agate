@@ -39,6 +39,7 @@ import { suggestFollowups } from "./chat/followups";
 import { type NotebookCell, newCell } from "./chat/notebook";
 import { renderNotebook } from "./chat/notebook-ui";
 import { runCell } from "./chat/notebook-run";
+import { dependentsOf, nextCellName, resolveSource } from "./chat/dag";
 import { CodeKernel } from "./notebook/kernel";
 import { type RetrievedChunk, withContext } from "./rag/context";
 import { Retriever } from "./rag/retriever";
@@ -1067,14 +1068,34 @@ function main(): void {
   // re-runnable as a STANDALONE metered call (not a ChatSession turn, so it never pollutes
   // the transcript). The context gauge stays chat-scoped (cell runs don't touch history).
   const resolvePin = (): string => (modelSel.value === AUTO ? AUTO : modelSel.value);
+  // Editing a cell's source keeps it in sync and stale-marks any dependents (#200 slice 3), so a
+  // downstream cell that references {{cN}} shows "stale — re-run" once cN's source changes. We
+  // only repaint when the stale set actually changes, so ordinary typing doesn't disturb the caret.
+  const onNotebookEdit = (cellId: string, source: string): void => {
+    const nb = chats.notebookFor(chats.current);
+    const cell = nb.cells.find((c: NotebookCell) => c.id === cellId);
+    if (!cell) return;
+    cell.prompt = source;
+    const deps = dependentsOf(nb.cells, cellId);
+    const newlyStale = deps.filter((d) => !d.stale);
+    if (newlyStale.length) {
+      for (const d of newlyStale) d.stale = true;
+      paintNotebook();
+    }
+  };
   const paintNotebook = (): void => {
     const chat = chats.current;
     const nb = chats.notebookFor(chat);
+    // Preserve the focused editor + caret across a repaint (stale-marking repaints mid-typing).
+    const active = document.activeElement as HTMLTextAreaElement | null;
+    const focusId = active?.id?.startsWith("nb-") ? active.id : null;
+    const caret = focusId ? active!.selectionStart : null;
     renderNotebook(nb, chat.notebookEl, {
       onRun: (cellId, prompt) => void runNotebookCell(cellId, prompt),
       onRunCode: (cellId, code) => void runNotebookCode(cellId, code),
+      onEdit: (cellId, source) => onNotebookEdit(cellId, source),
       onAddCell: (kind) => {
-        nb.cells.push(newCell("", kind));
+        nb.cells.push(newCell("", kind, nextCellName(nb.cells)));
         paintNotebook();
         const last = chat.notebookEl.querySelector<HTMLTextAreaElement>(
           ".notebook-cell:last-of-type .notebook-cell-prompt",
@@ -1082,19 +1103,41 @@ function main(): void {
         last?.focus();
       },
     });
+    if (focusId) {
+      const again = document.getElementById(focusId) as HTMLTextAreaElement | null;
+      if (again) {
+        again.focus();
+        if (caret !== null) again.setSelectionRange(caret, caret);
+      }
+    }
   };
-  const runNotebookCell = async (cellId: string, prompt: string): Promise<void> => {
-    const chat = chats.current;
-    const nb = chats.notebookFor(chat);
-    const cell = nb.cells.find((c: NotebookCell) => c.id === cellId);
-    // Only prompt cells run through the transport; code-cell execution is a later slice (#200).
-    if (!cell || cell.kind !== "prompt" || !prompt.trim()) return;
-    cell.prompt = prompt;
+  let codeKernel: CodeKernel | null = null;
+  const ensureKernel = (nb: { cells: NotebookCell[] }): CodeKernel => {
+    // Lazily spawn the pyodide worker on the FIRST code run (its ~10 MB runtime stays out of
+    // the base bundle). No server, no network from the cell (NO CLOCKS; no new surface).
+    if (!codeKernel) {
+      codeKernel = new CodeKernel({
+        onStatus: (status, detail) => {
+          if (status !== "ready" && detail) {
+            for (const c of nb.cells) if (c.kind === "code" && c.state === "running") c.error = detail;
+            paintNotebook();
+          }
+        },
+      });
+    }
+    return codeKernel;
+  };
+
+  // Run ONE prompt cell (no cascade). Resolves {{cN}} references against the notebook first
+  // (#200 slice 3) so an AI cell can build on another cell's output. Returns true on success.
+  const runPromptCore = async (cell: NotebookCell, nb: { cells: NotebookCell[] }): Promise<boolean> => {
+    const { resolved } = resolveSource(cell, nb.cells);
+    if (!resolved.trim()) return false;
     cell.state = "running";
     cell.error = undefined;
     paintNotebook();
     try {
-      const result = await runCell(askTransport, resolvePin(), prompt, groundingProvider);
+      const result = await runCell(askTransport, resolvePin(), resolved, groundingProvider);
       cell.answer = result.text;
       cell.sources = lastSources.slice();
       cell.meta = {
@@ -1105,48 +1148,70 @@ function main(): void {
         modelReason: result.modelRoute?.reason,
       };
       cell.state = "idle";
-      meter.record(result.cost, result.budget); // same fold-in as a chat turn
+      cell.stale = false;
+      meter.record(result.cost, result.budget);
+      return true;
     } catch (err) {
       cell.state = "error";
       cell.error = (err as Error).message;
+      return false;
     }
-    paintNotebook();
   };
-  // Code cells (#200, slice 2): run Python in a lazily-spawned client-side pyodide worker.
-  // The kernel (and its ~10 MB runtime) is created on the FIRST run, not at page load, so the
-  // base SPA stays light. No server, no network from the cell (NO CLOCKS; no new surface).
-  let codeKernel: CodeKernel | null = null;
-  const runNotebookCode = async (cellId: string, code: string): Promise<void> => {
-    const chat = chats.current;
-    const nb = chats.notebookFor(chat);
-    const cell = nb.cells.find((c: NotebookCell) => c.id === cellId);
-    if (!cell || cell.kind !== "code" || !code.trim()) return;
-    cell.prompt = code;
+
+  // Run ONE code cell (no cascade). Resolves {{cN}} references (JSON-encoded for code) first.
+  const runCodeCore = async (cell: NotebookCell, nb: { cells: NotebookCell[] }): Promise<boolean> => {
+    const { resolved } = resolveSource(cell, nb.cells);
+    if (!resolved.trim()) return false;
     cell.state = "running";
     cell.output = undefined;
     cell.error = "Running…";
-    if (!codeKernel) {
-      codeKernel = new CodeKernel({
-        onStatus: (status, detail) => {
-          // While the runtime downloads on first use, surface progress in any running cell.
-          if (status !== "ready" && detail) {
-            for (const c of nb.cells) if (c.kind === "code" && c.state === "running") c.error = detail;
-            paintNotebook();
-          }
-        },
-      });
-    }
+    const kernel = ensureKernel(nb);
     paintNotebook();
     try {
-      const out = await codeKernel.run(code);
+      const out = await kernel.run(resolved);
       cell.output = out;
       cell.state = out.error ? "error" : "idle";
       cell.error = undefined;
+      cell.stale = false;
+      return !out.error;
     } catch (err) {
       cell.state = "error";
       cell.output = { stdout: "", stderr: "", error: (err as Error).message };
       cell.error = undefined;
+      return false;
     }
+  };
+
+  // After a cell's value changes, propagate to dependents (#200 slice 3): code dependents
+  // re-run automatically in topological order (free, local WASM); prompt (AI) dependents are
+  // only marked stale — an explicit, billed re-run — so reactivity never spends tokens silently.
+  const cascadeFrom = async (cellId: string, nb: { cells: NotebookCell[] }): Promise<void> => {
+    for (const dep of dependentsOf(nb.cells, cellId)) {
+      if (dep.kind === "code") {
+        await runCodeCore(dep, nb);
+      } else {
+        dep.stale = true;
+      }
+    }
+  };
+
+  const runNotebookCell = async (cellId: string, prompt: string): Promise<void> => {
+    const nb = chats.notebookFor(chats.current);
+    const cell = nb.cells.find((c: NotebookCell) => c.id === cellId);
+    if (!cell || cell.kind !== "prompt" || !prompt.trim()) return;
+    cell.prompt = prompt;
+    const ok = await runPromptCore(cell, nb);
+    if (ok) await cascadeFrom(cell.id, nb);
+    paintNotebook();
+  };
+
+  const runNotebookCode = async (cellId: string, code: string): Promise<void> => {
+    const nb = chats.notebookFor(chats.current);
+    const cell = nb.cells.find((c: NotebookCell) => c.id === cellId);
+    if (!cell || cell.kind !== "code" || !code.trim()) return;
+    cell.prompt = code;
+    const ok = await runCodeCore(cell, nb);
+    if (ok) await cascadeFrom(cell.id, nb);
     paintNotebook();
   };
   const setView = (view: "chat" | "notebook"): void => {

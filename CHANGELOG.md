@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Community health files for the public repo.** `CONTRIBUTING.md` (setup + the check commands
+  for all three toolchains, conventions, PR flow), `SECURITY.md` (private vulnerability reporting via
+  the GitHub Security tab, scope), and `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1).
 - **Apache-2.0 `LICENSE` + `NOTICE`.** The repo is now public and describes itself as open-source;
   added the canonical Apache-2.0 license text (matching `pyproject.toml`'s declared license) and a
   `NOTICE` file, and set `license` in `web/package.json`. Makes the "open-source" claim legally real.

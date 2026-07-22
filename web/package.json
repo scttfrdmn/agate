@@ -2,6 +2,7 @@
   "name": "agate-web",
   "private": true,
   "version": "0.1.0",
+  "license": "Apache-2.0",
   "type": "module",
   "description": "Static SPA for agate. No server, no secrets — creds come from the Cognito identity exchange at runtime.",
   "scripts": {

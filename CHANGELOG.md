@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Apache-2.0 `LICENSE` + `NOTICE`.** The repo is now public and describes itself as open-source;
+  added the canonical Apache-2.0 license text (matching `pyproject.toml`'s declared license) and a
+  `NOTICE` file, and set `license` in `web/package.json`. Makes the "open-source" claim legally real.
 - **Notebook code cells now execute — client-side Python (#200, phase 2 slice 2).** A code cell's
   **Run** now evaluates its Python in a lazily-spawned, sandboxed **pyodide** Web Worker and renders
   the captured stdout, the last expression's value (REPL-style), and any traceback below the cell.

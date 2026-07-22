@@ -20,6 +20,8 @@ describe("cellsFromHistory", () => {
     expect(cells.every((c) => c.state === "idle")).toBe(true);
     // Projected turns are always prompt (AI) cells.
     expect(cells.every((c) => c.kind === "prompt")).toBe(true);
+    // Each gets a stable {{cN}} reference name in transcript order (#200 slice 3).
+    expect(cells.map((c) => c.name)).toEqual(["c1", "c2"]);
   });
 
   it("skips leading system messages (grounding / memory seeds aren't turns)", () => {

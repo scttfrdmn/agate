@@ -1178,6 +1178,39 @@ button {
   line-height: 1.7;
 }
 /* Code cells: monospace source + a client-side-run output pane (#200). */
+.notebook-hint {
+  font-size: 0.72rem;
+  color: var(--muted);
+  padding: 0.25rem 0.25rem 0.5rem;
+  line-height: 1.5;
+}
+/* Cell header: {{cN}} reference name + stale badge (#200 slice 3). */
+.notebook-cell-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+.notebook-cell-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.7rem;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.05rem 0.35rem;
+}
+.notebook-cell-stale {
+  font-size: 0.7rem;
+  color: #d8a657;
+  background: rgba(216, 166, 87, 0.12);
+  border: 1px solid rgba(216, 166, 87, 0.4);
+  border-radius: 5px;
+  padding: 0.05rem 0.4rem;
+}
+.notebook-cell.stale {
+  border-color: rgba(216, 166, 87, 0.5);
+}
 .notebook-cell-code {
   border-left: 3px solid var(--accent);
 }

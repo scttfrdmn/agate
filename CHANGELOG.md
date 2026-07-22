@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Notebook cross-cell references — cost-aware reactivity (#200, phase 2 slice 3).** Cells now have
+  stable names (`c1`, `c2`, …) and can reference another cell's output with `{{cN}}`: in a prompt
+  cell the reference inlines the cited cell's text (e.g. "summarize {{c1}}"); in a code cell it
+  becomes a JSON-encoded Python string literal (`x = {{c1}}`). When a cell's value changes (run or
+  edit), dependents propagate **cost-awarely**: **code** dependents re-run automatically in
+  topological order (free, local WASM), while **prompt (AI)** dependents are only marked
+  **"stale — re-run"** for an explicit, billed re-run — reactivity never spends tokens silently.
+  New pure `web/src/chat/dag.ts` (`resolveSource` / `buildDeps` / `dependentsOf`, cycle-safe).
 - **Community health files for the public repo.** `CONTRIBUTING.md` (setup + the check commands
   for all three toolchains, conventions, PR flow), `SECURITY.md` (private vulnerability reporting via
   the GitHub Security tab, scope), and `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1).

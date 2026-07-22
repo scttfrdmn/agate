@@ -24,6 +24,7 @@ export interface CodeOutput {
 
 export interface NotebookCell {
   id: string; // stable client id (for DOM keys + per-cell citation namespacing)
+  name?: string; // stable short reference name (c1, c2, …) other cells cite via {{cN}} (#200 slice 3)
   kind: CellKind; // "prompt" (AI turn) or "code" (local computation)
   prompt: string; // the editable source: a question (prompt cell) or code (code cell)
   answer?: string; // the assistant answer, rendered as Markdown (prompt cells; undefined until run)
@@ -31,6 +32,9 @@ export interface NotebookCell {
   meta?: AnswerMeta; // model / usage / cost (populated on a run)
   output?: CodeOutput; // code cells: captured run output (undefined until run)
   state: "idle" | "running" | "error";
+  // A cell whose upstream reference changed since its last run. Code cells auto-re-run to clear
+  // it (free); prompt (AI) cells stay stale until an explicit, billed re-run (#200 slice 3).
+  stale?: boolean;
   error?: string;
 }
 
@@ -46,9 +50,11 @@ export function newCellId(): string {
   return `cell-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
 }
 
-/** A fresh, empty (idle, answerless) cell of the given kind — used by "+ Cell". Pure. */
-export function newCell(prompt = "", kind: CellKind = "prompt"): NotebookCell {
-  return { id: newCellId(), kind, prompt, state: "idle" };
+/** A fresh, empty (idle, answerless) cell of the given kind — used by "+ Cell". The optional
+ *  `name` is the {{cN}} reference handle (assigned by the caller, which knows the notebook).
+ *  Pure. */
+export function newCell(prompt = "", kind: CellKind = "prompt", name?: string): NotebookCell {
+  return { id: newCellId(), name, kind, prompt, state: "idle" };
 }
 
 /**
@@ -86,5 +92,7 @@ export function cellsFromHistory(history: ChatMessage[]): NotebookCell[] {
   if (pending !== null) {
     cells.push({ id: newCellId(), kind: "prompt", prompt: pending, state: "idle" });
   }
+  // Assign stable {{cN}} reference names (#200 slice 3), 1-based in transcript order.
+  cells.forEach((c, i) => (c.name = `c${i + 1}`));
   return cells;
 }

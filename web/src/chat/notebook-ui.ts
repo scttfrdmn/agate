@@ -12,12 +12,33 @@ export interface NotebookCallbacks {
   onRun?: (cellId: string, prompt: string) => void;
   onRunCode?: (cellId: string, code: string) => void;
   onAddCell?: (kind: CellKind) => void;
+  // The cell's source changed in the editor — used to stale-mark dependents (#200 slice 3).
+  onEdit?: (cellId: string, source: string) => void;
 }
 
 function el(tag: string, cls: string): HTMLElement {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
   return e;
+}
+
+// A cell header: its {{cN}} reference name + a "stale" badge when an upstream input changed
+// since this cell last ran (prompt cells only — code dependents auto-re-run, so they clear it).
+function renderCellHeader(cell: NotebookCell): HTMLElement {
+  const head = el("div", "notebook-cell-head");
+  if (cell.name) {
+    const name = el("span", "notebook-cell-name");
+    name.textContent = cell.name;
+    name.title = `Reference this cell's output as {{${cell.name}}} in another cell`;
+    head.appendChild(name);
+  }
+  if (cell.stale) {
+    const stale = el("span", "notebook-cell-stale");
+    stale.textContent = "stale — re-run";
+    stale.title = "An input changed since this cell last ran";
+    head.appendChild(stale);
+  }
+  return head;
 }
 
 /** Render the whole notebook into `target` (replacing its content). */
@@ -27,6 +48,11 @@ export function renderNotebook(
   cb: NotebookCallbacks = {},
 ): void {
   target.replaceChildren();
+  if (nb.cells.length > 1) {
+    const hint = el("div", "notebook-hint");
+    hint.textContent = "Tip: reference another cell's output with {{c1}}, {{c2}}, … Editing a cell marks dependents stale; code cells re-run automatically.";
+    target.appendChild(hint);
+  }
   const list = el("div", "notebook");
   for (const cell of nb.cells) list.appendChild(renderCell(cell, cb));
   target.appendChild(list);
@@ -49,9 +75,10 @@ function renderCell(cell: NotebookCell, cb: NotebookCallbacks): HTMLElement {
 }
 
 function renderPromptCell(cell: NotebookCell, cb: NotebookCallbacks): HTMLElement {
-  const wrap = el("div", "notebook-cell");
+  const wrap = el("div", "notebook-cell" + (cell.stale ? " stale" : ""));
   wrap.dataset.cellId = cell.id;
   wrap.dataset.kind = "prompt";
+  wrap.appendChild(renderCellHeader(cell));
 
   // Editable prompt — per-cell id (no collision across cells), labelled for a11y.
   const promptId = `nb-prompt-${cell.id}`;
@@ -62,6 +89,7 @@ function renderPromptCell(cell: NotebookCell, cb: NotebookCallbacks): HTMLElemen
   editor.id = promptId;
   editor.rows = Math.max(2, cell.prompt.split("\n").length);
   editor.value = cell.prompt;
+  editor.addEventListener("input", () => cb.onEdit?.(cell.id, editor.value));
   wrap.append(label, editor);
 
   // Run control.
@@ -112,9 +140,10 @@ function renderPromptCell(cell: NotebookCell, cb: NotebookCallbacks): HTMLElemen
 // expression's value / a traceback come back and render below. All output is set via
 // textContent (never innerHTML), so nothing here is an XSS sink.
 function renderCodeCell(cell: NotebookCell, cb: NotebookCallbacks): HTMLElement {
-  const wrap = el("div", "notebook-cell notebook-cell-code");
+  const wrap = el("div", "notebook-cell notebook-cell-code" + (cell.stale ? " stale" : ""));
   wrap.dataset.cellId = cell.id;
   wrap.dataset.kind = "code";
+  wrap.appendChild(renderCellHeader(cell));
 
   const sourceId = `nb-code-${cell.id}`;
   const label = el("label", "sr-only");
@@ -126,6 +155,7 @@ function renderCodeCell(cell: NotebookCell, cb: NotebookCallbacks): HTMLElement 
   editor.rows = Math.max(3, cell.prompt.split("\n").length);
   editor.value = cell.prompt;
   editor.placeholder = "# Python — runs in your browser";
+  editor.addEventListener("input", () => cb.onEdit?.(cell.id, editor.value));
   wrap.append(label, editor);
 
   const bar = el("div", "notebook-cell-bar");

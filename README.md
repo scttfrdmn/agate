@@ -18,6 +18,9 @@ the *same* ABAC boundary:
 network** (see NO CLOCKS below); usage-based storage, logs, retained artifacts, requests, and
 opt-in services (e.g. memory) still incur cost.
 
+- **Docs — start here (task-oriented index):** [`docs/index.md`](docs/index.md)
+- **What's real vs experimental vs vision:** [`docs/product/maturity-matrix.md`](docs/product/maturity-matrix.md)
+- **How requests actually flow:** [`docs/architecture/request-paths.md`](docs/architecture/request-paths.md)
 - **Architecture (source of truth):** [`docs/agate-design.md`](docs/agate-design.md)
 - **Agent platform vision (where it goes):** [`docs/agate-agents-vision.md`](docs/agate-agents-vision.md) — agate as the governance layer over the open agent stack; *agenkit builds the agent, agate governs it* ([agenkit.dev](https://agenkit.dev))
 - **Security rationale (CISO memo):** [`docs/agate-security-ciso.md`](docs/agate-security-ciso.md)

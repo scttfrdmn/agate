@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-24
+
+First tagged release. agate is an **identity-native, serverless GenAI access layer for higher
+education**: campus identity federates into short-lived, ABAC-scoped AWS credentials that fence
+both model access and data scope, with **no fixed cost floor** in the default path (NO CLOCKS).
+
+**What's supported (Available):** the core gateway — the claims→scoped-STS broker + one ABAC tag
+scheme (`agate-identity`), per-tenant docs + S3 Vectors with embed-on-upload (`agate-data`),
+server-side spend/audit (`agate-audit`); the browser demo — Tier-0 **Ask** (grounded chat with
+citations + cost receipt via the metered `agate-chokepoint`), the broker-proxied scoped retriever,
+**Notebooks** (prompt + client-side Python code cells with inline plots, cross-cell reactivity,
+save/open), and a corpus screen (`agate-corpus`); plus a one-command demo deploy
+(`scripts/deploy-demo.sh`) and CI.
+
+**Experimental / opt-in (deploy the stack + set its `VITE_*` to enable):** Panel/Analyze and the
+agent path (`agate-agent`), memory (`agate-memory`), rooms, drafting/authoring/deploy, admin
+console, LTI, Guardrails. See the [maturity matrix](docs/product/maturity-matrix.md).
+
+**Vision (designed, not built):** standing agents, delegated authority, agent interop
+(MCP/A2A/AG-UI), payments — see the [agents vision](docs/agate-agents-vision.md).
+
+Compatibility: reference region **us-east-1**; requires Bedrock (with your model set) + S3 Vectors
+in-region — see [regions & service support](docs/reference/regions-and-service-support.md).
+
 ### Added
 - **Threat model + credential-flow diagram (review #223).** New `docs/security/threat-model.md`:
   assets, trust boundaries (browser / broker / mediator Lambdas / AWS services / other tenants),
@@ -1811,4 +1835,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     ARN **and** the underlying foundation-model ARN; `model_resource_arns()` now
     emits both, region-wildcarded for the underlying FM.
 
-[Unreleased]: https://github.com/scttfrdmn/agate/commits/main
+[Unreleased]: https://github.com/scttfrdmn/agate/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/scttfrdmn/agate/releases/tag/v0.1.0

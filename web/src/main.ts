@@ -17,18 +17,10 @@ import "@fontsource/atkinson-hyperlegible/700.css";
 import "katex/dist/katex.min.css";
 import "./styles/agate.css";
 
-import { fetchAdmin, renderAdmin } from "./admin/view";
 import { CredentialManager } from "./auth/credentials";
 import { currentToken, isLoggedIn, login, logout, type LoginConfig } from "./auth/login";
 import { mountChrome } from "./chrome/nav";
 import { config } from "./config";
-import { type AuthoringOptions, AuthoringClient, type TemplateRow } from "./drafting/builder";
-import { buildSpecFromForm } from "./drafting/builder";
-import { DeployClient, DraftClient, renderDraft } from "./drafting/draft";
-import { RoomClient } from "./rooms/client";
-import { renderMembers, renderMessages } from "./rooms/view";
-import { CorpusClient } from "./corpus/client";
-import { renderCorpus } from "./corpus/view";
 import { MemoryClient } from "./memory/client";
 import { reduce, type RunState, emptyRunState } from "./events/collector";
 import type { RunEvent } from "./events/protocol";
@@ -44,6 +36,7 @@ import { deserializeNotebook, serializeNotebook } from "./chat/notebook-store";
 import { CodeKernel } from "./notebook/kernel";
 import { renderError, renderMemorySeed, renderScopeChips } from "./app/dom";
 import { renderShell } from "./app/shell";
+import { createScreens } from "./features/screens";
 import { type RetrievedChunk, withContext } from "./rag/context";
 import { Retriever } from "./rag/retriever";
 import { AgentCoreTransport } from "./transport/agentcore";
@@ -80,8 +73,6 @@ const loginConfig: LoginConfig | null = config.cognitoDomain
     }
   : null;
 
-
-
 function main(): void {
   const app = document.getElementById("app");
   if (!app) return;
@@ -92,6 +83,13 @@ function main(): void {
   authBtn.type = "button";
   authBtn.className = "btn ghost";
 
+  // Shared credential manager (constructor is side-effect-free — no fetch until first use) and
+  // the pop-out feature screens controller (#221). Created early so the nav can reference its
+  // handlers; its feature clients stay null until `screens.initClients()` runs after login, so a
+  // logged-out click still shows the screen's "log in first" message.
+  const creds = new CredentialManager(config.brokerUrl, () => Promise.resolve(idpToken()));
+  const screens = createScreens({ idpToken, creds });
+
   // Top bar + pop-out navigation. The Admin item is offered whenever the console
   // API is configured; the API itself is the gate (a non-admin session gets a 403,
   // surfaced as "not authorized"). So we never need to trust a client-side role.
@@ -101,27 +99,27 @@ function main(): void {
     { label: "Analyze", icon: "📊", href: "#", onSelect: () => selectMode("analyze") },
   ];
   if (config.adminUrl) {
-    navItems.push({ label: "Admin · Usage", icon: "🛠", href: "#", onSelect: () => showAdmin() });
+    navItems.push({ label: "Admin · Usage", icon: "🛠", href: "#", onSelect: () => void screens.showAdmin() });
   }
   // Natural-language drafting (#118c). The endpoint clamps any draft to the author's
   // verified authority server-side; this screen just describes → renders the bounded plan.
   if (config.draftingUrl) {
-    navItems.push({ label: "Draft an agent", icon: "✎", href: "#", onSelect: () => showDraft() });
+    navItems.push({ label: "Draft an agent", icon: "✎", href: "#", onSelect: () => screens.showDraft() });
   }
   // Graphical authoring (#117). The bounded menu is pre-clamped to the author's reach
   // server-side; the assembled spec funnels through the same compiler clamp as a draft.
   if (config.authoringUrl) {
-    navItems.push({ label: "Build an agent", icon: "🧩", href: "#", onSelect: () => showBuild() });
+    navItems.push({ label: "Build an agent", icon: "🧩", href: "#", onSelect: () => void screens.showBuild() });
   }
   // Collaborative rooms (#116). The room's reach is the server-enforced intersection of its
   // members; every message is attributed + budget-gated. Polling transport ($0-idle).
   if (config.roomsUrl) {
-    navItems.push({ label: "Rooms", icon: "👥", href: "#", onSelect: () => showRoom() });
+    navItems.push({ label: "Rooms", icon: "👥", href: "#", onSelect: () => void screens.showRoom() });
   }
   // Corpus (#191). Upload + browse the user's own in-scope documents; the endpoint
   // fences every read/write to the verified tenant/scope. Gated on VITE_CORPUS_URL.
   if (config.corpusUrl) {
-    navItems.push({ label: "Documents", icon: "📄", href: "#", onSelect: () => showCorpus() });
+    navItems.push({ label: "Documents", icon: "📄", href: "#", onSelect: () => screens.showCorpus() });
   }
   const { topbar } = mountChrome({
     brand: "agate",
@@ -132,365 +130,10 @@ function main(): void {
   app.insertBefore(topbar, app.firstChild);
 
   function selectMode(value: string): void {
-    roomPollToken += 1; // leaving the room view stops its poll loop
+    screens.cancelPolling(); // leaving the room view stops its poll loop
     const sel = document.getElementById("mode") as HTMLSelectElement | null;
     if (sel) sel.value = value;
     (document.getElementById("q") as HTMLInputElement | null)?.focus();
-  }
-
-  // Render the governed-access console into the main region. Admin-gated server-side.
-  async function showAdmin(): Promise<void> {
-    const out = document.getElementById("out");
-    if (!out) return;
-    roomPollToken += 1; // leaving the room view stops its poll loop
-    out.replaceChildren();
-    out.setAttribute("aria-busy", "true");
-    try {
-      const payload = await fetchAdmin(config.adminUrl, idpToken());
-      renderAdmin(payload, out);
-    } catch (err) {
-      renderError(out, (err as Error).message);
-    } finally {
-      out.setAttribute("aria-busy", "false");
-    }
-  }
-
-  // The drafting client is created after login (it needs scoped creds for SigV4). The
-  // Draft screen is offered in the nav whenever the endpoint is configured; if a visitor
-  // reaches it before logging in, it explains that rather than failing.
-  let draftClient: DraftClient | null = null;
-  let deployClient: DeployClient | null = null;
-
-  // Render the natural-language drafting surface (#118c): a textarea to describe an agent,
-  // Corpus screen (#191): upload + browse the user's own in-scope documents. The endpoint
-  // fences every read/write to the verified tenant/scope; this view just drives it.
-  function showCorpus(): void {
-    const outEl = document.getElementById("out");
-    if (!outEl) return;
-    roomPollToken += 1; // leaving any polling view stops its loop
-    outEl.replaceChildren();
-    if (!corpusClient) {
-      renderError(outEl, "Log in to manage documents — the corpus is scoped to your access.");
-      return;
-    }
-    renderCorpus(corpusClient, outEl);
-  }
-
-  // then the server-clamped bounded plan + a confirm step. The boundary is enforced
-  // server-side — the model's draft has zero authority.
-  function showDraft(): void {
-    const outEl = document.getElementById("out");
-    if (!outEl) return;
-    roomPollToken += 1; // leaving the room view stops its poll loop
-    outEl.replaceChildren();
-    if (!draftClient) {
-      renderError(outEl, "Log in to draft an agent — drafting runs under your own entitlements.");
-      return;
-    }
-    const panel = document.createElement("section");
-    panel.className = "panel";
-    panel.setAttribute("aria-label", "Describe an agent");
-    const title = document.createElement("div");
-    title.className = "panel-title";
-    title.textContent = "Describe an agent in plain language";
-    const ta = document.createElement("textarea");
-    ta.className = "field";
-    ta.rows = 3;
-    ta.style.cssText = "width:100%;resize:vertical";
-    ta.placeholder = "e.g. an agent that summarizes new papers in my lab every Monday";
-    ta.setAttribute("aria-label", "Describe the agent you want");
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn";
-    btn.textContent = "Draft it";
-    const result = document.createElement("div");
-    btn.onclick = async () => {
-      const request = ta.value.trim();
-      if (!request) return;
-      btn.disabled = true;
-      result.replaceChildren();
-      result.setAttribute("aria-busy", "true");
-      try {
-        const plan = await draftClient!.draft(request);
-        // Wire confirm to the deploy endpoint when configured; the server re-clamps the spec.
-        const onConfirm = deployClient
-          ? (spec: Record<string, unknown>) => deployClient!.deploy(spec)
-          : undefined;
-        renderDraft(plan, result, { onConfirm });
-      } catch (err) {
-        renderError(result, (err as Error).message);
-      } finally {
-        result.setAttribute("aria-busy", "false");
-        btn.disabled = false;
-      }
-    };
-    panel.append(title, ta, btn);
-    outEl.append(panel, result);
-  }
-
-  // The visual builder (#117): fetch the bounded menu, render a form whose scope/tier choices
-  // are ALREADY clamped to the author (unsafe is unrepresentable), then dispose the assembled
-  // spec through the same compiler clamp + the #118 confirm/deploy flow.
-  let authoringClient: AuthoringClient | null = null;
-
-  async function showBuild(): Promise<void> {
-    const outEl = document.getElementById("out");
-    if (!outEl) return;
-    roomPollToken += 1; // leaving the room view stops its poll loop
-    outEl.replaceChildren();
-    if (!authoringClient) {
-      renderError(outEl, "Log in to build an agent — the builder is scoped to your entitlements.");
-      return;
-    }
-    outEl.setAttribute("aria-busy", "true");
-    try {
-      const resp = await authoringClient.options();
-      if (!resp.ok || !resp.options) {
-        renderError(outEl, "Could not load the authoring options.");
-        return;
-      }
-      renderBuilderForm(outEl, resp.options, resp.templates ?? []);
-    } catch (err) {
-      renderError(outEl, (err as Error).message);
-    } finally {
-      outEl.setAttribute("aria-busy", "false");
-    }
-  }
-
-  // Build the bounded form: a scope <select> (only nodes the author holds), a capability
-  // checklist, a reasoning-pattern <select>, name/description/budget fields, and an optional
-  // template prefill. On "Review", dispose → renderDraft (with the deploy confirm wired).
-  function renderBuilderForm(
-    outEl: HTMLElement,
-    options: AuthoringOptions,
-    templates: TemplateRow[],
-  ): void {
-    const mk = (tag: string, cls = "", text?: string): HTMLElement => {
-      const n = document.createElement(tag);
-      if (cls) n.className = cls;
-      if (text !== undefined) n.textContent = text;
-      return n;
-    };
-    const panel = mk("section", "panel");
-    panel.setAttribute("aria-label", "Build an agent");
-    panel.appendChild(mk("div", "panel-title", "Build an agent — bounded to what you hold"));
-
-    const nameIn = mk("input", "field") as HTMLInputElement;
-    nameIn.placeholder = "agent name (e.g. paper-sweep)";
-    nameIn.setAttribute("aria-label", "Agent name");
-    const descIn = mk("input", "field") as HTMLInputElement;
-    descIn.placeholder = "what it does";
-    descIn.setAttribute("aria-label", "Description");
-
-    const scopeSel = mk("select", "field") as HTMLSelectElement;
-    scopeSel.setAttribute("aria-label", "Scope (only nodes you hold)");
-    for (const s of options.offerable_scopes) {
-      const o = document.createElement("option");
-      o.value = s;
-      o.textContent = s || "(tenant-wide)";
-      scopeSel.appendChild(o);
-    }
-
-    const patternSel = mk("select", "field") as HTMLSelectElement;
-    patternSel.setAttribute("aria-label", "Reasoning pattern");
-    const none = document.createElement("option");
-    none.value = "";
-    none.textContent = "(default reasoning)";
-    patternSel.appendChild(none);
-    for (const p of options.patterns) {
-      const o = document.createElement("option");
-      o.value = p.key;
-      o.textContent = p.key;
-      patternSel.appendChild(o);
-    }
-
-    const budgetIn = mk("input", "field") as HTMLInputElement;
-    budgetIn.placeholder = "budget (e.g. $20 / user / month)";
-    budgetIn.setAttribute("aria-label", "Budget");
-
-    // Capability checklist — only the catalogued tools (the menu is the allowed set).
-    const toolsBox = mk("fieldset");
-    toolsBox.style.cssText = "border:1px solid var(--border);border-radius:6px;padding:.5rem";
-    const legend = mk("legend", "", "Capabilities");
-    toolsBox.appendChild(legend);
-    const toolInputs: HTMLInputElement[] = [];
-    for (const c of options.capabilities) {
-      const lbl = mk("label");
-      lbl.style.cssText = "display:flex;gap:.4rem;align-items:center;padding:.15rem 0";
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.value = c.name;
-      toolInputs.push(cb);
-      lbl.append(cb, mk("span", "", c.name + (c.description ? ` — ${c.description}` : "")));
-      toolsBox.appendChild(lbl);
-    }
-
-    // Optional template prefill.
-    const tmplSel = mk("select", "field") as HTMLSelectElement;
-    tmplSel.setAttribute("aria-label", "Start from a template");
-    const blank = document.createElement("option");
-    blank.value = "";
-    blank.textContent = "(start blank)";
-    tmplSel.appendChild(blank);
-    for (const t of templates) {
-      const o = document.createElement("option");
-      o.value = t.id;
-      o.textContent = `${t.name} — ${t.description}`;
-      tmplSel.appendChild(o);
-    }
-
-    const reviewBtn = mk("button", "btn", "Review") as HTMLButtonElement;
-    reviewBtn.type = "button";
-    const result = mk("div");
-
-    reviewBtn.onclick = async () => {
-      reviewBtn.disabled = true;
-      result.replaceChildren();
-      result.setAttribute("aria-busy", "true");
-      try {
-        const spec = buildSpecFromForm({
-          agent: nameIn.value,
-          description: descIn.value,
-          scope: scopeSel.value,
-          reasoning: patternSel.value || undefined,
-          tools: toolInputs.filter((c) => c.checked).map((c) => c.value),
-          budget: budgetIn.value || undefined,
-        });
-        const template = tmplSel.value || undefined;
-        const plan = await authoringClient!.dispose(spec, template);
-        const onConfirm = deployClient
-          ? (s: Record<string, unknown>) => deployClient!.deploy(s)
-          : undefined;
-        renderDraft(plan, result, { onConfirm });
-      } catch (err) {
-        renderError(result, (err as Error).message);
-      } finally {
-        result.setAttribute("aria-busy", "false");
-        reviewBtn.disabled = false;
-      }
-    };
-
-    panel.append(
-      mk("label", "sr-only", "Start from a template"),
-      tmplSel,
-      nameIn,
-      descIn,
-      scopeSel,
-      patternSel,
-      budgetIn,
-      toolsBox,
-      reviewBtn,
-    );
-    outEl.append(panel, result);
-  }
-
-  // --- Collaborative rooms (#116) -------------------------------------------
-  let roomClient: RoomClient | null = null;
-  let corpusClient: CorpusClient | null = null;
-  // A monotonically-bumped token: each screen entry/nav bump cancels any prior poll loop, so
-  // navigating away stops polling (no standing connection — NO CLOCKS on the client too).
-  let roomPollToken = 0;
-
-  async function showRoom(): Promise<void> {
-    const outEl = document.getElementById("out");
-    if (!outEl) return;
-    roomPollToken += 1; // cancel any prior poll loop
-    outEl.replaceChildren();
-    if (!roomClient) {
-      renderError(outEl, "Log in to use rooms — a room runs under your own entitlements.");
-      return;
-    }
-    // A minimal room launcher: open a new room or join one by id, then enter the live view.
-    const panel = document.createElement("section");
-    panel.className = "panel";
-    panel.setAttribute("aria-label", "Rooms");
-    panel.appendChild(Object.assign(document.createElement("div"), {
-      className: "panel-title",
-      textContent: "Collaborative rooms",
-    }));
-    const idIn = document.createElement("input");
-    idIn.className = "field";
-    idIn.placeholder = "room id (to open or join)";
-    idIn.setAttribute("aria-label", "Room id");
-    const openBtn = document.createElement("button");
-    openBtn.type = "button";
-    openBtn.className = "btn";
-    openBtn.textContent = "Open";
-    const joinBtn = document.createElement("button");
-    joinBtn.type = "button";
-    joinBtn.className = "btn ghost";
-    joinBtn.textContent = "Join";
-    const live = document.createElement("div");
-
-    openBtn.onclick = async () => {
-      const v = await roomClient!.open(idIn.value.trim() || "room");
-      if (!v.ok) return renderError(live, v.reason || "could not open room");
-      enterRoom(v.room, live);
-    };
-    joinBtn.onclick = async () => {
-      const id = idIn.value.trim();
-      if (!id) return;
-      const v = await roomClient!.join(id);
-      if (!v.ok) return renderError(live, v.reason || "could not join room");
-      enterRoom(v.room, live);
-    };
-    panel.append(idIn, openBtn, joinBtn);
-    outEl.append(panel, live);
-  }
-
-  // Enter the live room view: a members panel, the message stream, a composer, and a poll loop
-  // folding new messages. The loop self-cancels when `roomPollToken` is bumped (nav away).
-  function enterRoom(roomId: string, target: HTMLElement): void {
-    const myToken = (roomPollToken += 1);
-    target.replaceChildren();
-    const membersEl = document.createElement("div");
-    const streamEl = document.createElement("div");
-    const composer = document.createElement("div");
-    composer.className = "input-bar";
-    const text = document.createElement("input");
-    text.className = "field";
-    text.placeholder = "message the room…";
-    text.setAttribute("aria-label", "Message");
-    const send = document.createElement("button");
-    send.type = "button";
-    send.className = "btn";
-    send.textContent = "Send";
-    const note = document.createElement("p");
-    note.className = "cost-line";
-    composer.append(text, send);
-    target.append(membersEl, streamEl, composer, note);
-
-    send.onclick = async () => {
-      const t = text.value.trim();
-      if (!t) return;
-      send.disabled = true;
-      const r = await roomClient!.postMessage(roomId, t);
-      if (r.ok) {
-        text.value = "";
-        note.textContent = "";
-      } else {
-        // a budget/membership rejection is surfaced plainly (the gate working, not an error).
-        note.textContent = r.reason || "message rejected";
-      }
-      send.disabled = false;
-    };
-
-    // Poll loop: fetch the full view (members + messages) every ~2s; stop if the token moved.
-    const tick = async () => {
-      if (myToken !== roomPollToken) return; // cancelled (navigated away / re-entered)
-      try {
-        const v = await roomClient!.events(roomId, 0);
-        if (myToken !== roomPollToken) return;
-        if (v.ok) {
-          renderMembers(v, membersEl);
-          renderMessages(v.messages, streamEl);
-        }
-      } catch {
-        /* transient; the next tick retries */
-      }
-      if (myToken === roomPollToken) setTimeout(tick, 2000);
-    };
-    void tick();
   }
 
   const scopeEl = document.getElementById("scope")!;
@@ -520,7 +163,9 @@ function main(): void {
     return;
   }
 
-  const creds = new CredentialManager(config.brokerUrl, () => Promise.resolve(idpToken()));
+  // `creds` + `screens` were created early (before the nav). Now that the user is logged in,
+  // create the pop-out feature clients (drafting/deploy/corpus/authoring/rooms).
+  screens.initClients();
   // Tier-0 "Ask" transport. DEFAULT (no chokepoint configured) = browser-direct Bedrock
   // (works from a CLI/native caller; from a web origin it's blocked by Bedrock's lack of CORS).
   // When `chokepointUrl` is set, Ask routes through the OPTIONAL Tier-1 choke point instead: a
@@ -554,51 +199,6 @@ function main(): void {
   const agent = config.agentRuntimeArn
     ? new AgentCoreTransport({ region: config.region, runtimeArn: config.agentRuntimeArn }, () => creds.get())
     : null;
-  // The drafting client (#118c) — SigV4-signs the drafting Function URL with the scoped
-  // creds; the endpoint clamps the model's draft to the verified author authority.
-  if (config.draftingUrl) {
-    draftClient = new DraftClient(
-      { region: config.region, endpoint: config.draftingUrl },
-      () => creds.get(),
-      () => idpToken(),
-    );
-  }
-  // The deploy-on-confirm client (#118) — POSTs the confirmed spec; the endpoint re-clamps it
-  // server-side and persists the governed record.
-  if (config.deployUrl) {
-    deployClient = new DeployClient(
-      { region: config.region, endpoint: config.deployUrl },
-      () => creds.get(),
-      () => idpToken(),
-    );
-  }
-  // The corpus client (#191) — upload + list the user's in-scope documents; the endpoint
-  // fences every read/write to the verified tenant/scope.
-  if (config.corpusUrl) {
-    corpusClient = new CorpusClient(
-      { region: config.region, endpoint: config.corpusUrl },
-      () => creds.get(),
-      () => idpToken(),
-    );
-  }
-  // The graphical-authoring client (#117) — fetches the bounded menu + disposes the assembled
-  // spec; the menu is pre-clamped server-side and the dispose re-clamps.
-  if (config.authoringUrl) {
-    authoringClient = new AuthoringClient(
-      { region: config.region, endpoint: config.authoringUrl },
-      () => creds.get(),
-      () => idpToken(),
-    );
-  }
-  // The collaborative-rooms client (#116) — open/join/leave/post/poll; the room's reach is the
-  // server-enforced intersection of members, every message attributed + budget-gated.
-  if (config.roomsUrl) {
-    roomClient = new RoomClient(
-      { region: config.region, endpoint: config.roomsUrl },
-      () => creds.get(),
-      () => idpToken(),
-    );
-  }
 
   const out = document.getElementById("out")!;
   const mainCol = document.getElementById("main")!;
@@ -937,8 +537,8 @@ function main(): void {
         last?.focus();
       },
       // Save/Open only when the corpus endpoint is configured (persistence available).
-      onSave: corpusClient ? () => void saveNotebook() : undefined,
-      onOpen: corpusClient ? () => void openNotebook() : undefined,
+      onSave: screens.corpusClient() ? () => void saveNotebook() : undefined,
+      onOpen: screens.corpusClient() ? () => void openNotebook() : undefined,
     });
     if (focusId) {
       const again = document.getElementById(focusId) as HTMLTextAreaElement | null;
@@ -969,7 +569,8 @@ function main(): void {
     status.textContent = msg;
   };
   const saveNotebook = async (): Promise<void> => {
-    if (!corpusClient) return;
+    const corpus = screens.corpusClient();
+    if (!corpus) return;
     const chat = chats.current;
     const nb = chats.notebookFor(chat);
     const defaultName = notebookName.get(chat.id) ?? chat.title ?? "Untitled notebook";
@@ -983,12 +584,13 @@ function main(): void {
     notebookName.set(chat.id, name);
     // savedAt is stamped here (main loop), not in the pure serializer.
     const stored = serializeNotebook(nb, name, new Date().toISOString());
-    const res = await corpusClient.saveNotebook(id, stored);
+    const res = await corpus.saveNotebook(id, stored);
     setNotebookStatus(res.ok ? `Saved “${name}”.` : `Save failed: ${res.reason}`);
   };
   const openNotebook = async (): Promise<void> => {
-    if (!corpusClient) return;
-    const listed = await corpusClient.listNotebooks();
+    const corpus = screens.corpusClient();
+    if (!corpus) return;
+    const listed = await corpus.listNotebooks();
     if (!listed.ok) {
       setNotebookStatus(`Couldn't list notebooks: ${listed.reason}`);
       return;
@@ -1007,7 +609,7 @@ function main(): void {
       setNotebookStatus("No notebook at that number.");
       return;
     }
-    const loaded = await corpusClient.loadNotebook(chosen.id);
+    const loaded = await corpus.loadNotebook(chosen.id);
     if (!loaded.ok) {
       setNotebookStatus(`Open failed: ${loaded.reason}`);
       return;

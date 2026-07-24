@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Save / open notebooks (#200, phase 2 slice 4).** A notebook now persists as JSON in the corpus
+  under a reserved `_notebooks/` prefix, fenced by the same verified tenant/scope boundary as
+  documents — **Save** writes it, **Open** lists and reloads it (into a fresh chat, so it never
+  clobbers the current conversation). Saved notebooks survive reload and move across devices/sessions.
+  They are excluded from the corpus **document list** and — defensively, in the ingest handler — from
+  the **RAG embed trigger**, so a saved notebook is never surfaced as a document or indexed as
+  searchable text. New corpus actions `save_notebook`/`list_notebooks`/`load_notebook` (identity
+  from the verified token, never the body), pure `agate.corpus.notebook_object_key`/
+  `notebooks_list_prefix`, and web `notebook-store.ts` ((de)serialise, dropping transient run state).
+  Only shown when `VITE_CORPUS_URL` is configured.
 - **Notebook cross-cell references — cost-aware reactivity (#200, phase 2 slice 3).** Cells now have
   stable names (`c1`, `c2`, …) and can reference another cell's output with `{{cN}}`: in a prompt
   cell the reference inlines the cited cell's text (e.g. "summarize {{c1}}"); in a code cell it

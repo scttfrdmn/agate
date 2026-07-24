@@ -14,6 +14,10 @@ export interface NotebookCallbacks {
   onAddCell?: (kind: CellKind) => void;
   // The cell's source changed in the editor — used to stale-mark dependents (#200 slice 3).
   onEdit?: (cellId: string, source: string) => void;
+  // Save / open the whole notebook to the corpus store (#200 slice 4). Omitted when the corpus
+  // endpoint isn't configured, so the toolbar only appears when persistence is available.
+  onSave?: () => void;
+  onOpen?: () => void;
 }
 
 function el(tag: string, cls: string): HTMLElement {
@@ -48,6 +52,25 @@ export function renderNotebook(
   cb: NotebookCallbacks = {},
 ): void {
   target.replaceChildren();
+  // Save / Open toolbar (only when persistence is wired).
+  if (cb.onSave || cb.onOpen) {
+    const bar = el("div", "notebook-toolbar");
+    if (cb.onSave) {
+      const save = el("button", "btn ghost btn-sm notebook-save") as HTMLButtonElement;
+      save.type = "button";
+      save.textContent = "Save";
+      save.addEventListener("click", () => cb.onSave?.());
+      bar.appendChild(save);
+    }
+    if (cb.onOpen) {
+      const open = el("button", "btn ghost btn-sm notebook-open") as HTMLButtonElement;
+      open.type = "button";
+      open.textContent = "Open";
+      open.addEventListener("click", () => cb.onOpen?.());
+      bar.appendChild(open);
+    }
+    target.appendChild(bar);
+  }
   if (nb.cells.length > 1) {
     const hint = el("div", "notebook-hint");
     hint.textContent = "Tip: reference another cell's output with {{c1}}, {{c2}}, … Editing a cell marks dependents stale; code cells re-run automatically.";

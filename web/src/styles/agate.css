@@ -1178,6 +1178,16 @@ button {
   line-height: 1.7;
 }
 /* Code cells: monospace source + a client-side-run output pane (#200). */
+.notebook-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.25rem 0.4rem;
+}
+.notebook-status {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
 .notebook-hint {
   font-size: 0.72rem;
   color: var(--muted);

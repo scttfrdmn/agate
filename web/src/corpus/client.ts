@@ -38,6 +38,33 @@ export interface CorpusConfig {
   endpoint: string; // VITE_CORPUS_URL; empty disables the Corpus screen
 }
 
+// Saved-notebook metadata (list) and load result (#200 slice 4). Notebooks live under a
+// reserved `_notebooks/` prefix in the same corpus fence — never surfaced as documents.
+export interface SavedNotebookMeta {
+  id: string;
+  key: string;
+  size: number;
+  modified: string | null;
+}
+
+export interface NotebookListResult {
+  ok: boolean;
+  reason: string;
+  notebooks: SavedNotebookMeta[];
+}
+
+export interface NotebookSaveResult {
+  ok: boolean;
+  reason: string;
+  key: string;
+}
+
+export interface NotebookLoadResult {
+  ok: boolean;
+  reason: string;
+  notebook: unknown; // the caller validates/deserialises the shape
+}
+
 // Pure: map the list endpoint's status + body to a CorpusListResult. A non-200 becomes a
 // rejected result with a readable reason (rendered inline), never a thrown error.
 export function responseToList(status: number, payload: Record<string, unknown>): CorpusListResult {
@@ -79,6 +106,39 @@ export function responseToUpload(
   };
 }
 
+// Pure: map the list_notebooks endpoint's status + body to a NotebookListResult.
+export function responseToNotebookList(
+  status: number,
+  payload: Record<string, unknown>,
+): NotebookListResult {
+  if (status !== 200) {
+    return { ok: false, reason: errorReason(status, payload), notebooks: [] };
+  }
+  const notebooks = Array.isArray(payload.notebooks)
+    ? payload.notebooks.map((n) => {
+        const o = (n ?? {}) as Record<string, unknown>;
+        return {
+          id: typeof o.id === "string" ? o.id : "",
+          key: typeof o.key === "string" ? o.key : "",
+          size: typeof o.size === "number" ? o.size : 0,
+          modified: typeof o.modified === "string" ? o.modified : null,
+        };
+      })
+    : [];
+  return { ok: payload.ok === true, reason: "", notebooks };
+}
+
+// Pure: map the load_notebook endpoint's status + body to a NotebookLoadResult.
+export function responseToNotebookLoad(
+  status: number,
+  payload: Record<string, unknown>,
+): NotebookLoadResult {
+  if (status !== 200) {
+    return { ok: false, reason: errorReason(status, payload), notebook: null };
+  }
+  return { ok: payload.ok === true, reason: "", notebook: payload.notebook ?? null };
+}
+
 function errorReason(status: number, payload: Record<string, unknown>): string {
   if (typeof payload.detail === "string") return payload.detail;
   if (typeof payload.error === "string") return payload.error;
@@ -106,6 +166,27 @@ export class CorpusClient {
       content: bytesToBase64(new Uint8Array(content)),
     });
     return responseToUpload(payload.status, payload.body);
+  }
+
+  /** Save a notebook (JSON) under the session's fenced `_notebooks/` prefix (#200 slice 4). */
+  async saveNotebook(notebookId: string, notebook: unknown): Promise<NotebookSaveResult> {
+    const p = await this.post({ action: "save_notebook", notebook_id: notebookId, notebook });
+    if (p.status !== 200) {
+      return { ok: false, reason: errorReason(p.status, p.body), key: "" };
+    }
+    return { ok: p.body.ok === true, reason: "", key: typeof p.body.key === "string" ? p.body.key : "" };
+  }
+
+  /** List the session's saved notebooks. */
+  async listNotebooks(): Promise<NotebookListResult> {
+    const p = await this.post({ action: "list_notebooks" });
+    return responseToNotebookList(p.status, p.body);
+  }
+
+  /** Load one saved notebook by id. */
+  async loadNotebook(notebookId: string): Promise<NotebookLoadResult> {
+    const p = await this.post({ action: "load_notebook", notebook_id: notebookId });
+    return responseToNotebookLoad(p.status, p.body);
   }
 
   private async post(

@@ -17,9 +17,14 @@ from __future__ import annotations
 from agate.budget import _clean_id, normalise_scope
 
 # Reserved first-segment-after-scope names the corpus must never write into, so an
-# uploaded file can't impersonate an agent/room/session record or the multimodal
+# uploaded file can't impersonate an agent/room/session/notebook record or the multimodal
 # artifact store. A filename normalising to one of these is rejected.
-_RESERVED_SEGMENTS = frozenset({"_agents", "_rooms", "_sessions", "_mm-artifacts"})
+_RESERVED_SEGMENTS = frozenset({"_agents", "_rooms", "_sessions", "_mm-artifacts", "_notebooks"})
+
+# The reserved namespace saved notebooks (#200 slice 4) live under, within the session's
+# tenant/scope fence. Excluded from the corpus doc list and from the RAG embed trigger, so a
+# saved notebook is never surfaced as a document or indexed as searchable text.
+_NOTEBOOKS_NS = "_notebooks"
 
 
 class CorpusKeyError(ValueError):
@@ -62,6 +67,33 @@ def docs_object_key(tenant: str, scope: str, filename: str) -> str:
     norm_scope = normalise_scope(scope) if scope else ""
     prefix = f"{t}/{norm_scope}" if norm_scope else t
     return f"{prefix}/{name}"
+
+
+def notebook_object_key(tenant: str, scope: str, notebook_id: str) -> str:
+    """The S3 key for a saved notebook: `{tenant}/{scope}/_notebooks/{id}.json` (or
+    `{tenant}/_notebooks/{id}.json` unscoped). The id is sanitised to the id grammar; a
+    reserved-namespace or empty id is rejected. Notebooks live under `_notebooks/` so they're
+    excluded from the corpus doc list AND the RAG embed trigger (they aren't documents)."""
+    t = _clean_id(tenant)
+    if not t:
+        raise CorpusKeyError("tenant is required for a notebook key")
+    nid = _clean_id(notebook_id).strip("._")
+    if not nid:
+        raise CorpusKeyError("notebook id did not normalise to a valid name")
+    norm_scope = normalise_scope(scope) if scope else ""
+    prefix = f"{t}/{norm_scope}" if norm_scope else t
+    return f"{prefix}/{_NOTEBOOKS_NS}/{nid}.json"
+
+
+def notebooks_list_prefix(tenant: str, scope: str) -> str:
+    """The S3 list prefix for a session's saved notebooks: `{tenant}/{scope}/_notebooks/`
+    (or `{tenant}/_notebooks/` unscoped). Always ends in `/`. Raises if tenant is empty."""
+    t = _clean_id(tenant)
+    if not t:
+        raise CorpusKeyError("tenant is required for a notebooks list prefix")
+    norm_scope = normalise_scope(scope) if scope else ""
+    base = f"{t}/{norm_scope}" if norm_scope else t
+    return f"{base}/{_NOTEBOOKS_NS}/"
 
 
 def docs_list_prefix(tenant: str, scope: str) -> str:

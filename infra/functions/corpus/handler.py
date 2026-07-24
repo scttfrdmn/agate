@@ -23,7 +23,13 @@ import json
 import os
 
 import boto3
-from agate.corpus import CorpusKeyError, docs_list_prefix, docs_object_key
+from agate.corpus import (
+    CorpusKeyError,
+    docs_list_prefix,
+    docs_object_key,
+    notebook_object_key,
+    notebooks_list_prefix,
+)
 from agate.jwt_verify import TokenError, config_from_env, verify_token
 from agate.tags import ClaimsError, SessionTags, claims_to_tags, role_session_name
 
@@ -160,12 +166,109 @@ def list_docs(req: dict) -> dict:
     }
 
 
+# A saved notebook is small JSON; cap it well under the upload limit.
+MAX_NOTEBOOK_BYTES = int(os.environ.get("AGATE_MAX_NOTEBOOK_BYTES", str(2 * 1024 * 1024)))
+
+
+def save_notebook(req: dict) -> dict:
+    """Save a notebook as JSON under the session's `{tenant}/{scope}/_notebooks/{id}.json`.
+    Body carries `notebook_id` and `notebook` (a JSON-serialisable object). The key is built
+    from the VERIFIED tags + sanitised id — a body tenant/scope/key is ignored."""
+    if not DOCS_BUCKET:
+        raise CorpusError("AGATE_DOCS_BUCKET not configured")
+    tags, subject = _tags_for(req)
+
+    notebook_id = req.get("notebook_id")
+    if not isinstance(notebook_id, str) or not notebook_id.strip():
+        raise CorpusError("missing notebook_id")
+    notebook = req.get("notebook")
+    if not isinstance(notebook, (dict, list)):
+        raise CorpusError("missing notebook body")
+    data = json.dumps(notebook).encode("utf-8")
+    if len(data) > MAX_NOTEBOOK_BYTES:
+        raise CorpusError(f"notebook exceeds the {MAX_NOTEBOOK_BYTES // (1024 * 1024)} MB limit")
+
+    try:
+        key = notebook_object_key(tags.tenant, tags.scope, notebook_id)
+    except CorpusKeyError as exc:
+        raise CorpusError(str(exc)) from exc
+
+    s3 = _assume_corpus_role(tags, subject)
+    s3.put_object(Bucket=DOCS_BUCKET, Key=key, Body=data, ContentType="application/json")
+    return {"ok": True, "key": key, "bytes": len(data)}
+
+
+def list_notebooks(req: dict) -> dict:
+    """List saved notebooks under the session's `{tenant}/{scope}/_notebooks/` prefix."""
+    if not DOCS_BUCKET:
+        raise CorpusError("AGATE_DOCS_BUCKET not configured")
+    tags, subject = _tags_for(req)
+    try:
+        prefix = notebooks_list_prefix(tags.tenant, tags.scope)
+    except CorpusKeyError as exc:
+        raise CorpusError(str(exc)) from exc
+
+    s3 = _assume_corpus_role(tags, subject)
+    resp = s3.list_objects_v2(Bucket=DOCS_BUCKET, Prefix=prefix, MaxKeys=MAX_LIST_KEYS)
+    notebooks = []
+    for obj in resp.get("Contents", []):
+        key = obj["Key"]
+        rel = key[len(prefix) :]
+        if not rel.endswith(".json"):
+            continue
+        last = obj.get("LastModified")
+        notebooks.append(
+            {
+                "id": rel[: -len(".json")],
+                "key": key,
+                "size": int(obj.get("Size", 0)),
+                "modified": last.isoformat() if last is not None else None,
+            }
+        )
+    return {"ok": True, "prefix": prefix, "notebooks": notebooks}
+
+
+def load_notebook(req: dict) -> dict:
+    """Load one saved notebook by id from the session's `_notebooks/` prefix. The key is built
+    from the VERIFIED tags, so a caller can only read a notebook within their own fence."""
+    if not DOCS_BUCKET:
+        raise CorpusError("AGATE_DOCS_BUCKET not configured")
+    tags, subject = _tags_for(req)
+    notebook_id = req.get("notebook_id")
+    if not isinstance(notebook_id, str) or not notebook_id.strip():
+        raise CorpusError("missing notebook_id")
+    try:
+        key = notebook_object_key(tags.tenant, tags.scope, notebook_id)
+    except CorpusKeyError as exc:
+        raise CorpusError(str(exc)) from exc
+
+    s3 = _assume_corpus_role(tags, subject)
+    try:
+        obj = s3.get_object(Bucket=DOCS_BUCKET, Key=key)
+    except s3.exceptions.NoSuchKey as exc:
+        raise CorpusError("notebook not found") from exc
+    raw = obj["Body"].read()
+    if len(raw) > MAX_NOTEBOOK_BYTES:
+        raise CorpusError("notebook exceeds the size limit")
+    try:
+        notebook = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise CorpusError("notebook is not valid JSON") from exc
+    return {"ok": True, "notebook": notebook, "key": key}
+
+
 def process(req: dict) -> dict:
     action = req.get("action", "list")
     if action == "upload":
         return upload(req)
     if action == "list":
         return list_docs(req)
+    if action == "save_notebook":
+        return save_notebook(req)
+    if action == "list_notebooks":
+        return list_notebooks(req)
+    if action == "load_notebook":
+        return load_notebook(req)
     raise CorpusError(f"unknown action: {action}")
 
 

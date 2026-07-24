@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import pytest
-from agate.corpus import CorpusKeyError, docs_list_prefix, docs_object_key
+from agate.corpus import (
+    CorpusKeyError,
+    docs_list_prefix,
+    docs_object_key,
+    notebook_object_key,
+    notebooks_list_prefix,
+)
 
 
 def test_object_key_scoped():
@@ -59,3 +65,36 @@ def test_list_prefix_always_ends_in_slash():
 def test_list_prefix_requires_tenant():
     with pytest.raises(CorpusKeyError):
         docs_list_prefix("", "wk3")
+
+
+# --- saved notebooks (#200 slice 4) -----------------------------------------
+
+
+def test_notebook_key_scoped_and_unscoped():
+    assert notebook_object_key("chem", "chem-101", "abc") == "chem/chem-101/_notebooks/abc.json"
+    assert notebook_object_key("chem", "", "abc") == "chem/_notebooks/abc.json"
+
+
+def test_notebook_key_sanitises_id_and_rejects_empty():
+    # A traversal-ish / dotted id is stripped to the id grammar; a single .json suffix is added.
+    assert notebook_object_key("chem", "", "../../etc/passwd").endswith(
+        "/_notebooks/etcpasswd.json"
+    )
+    with pytest.raises(CorpusKeyError):
+        notebook_object_key("chem", "", "...")
+    with pytest.raises(CorpusKeyError):
+        notebook_object_key("", "", "abc")
+
+
+def test_notebooks_prefix_is_fenced_and_slash_terminated():
+    assert notebooks_list_prefix("chem", "chem-101") == "chem/chem-101/_notebooks/"
+    assert notebooks_list_prefix("chem", "") == "chem/_notebooks/"
+    assert notebooks_list_prefix("chem", "wk3").endswith("/_notebooks/")
+
+
+def test_notebook_namespace_never_collides_with_a_document():
+    # An uploaded filename can't land in the _notebooks namespace: the sanitiser strips the
+    # leading underscore, so "_notebooks" becomes the ordinary file "notebooks" at the tenant
+    # root — never the reserved `_notebooks/` prefix a saved notebook uses.
+    assert docs_object_key("chem", "", "_notebooks") == "chem/notebooks"
+    assert "_notebooks/" not in docs_object_key("chem", "", "_notebooks.txt")

@@ -28,9 +28,17 @@ async function getPyodide(): Promise<any> {
       // exists at runtime in the published bundle, so tsc can't resolve it — that's expected.
       // @ts-expect-error runtime-only self-hosted module path
       const mod = await import(/* @vite-ignore */ "/pyodide/pyodide.mjs");
-      // packageBaseUrl pins package wheels to OUR origin (self-hosted, #200) — loadPackage
-      // never reaches a third-party CDN.
-      const py = await mod.loadPyodide({ indexURL: "/pyodide/", packageBaseUrl: "/pyodide/" });
+      // Pin everything to our self-hosted origin. These MUST be ABSOLUTE URLs: pyodide resolves a
+      // wheel's relative `file_name` via `new URL(file_name, packageBaseUrl)`, and inside a Web
+      // Worker a root-relative "/pyodide/" is not a valid base ("Failed to construct 'URL':
+      // Invalid base URL") — so build absolute URLs from the worker's own origin. This also keeps
+      // loadPackage on our origin (no jsdelivr CDN fallback).
+      const base = new URL("/pyodide/", self.location.href).href;
+      const py = await mod.loadPyodide({
+        indexURL: base,
+        lockFileURL: base + "pyodide-lock.json",
+        packageBaseUrl: base,
+      });
       pyodide = py;
       post({ type: "ready" });
       return py;
@@ -52,14 +60,21 @@ async function run(id: string, code: string): Promise<void> {
   }
 
   // Load any importable self-hosted packages the source needs BEFORE running (numpy, pandas,
-  // matplotlib + deps). Fetches wheels from our origin; a package we don't ship just yields a
-  // normal ModuleNotFoundError at import time. Best-effort — a load failure shouldn't abort
-  // the run (the import error will surface in the traceback).
+  // matplotlib + deps). Fetches wheels from our origin. If the LOAD itself fails (a wheel 404s,
+  // a base-URL/lock mismatch), surface that as the cell error — otherwise the user only sees a
+  // downstream "ModuleNotFoundError" that hides the real cause.
   try {
     post({ type: "loading", detail: "Loading packages…" });
     await py.loadPackagesFromImports(code);
-  } catch {
-    /* fall through — import will raise in the harness if truly missing */
+  } catch (e) {
+    post({
+      type: "result",
+      id,
+      stdout: "",
+      stderr: "",
+      error: `Package load failed: ${String(e)}`,
+    });
+    return;
   }
 
   // Set the source, then execute a fixed harness that captures streams + last-expr repr, and

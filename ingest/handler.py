@@ -35,6 +35,13 @@ _bedrock = boto3.client("bedrock-runtime")
 _vectors = boto3.client("s3vectors")
 
 
+def is_reserved_key(key: str) -> bool:
+    """True if any path segment starts with `_` — a reserved namespace (`_notebooks/`,
+    `_agents/`, `_rooms/`, `_sessions/`, `_mm-artifacts/`). These are structured records,
+    not documents, and must NEVER be embedded as RAG text. Pure."""
+    return any(seg.startswith("_") for seg in key.split("/") if seg)
+
+
 def embed(text: str) -> list[float]:
     """Embed one chunk with Titan; returns a 1024-dim normalized vector."""
     body = json.dumps({"inputText": text, "dimensions": EMBED_DIMENSION, "normalize": True})
@@ -56,6 +63,10 @@ def _read_text(bucket: str, key: str) -> str:
 
 def ingest_object(bucket: str, key: str) -> int:
     """Ingest one S3 object into its tenant's vector index. Returns chunk count."""
+    # Reserved namespaces (saved notebooks, agent/room/session records, mm-artifacts) are not
+    # documents — never embed them, even though they share the docs bucket + ObjectCreated trigger.
+    if is_reserved_key(key):
+        raise ValueError(f"reserved-namespace key, not a document: {key}")
     tenant = tenant_from_s3_key(key)  # raises TenantKeyError -> caller skips
     index_name = index_name_for_tenant(tenant)
 

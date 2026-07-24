@@ -40,6 +40,7 @@ import { type NotebookCell, newCell } from "./chat/notebook";
 import { renderNotebook } from "./chat/notebook-ui";
 import { runCell } from "./chat/notebook-run";
 import { dependentsOf, nextCellName, resolveSource } from "./chat/dag";
+import { deserializeNotebook, serializeNotebook } from "./chat/notebook-store";
 import { CodeKernel } from "./notebook/kernel";
 import { type RetrievedChunk, withContext } from "./rag/context";
 import { Retriever } from "./rag/retriever";
@@ -1102,6 +1103,9 @@ function main(): void {
         );
         last?.focus();
       },
+      // Save/Open only when the corpus endpoint is configured (persistence available).
+      onSave: corpusClient ? () => void saveNotebook() : undefined,
+      onOpen: corpusClient ? () => void openNotebook() : undefined,
     });
     if (focusId) {
       const again = document.getElementById(focusId) as HTMLTextAreaElement | null;
@@ -1111,6 +1115,85 @@ function main(): void {
       }
     }
   };
+
+  // Notebook save/open (#200 slice 4). A notebook persists as JSON under the corpus
+  // `_notebooks/` fence, keyed by a stable id per chat (so re-saving overwrites in place).
+  const notebookSaveId = new Map<number, string>();
+  const notebookName = new Map<number, string>();
+  const newSessionLikeId = (): string => {
+    const c = globalThis.crypto;
+    return c && "randomUUID" in c ? c.randomUUID() : `nb-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+  };
+  const setNotebookStatus = (msg: string): void => {
+    const bar = chats.current.notebookEl.querySelector(".notebook-toolbar");
+    if (!bar) return;
+    let status = bar.querySelector<HTMLElement>(".notebook-status");
+    if (!status) {
+      status = document.createElement("span");
+      status.className = "notebook-status";
+      bar.appendChild(status);
+    }
+    status.textContent = msg;
+  };
+  const saveNotebook = async (): Promise<void> => {
+    if (!corpusClient) return;
+    const chat = chats.current;
+    const nb = chats.notebookFor(chat);
+    const defaultName = notebookName.get(chat.id) ?? chat.title ?? "Untitled notebook";
+    const name = window.prompt("Save notebook as:", defaultName);
+    if (name === null) return; // cancelled
+    let id = notebookSaveId.get(chat.id);
+    if (!id) {
+      id = newSessionLikeId();
+      notebookSaveId.set(chat.id, id);
+    }
+    notebookName.set(chat.id, name);
+    // savedAt is stamped here (main loop), not in the pure serializer.
+    const stored = serializeNotebook(nb, name, new Date().toISOString());
+    const res = await corpusClient.saveNotebook(id, stored);
+    setNotebookStatus(res.ok ? `Saved “${name}”.` : `Save failed: ${res.reason}`);
+  };
+  const openNotebook = async (): Promise<void> => {
+    if (!corpusClient) return;
+    const listed = await corpusClient.listNotebooks();
+    if (!listed.ok) {
+      setNotebookStatus(`Couldn't list notebooks: ${listed.reason}`);
+      return;
+    }
+    if (!listed.notebooks.length) {
+      setNotebookStatus("No saved notebooks yet.");
+      return;
+    }
+    // Minimal picker: a numbered prompt (kept dependency-free; a richer modal can come later).
+    const lines = listed.notebooks.map((n, i) => `${i + 1}. ${n.id}${n.modified ? `  (${n.modified.slice(0, 10)})` : ""}`);
+    const pick = window.prompt(`Open which notebook?\n${lines.join("\n")}\n\nEnter a number:`);
+    if (pick === null) return;
+    const idx = Number(pick) - 1;
+    const chosen = listed.notebooks[idx];
+    if (!chosen) {
+      setNotebookStatus("No notebook at that number.");
+      return;
+    }
+    const loaded = await corpusClient.loadNotebook(chosen.id);
+    if (!loaded.ok) {
+      setNotebookStatus(`Open failed: ${loaded.reason}`);
+      return;
+    }
+    const parsed = deserializeNotebook(loaded.notebook);
+    if (!parsed) {
+      setNotebookStatus("That file isn't a readable notebook.");
+      return;
+    }
+    // Load into a fresh chat so it doesn't clobber the current conversation.
+    const target = chats.newChat();
+    target.notebook = parsed.notebook;
+    notebookSaveId.set(target.id, chosen.id);
+    notebookName.set(target.id, parsed.name);
+    chats.setView(target.id, "notebook");
+    setView("notebook");
+    setNotebookStatus(`Opened “${parsed.name}”.`);
+  };
+
   let codeKernel: CodeKernel | null = null;
   const ensureKernel = (nb: { cells: NotebookCell[] }): CodeKernel => {
     // Lazily spawn the pyodide worker on the FIRST code run (its ~10 MB runtime stays out of

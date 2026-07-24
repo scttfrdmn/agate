@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { bytesToBase64, responseToList, responseToUpload } from "./client";
+import {
+  bytesToBase64,
+  responseToList,
+  responseToNotebookList,
+  responseToNotebookLoad,
+  responseToUpload,
+} from "./client";
 
 describe("responseToList", () => {
   it("maps a 200 listing to documents", () => {
@@ -55,5 +61,37 @@ describe("bytesToBase64", () => {
     const out = bytesToBase64(big);
     // decodes back to the same length
     expect(atob(out).length).toBe(big.length);
+  });
+});
+
+describe("responseToNotebookList", () => {
+  it("maps a 200 list of notebooks", () => {
+    const r = responseToNotebookList(200, {
+      ok: true,
+      notebooks: [{ id: "a", key: "chem/_notebooks/a.json", size: 10, modified: "2026-01-01T00:00:00Z" }],
+    });
+    expect(r.ok).toBe(true);
+    expect(r.notebooks).toHaveLength(1);
+    expect(r.notebooks[0].id).toBe("a");
+  });
+  it("maps an error to a rejected result", () => {
+    const r = responseToNotebookList(403, { error: "not_entitled", detail: "nope" });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("nope");
+    expect(r.notebooks).toEqual([]);
+  });
+});
+
+describe("responseToNotebookLoad", () => {
+  it("returns the notebook body on 200", () => {
+    const r = responseToNotebookLoad(200, { ok: true, notebook: { cells: [] } });
+    expect(r.ok).toBe(true);
+    expect(r.notebook).toEqual({ cells: [] });
+  });
+  it("fails closed on non-200", () => {
+    const r = responseToNotebookLoad(403, { detail: "notebook not found" });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("notebook not found");
+    expect(r.notebook).toBeNull();
   });
 });

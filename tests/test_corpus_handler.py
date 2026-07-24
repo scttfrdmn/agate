@@ -19,19 +19,45 @@ def _claims(tenant="chem", scope="chemistry/chem-101"):
     return {"sub": "stu", "affiliation": "student", "tenant": tenant, "data_scope": scope}
 
 
+class _NoSuchKey(Exception):
+    pass
+
+
 class _FakeS3:
-    def __init__(self, contents=None):
+    def __init__(self, contents=None, objects=None):
         self.puts = []
         self.lists = []
         self._contents = contents or []
+        self._objects = objects or {}  # key -> bytes, for get_object
+
+        class _Exc:
+            NoSuchKey = _NoSuchKey
+
+        self.exceptions = _Exc()
 
     def put_object(self, **kw):
         self.puts.append(kw)
+        # Make a written notebook loadable in the same test.
+        self._objects[kw["Key"]] = kw["Body"]
         return {}
 
     def list_objects_v2(self, **kw):
         self.lists.append(kw)
         return {"Contents": self._contents, "IsTruncated": False}
+
+    def get_object(self, **kw):
+        key = kw["Key"]
+        if key not in self._objects:
+            raise _NoSuchKey(key)
+
+        class _Body:
+            def __init__(self, data):
+                self._data = data
+
+            def read(self):
+                return self._data
+
+        return {"Body": _Body(self._objects[key])}
 
 
 @pytest.fixture
@@ -154,3 +180,65 @@ def test_no_bucket_configured_fails_closed(stub, monkeypatch):
     monkeypatch.setattr(h, "DOCS_BUCKET", "")
     out = _invoke({"idp_token": "t", "action": "list"})
     assert out["status"] == 403
+
+
+# --- saved notebooks (#200 slice 4) -----------------------------------------
+
+
+def test_save_notebook_puts_under_notebooks_namespace(stub):
+    out = _invoke(
+        {
+            "idp_token": "t",
+            "action": "save_notebook",
+            "notebook_id": "nb1",
+            "notebook": {"cells": [{"kind": "code", "prompt": "1+1"}]},
+        }
+    )
+    assert out["status"] == 200
+    # Fenced under the VERIFIED tenant/scope, in the _notebooks namespace, as JSON.
+    assert stub.puts[0]["Key"] == "chem/chemistry/chem-101/_notebooks/nb1.json"
+    assert stub.puts[0]["ContentType"] == "application/json"
+
+
+def test_save_notebook_ignores_body_tenant(stub):
+    _invoke(
+        {
+            "idp_token": "t",
+            "action": "save_notebook",
+            "tenant": "victim",
+            "notebook_id": "nb1",
+            "notebook": {"cells": []},
+        }
+    )
+    assert stub.puts[0]["Key"].startswith("chem/")  # not "victim/"
+
+
+def test_save_then_load_round_trips(stub):
+    nb = {"cells": [{"kind": "prompt", "prompt": "q"}], "name": "My NB"}
+    _invoke({"idp_token": "t", "action": "save_notebook", "notebook_id": "nb1", "notebook": nb})
+    out = _invoke({"idp_token": "t", "action": "load_notebook", "notebook_id": "nb1"})
+    assert out["status"] == 200
+    assert out["body"]["notebook"] == nb
+
+
+def test_load_missing_notebook_is_403(stub):
+    out = _invoke({"idp_token": "t", "action": "load_notebook", "notebook_id": "nope"})
+    assert out["status"] == 403
+
+
+def test_list_notebooks_enumerates_prefix(monkeypatch):
+    when = dt.datetime(2026, 1, 2, 3, 4, 5, tzinfo=dt.UTC)
+    contents = [
+        {"Key": "chem/chemistry/chem-101/_notebooks/a.json", "Size": 10, "LastModified": when},
+        {"Key": "chem/chemistry/chem-101/_notebooks/b.json", "Size": 20, "LastModified": when},
+    ]
+    s3 = _FakeS3(contents)
+    monkeypatch.setattr(h, "DOCS_BUCKET", "agate-docs")
+    monkeypatch.setattr(h, "CORPUS_ROLE_ARN", "arn:aws:iam::111122223333:role/agate-corpus")
+    monkeypatch.setattr(h, "validate_idp_token", lambda tok: _claims())
+    monkeypatch.setattr(h, "_assume_corpus_role", lambda tags, subject: s3)
+    out = _invoke({"idp_token": "t", "action": "list_notebooks"})
+    assert out["status"] == 200
+    ids = [n["id"] for n in out["body"]["notebooks"]]
+    assert ids == ["a", "b"]
+    assert s3.lists[0]["Prefix"] == "chem/chemistry/chem-101/_notebooks/"

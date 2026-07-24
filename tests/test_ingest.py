@@ -117,3 +117,28 @@ def test_handler_isolates_per_object_failures(stubs):
     out = ingest.handler(event, None)
     statuses = [r["status"] for r in out["processed"]]
     assert statuses == ["skipped", "ok"]
+
+
+def test_is_reserved_key_flags_underscore_namespaces():
+    assert ingest.is_reserved_key("chem/chem-101/_notebooks/abc.json") is True
+    assert ingest.is_reserved_key("chem/_agents/x.json") is True
+    assert ingest.is_reserved_key("chem/_mm-artifacts/y") is True
+    assert ingest.is_reserved_key("chem/chem-101/notes.pdf") is False
+
+
+def test_ingest_skips_reserved_notebook_key(stubs):
+    _, _, vectors = stubs
+    # A saved notebook shares the docs bucket + trigger but must never be embedded.
+    event = {
+        "Records": [
+            {
+                "s3": {
+                    "bucket": {"name": "agate-docs-test"},
+                    "object": {"key": "chem/chem-101/_notebooks/nb1.json"},
+                }
+            }
+        ]
+    }
+    out = ingest.handler(event, None)
+    assert out["processed"][0]["status"] == "skipped"
+    assert vectors.put_calls == []  # notebook JSON never indexed

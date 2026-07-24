@@ -64,6 +64,15 @@ Compatibility: reference region **us-east-1**; requires Bedrock (with your model
 in-region — see [regions & service support](docs/reference/regions-and-service-support.md).
 
 ### Added
+- **Design doc: agate Canvas — the integrated reasoning surface (`docs/agate-canvas.md`).** A
+  forward-looking design that unifies Chat and Notebook into one surface (everything is a cell;
+  the toggle is removed), and lays out the arc toward a **two-layer programming language wearing a
+  chat**: a deterministic control/data-flow layer (references, branches, conditionals, merges,
+  loops) over mixed-determinism cell bodies (prompt / code / budget-capped agent), with the cost
+  model as its resource type system. Covers Run-this (AI code → live cell), result→prompt loops,
+  per-cell receipts, cost-aware reactivity, budget/time-capped background agent cells, branch/merge
+  (Panel as a composable case), loops, and git-serializability with frozen non-deterministic
+  outputs. Supersedes the Chat/Notebook toggle framing of #185/#200; folds in #236/#237/#238.
 - **Threat model + credential-flow diagram (review #223).** New `docs/security/threat-model.md`:
   assets, trust boundaries (browser / broker / mediator Lambdas / AWS services / other tenants),
   adversaries and what stops each, and the claims→verify→derive-tags→AssumeRole→scoped-creds

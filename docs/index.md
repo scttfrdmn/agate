@@ -19,6 +19,7 @@ reference. If you only read one thing to calibrate what's real today, read the
 | Understand **identity → scoped credentials → ABAC** | [Architecture](agate-design.md) §3, §5 |
 | Understand the **cost model / NO CLOCKS** | [README → NO CLOCKS](../README.md#the-governing-principle-no-clocks), [Architecture](agate-design.md) §9 |
 | See the **academic interaction model** (Ask/Panel/Analyze) | [Academic interaction model](academic-interaction-model.md) |
+| Understand **where the reasoning surface is going** | [agate Canvas](agate-canvas.md) — integrated prompt+code cells |
 | Understand **where agents are going** | [Agent platform vision](agate-agents-vision.md) |
 | **Contribute** | [CONTRIBUTING](../CONTRIBUTING.md), [SECURITY](../SECURITY.md) |
 

@@ -23,13 +23,16 @@ export function renderShell(app: HTMLElement): void {
         <!-- Composer + chips flow right after the transcript: empty, they sit near
              the top; as answers stream in the transcript grows and pushes them down
              (the whole column scrolls). -->
-        <form id="f" class="composer composer-bar" aria-label="Ask agate">
-          <div class="composer-controls">
-            <!-- Chat | Notebook view toggle (#185): a view of the current chat. -->
-            <div id="view-toggle" class="view-toggle" role="group" aria-label="View">
-              <button type="button" class="view-btn active" data-view="chat" aria-pressed="true">Chat</button>
-              <button type="button" class="view-btn" data-view="notebook" aria-pressed="false">Notebook</button>
-            </div>
+        <!-- Controls (view toggle + mode + model) live OUTSIDE the form so they stay visible
+             in the Notebook view, where the chat composer below is hidden (cells are the input). -->
+        <div class="composer-controls">
+          <!-- Chat | Notebook view toggle (#185): a view of the current chat. -->
+          <div id="view-toggle" class="view-toggle" role="group" aria-label="View">
+            <button type="button" class="view-btn active" data-view="chat" aria-pressed="true">Chat</button>
+            <button type="button" class="view-btn" data-view="notebook" aria-pressed="false">Notebook</button>
+          </div>
+          <label class="control-field">
+            <span class="control-label">Mode</span>
             <select id="mode" aria-label="Mode">
               ${UI_MODES.map((m) => `<option value="${m.value}">${m.label}</option>`).join("")}
               <optgroup label="Reasoning patterns">
@@ -37,11 +40,16 @@ export function renderShell(app: HTMLElement): void {
                 <option value="pattern:red-team">Pattern · Steel-man / red-team</option>
               </optgroup>
             </select>
+          </label>
+          <label class="control-field">
+            <span class="control-label">Model</span>
             <select id="model" aria-label="Model"
                     title="Auto routes within your entitlement + budget; or pin a model">
               <option value="auto">Auto (entitlement-aware)</option>
             </select>
-          </div>
+          </label>
+        </div>
+        <form id="f" class="composer composer-bar" aria-label="Ask agate">
           <div class="input-bar">
             <textarea id="q" rows="1" placeholder="Ask a question…"
                       autocomplete="off" aria-label="Your question"

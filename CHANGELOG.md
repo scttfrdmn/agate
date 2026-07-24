@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Frontend decomposition — step 2 (review #221).** Extracted the SPA shell template (`render` →
+  `renderShell`) into `web/src/app/shell.ts`, alongside the earlier `app/dom.ts`. `main.ts` is now
+  1,323 lines (from ~1,490); behavior unchanged (231 web tests pass, build clean). The `app/`
+  composition layer is taking shape; the feature-controller extraction continues under #221.
+
 ## [0.1.0] - 2026-07-24
 
 First tagged release. agate is an **identity-native, serverless GenAI access layer for higher

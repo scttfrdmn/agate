@@ -108,6 +108,21 @@ Pin the region to where Bedrock + S3 Vectors are available for your institution.
 
 ## Deploying a demo
 
+**Evaluators: one command.** With AWS credentials set (`AWS_PROFILE=… ` or env creds) and `uv`,
+`node`, `aws`, `jq` installed:
+
+```bash
+git clone https://github.com/scttfrdmn/agate && cd agate
+./scripts/deploy-demo.sh          # validates prereqs, shows a plan, asks before deploying
+```
+
+It deploys only the smallest coherent path (`agate-identity`, `agate-data`, `agate-audit`,
+`agate-chokepoint`, `agate-web`, `agate-demo-idp`), derives the web config from stack outputs,
+runs a smoke test, and prints the URL, how to create a demo user, cost notes, and the exact
+teardown command. The manual sequence below remains the reference for a real/campus deploy.
+
+---
+
 The stacks are independent; deploy only what a given demo needs. The Tier 0 path
 (`agate-identity`) is $0-idle and the safest first deploy; the data/agent/web stacks add
 storage + a container. The CDK app currently defines 16 stacks — the load-bearing core
@@ -115,7 +130,8 @@ storage + a container. The CDK app currently defines 16 stacks — the load-bear
 `agate-chokepoint`, `agate-demo-idp`), and optional product/experimental stacks
 (`agate-agent`, `agate-governance`, `agate-corpus`, `agate-memory`, `agate-rooms`,
 `agate-drafting`, `agate-authoring`, `agate-deploy`, `agate-admin`, `agate-lti`). See the
-maturity matrix (docs) for what each is and how settled it is.
+[maturity matrix](docs/product/maturity-matrix.md) for what each is and how settled it is
+(Available / Experimental / Seam / Vision).
 
 **0. Refresh per-model pricing (optional, recommended).** Bake authoritative Bedrock
 list rates into the cost engine before deploying the metering stacks. Read-only against

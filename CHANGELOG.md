@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **One-command demo deploy: `scripts/deploy-demo.sh` (review #217).** An evaluator path that
+  validates prereqs, shows a plan and asks before deploying, brings up only the smallest coherent
+  set (identity/data/audit/chokepoint/web + demo-idp), **derives every `VITE_*` from stack outputs
+  and rebuilds the bundle before publishing** (kills the config-less-bundle footgun), uses the
+  repo-pinned CDK CLI (kills the schema-mismatch footgun), two-passes the demo IdP so the Hosted-UI
+  callback matches the deployed URL, runs a smoke test, and prints the URL, demo-user creation, cost
+  notes, and the exact teardown command. README now leads the demo section with it.
+- **Maturity matrix: `docs/product/maturity-matrix.md` (review #218).** States, per stack and
+  feature, whether it's **Available / Experimental / Seam / Vision**, grouped by the product
+  boundary the review recommended — **Agate Core** (the gateway that defines what agate is) vs
+  **Experiences** vs **Agent Research**. Linked from the README.
 - **Issue templates + intake routing (review #216).** `.github/ISSUE_TEMPLATE/` adds structured
   bug-report and feature-request forms (the feature form asks which layer — Core / Experiences /
   Agent Research), and a `config.yml` that disables blank issues and routes **security reports to

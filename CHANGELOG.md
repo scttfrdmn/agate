@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Frontend decomposition — step 3 (review #221).** Extracted the five pop-out feature screens
+  (Admin, Documents/corpus, Draft, Build, Rooms) + their post-login clients and the room
+  poll-cancellation token out of `main.ts` into a `createScreens(ctx)` controller in
+  `web/src/features/screens.ts`. `main.ts` is now **927 lines** (from ~1,490 at the start of #221);
+  behaviour unchanged (231 web tests pass, build clean). The controller takes a small context
+  (`idpToken`, `creds`) and owns its own clients, so an experimental screen can no longer tangle
+  with the core chat/notebook path.
+
+### Changed
 - **Frontend decomposition — step 2 (review #221).** Extracted the SPA shell template (`render` →
   `renderShell`) into `web/src/app/shell.ts`, alongside the earlier `app/dom.ts`. `main.ts` is now
   1,323 lines (from ~1,490); behavior unchanged (231 web tests pass, build clean). The `app/`

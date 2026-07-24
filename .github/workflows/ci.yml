@@ -16,6 +16,11 @@ concurrency:
 permissions:
   contents: read
 
+# boto3 clients constructed at import/collection time need a region even though no AWS call
+# is made (unit tests mock the calls). A dummy region satisfies botocore offline.
+env:
+  AWS_DEFAULT_REGION: us-east-1
+
 jobs:
   python:
     name: Python (ruff + pytest + coverage)
@@ -79,12 +84,17 @@ jobs:
   go:
     name: Go CLI (gofmt + vet + test)
     runs-on: ubuntu-latest
+    # cli/ is its own Go module, so run the tools from inside it (not `./cli/...` from root,
+    # which errors: "directory prefix cli does not contain main module").
+    defaults:
+      run:
+        working-directory: cli
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
       - name: gofmt (must be clean)
-        run: test -z "$(gofmt -l ./cli)"
-      - run: go vet ./cli/...
-      - run: go test ./cli/...
+        run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test ./...

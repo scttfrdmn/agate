@@ -1,0 +1,59 @@
+name: Bug report
+description: Something doesn't work as documented or expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Do not report security vulnerabilities here** — use private
+        reporting (see SECURITY.md). For coding conventions, see CONTRIBUTING.md.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you observe, and what did you expect instead?
+      placeholder: "Ask returned a 403 after ~1h; expected it to keep working."
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps. Include the command or UI path.
+      placeholder: |
+        1. Deploy agate-identity + agate-chokepoint + agate-web
+        2. Log in as a demo user
+        3. Ask a question after the id_token expires
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of agate?
+      options:
+        - identity / broker / ABAC
+        - web SPA (Ask / notebook / corpus / …)
+        - a Lambda handler (chokepoint / retrieval / corpus / memory / …)
+        - IaC / deploy (CDK)
+        - CLI (Go)
+        - docs
+        - not sure
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Relevant versions / region / which stacks are deployed.
+      placeholder: "us-east-1; agate-identity+data+chokepoint+web; aws-cdk-lib 2.258; node 20"
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / output
+      description: Relevant errors (redact anything sensitive — never paste credentials or tokens).
+      render: shell
+    validations:
+      required: false

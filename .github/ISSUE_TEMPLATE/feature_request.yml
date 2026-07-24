@@ -1,0 +1,44 @@
+name: Feature request
+description: Propose a change or new capability.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Agate has a deliberately sharp core (identity → scoped credentials → ABAC) and a broad
+        set of experiences on top. Proposals that respect **NO CLOCKS** (no bill-by-the-hour idle
+        resources) and the scoped-STS/ABAC model land fastest — see `docs/agate-design.md`.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What can't you do today, and why does it matter (ideally for a campus/research use case)?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What should agate do? Sketch the shape if you can.
+    validations:
+      required: true
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Which layer
+      description: Where does this belong?
+      options:
+        - Agate Core (identity / broker / ABAC / model-auth / budget / audit / retrieval)
+        - Agate Experiences (Ask / Panel / Analyze / corpus / drafting / notebooks / rooms / LTI)
+        - Agate Agent Research (standing authority / agent specs / interop / payments)
+        - tooling / docs / CI
+        - not sure
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing features or workarounds you've weighed.
+    validations:
+      required: false

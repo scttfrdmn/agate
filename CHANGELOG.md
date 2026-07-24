@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Issue templates + intake routing (review #216).** `.github/ISSUE_TEMPLATE/` adds structured
+  bug-report and feature-request forms (the feature form asks which layer — Core / Experiences /
+  Agent Research), and a `config.yml` that disables blank issues and routes **security reports to
+  private vulnerability reporting** (never a public issue) and questions to Discussions. Makes
+  CONTRIBUTING's "open or reference an issue" real.
 - **CI (GitHub Actions) matching the CONTRIBUTING checks (review #215).** A `ci.yml` runs on every
   PR: Python (`ruff check`, `ruff format --check`, `pytest` with the >=60% coverage gate), web
   (`npm ci`, typecheck, vitest, build), IaC (`cdk synth` via the repo-pinned CLI, offline), and Go

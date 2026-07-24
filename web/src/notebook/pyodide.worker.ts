@@ -3,10 +3,11 @@
 // lazily imported from our SELF-HOSTED /pyodide/ path on first run, so the ~10 MB download
 // never touches the base SPA bundle and never hits a third-party origin (design #200).
 //
-// Isolation: the worker has no DOM and we grant no network — a cell can compute over the
-// Python stdlib but cannot fetch, so there's no new server/SSRF surface. stdout/stderr are
-// captured; if the final statement is an expression its repr() is returned as the "value"
-// (REPL feel). Errors come back as the Python traceback string, never thrown across the wire.
+// Isolation: the worker has no DOM and grants no arbitrary network — a cell computes over the
+// Python stdlib plus a fixed, SELF-HOSTED set of packages (numpy/matplotlib/pandas + deps),
+// whose wheels are fetched from OUR origin (packageBaseUrl = /pyodide/), never a third-party
+// CDN. stdout/stderr are captured; the last expression's repr() is the "value" (REPL feel);
+// matplotlib figures are captured as inline PNGs. Errors come back as the Python traceback.
 
 import type { CodeRequest, CodeResponse } from "./protocol";
 
@@ -27,7 +28,9 @@ async function getPyodide(): Promise<any> {
       // exists at runtime in the published bundle, so tsc can't resolve it — that's expected.
       // @ts-expect-error runtime-only self-hosted module path
       const mod = await import(/* @vite-ignore */ "/pyodide/pyodide.mjs");
-      const py = await mod.loadPyodide({ indexURL: "/pyodide/" });
+      // packageBaseUrl pins package wheels to OUR origin (self-hosted, #200) — loadPackage
+      // never reaches a third-party CDN.
+      const py = await mod.loadPyodide({ indexURL: "/pyodide/", packageBaseUrl: "/pyodide/" });
       pyodide = py;
       post({ type: "ready" });
       return py;
@@ -48,7 +51,20 @@ async function run(id: string, code: string): Promise<void> {
     return;
   }
 
-  // Set the source, then execute a fixed harness that captures streams + last-expr repr.
+  // Load any importable self-hosted packages the source needs BEFORE running (numpy, pandas,
+  // matplotlib + deps). Fetches wheels from our origin; a package we don't ship just yields a
+  // normal ModuleNotFoundError at import time. Best-effort — a load failure shouldn't abort
+  // the run (the import error will surface in the traceback).
+  try {
+    post({ type: "loading", detail: "Loading packages…" });
+    await py.loadPackagesFromImports(code);
+  } catch {
+    /* fall through — import will raise in the harness if truly missing */
+  }
+
+  // Set the source, then execute a fixed harness that captures streams + last-expr repr, and
+  // any matplotlib figures as base64 PNGs. We force the Agg backend (no DOM in the worker) and
+  // pull open figures after the cell runs.
   py.globals.set("__agate_src", code);
   const harness = `
 import sys, io, ast
@@ -56,8 +72,16 @@ __agate_out = io.StringIO()
 __agate_err = io.StringIO()
 __agate_result = None
 __agate_error = None
+__agate_images = []
 __agate_old = (sys.stdout, sys.stderr)
 sys.stdout, sys.stderr = __agate_out, __agate_err
+# Force a non-interactive backend if matplotlib is present (the worker has no DOM/canvas).
+if "matplotlib" in sys.modules or "matplotlib" in __agate_src:
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+    except Exception:
+        pass
 try:
     __agate_mod = ast.parse(__agate_src, mode="exec")
     __agate_last = None
@@ -68,6 +92,16 @@ try:
         __agate_val = eval(compile(__agate_last, "<cell>", "eval"), globals())
         if __agate_val is not None:
             __agate_result = repr(__agate_val)
+    # Capture any open matplotlib figures as PNG data URIs, then close them.
+    if "matplotlib.pyplot" in sys.modules:
+        import base64 as __b64
+        __plt = sys.modules["matplotlib.pyplot"]
+        for __num in __plt.get_fignums():
+            __fig = __plt.figure(__num)
+            __buf = io.BytesIO()
+            __fig.savefig(__buf, format="png", bbox_inches="tight")
+            __agate_images.append("data:image/png;base64," + __b64.b64encode(__buf.getvalue()).decode())
+        __plt.close("all")
 except Exception:
     import traceback
     __agate_error = traceback.format_exc()
@@ -76,12 +110,14 @@ finally:
 `;
   try {
     await py.runPythonAsync(harness);
+    const images = py.globals.get("__agate_images");
     post({
       type: "result",
       id,
       stdout: py.globals.get("__agate_out").getvalue(),
       stderr: py.globals.get("__agate_err").getvalue(),
       result: py.globals.get("__agate_result") ?? undefined,
+      images: images ? images.toJs() : undefined,
       error: py.globals.get("__agate_error") ?? undefined,
     });
   } catch (e) {

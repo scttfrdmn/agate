@@ -19,6 +19,7 @@ export interface CodeOutput {
   stdout: string;
   stderr: string;
   result?: string; // repr() of the last expression, when the final statement is an expression
+  images?: string[]; // matplotlib figures as base64 PNG data URIs (#200 packages)
   error?: string; // Python traceback when the code raised
 }
 

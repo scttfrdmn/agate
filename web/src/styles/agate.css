@@ -1267,6 +1267,13 @@ button {
   background: rgba(255, 107, 107, 0.1);
   color: #ff8f8f;
 }
+.notebook-code-image {
+  display: block;
+  max-width: 100%;
+  margin: 0.4rem 0;
+  border-radius: 6px;
+  background: #fff; /* matplotlib PNGs are transparent; a white mat keeps them legible in dark mode */
+}
 .notebook-code-loading,
 .notebook-code-empty {
   font-size: 0.78rem;

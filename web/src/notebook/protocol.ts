@@ -19,6 +19,8 @@ export type CodeResponse =
       // repr() of the last expression when the final statement is an expression (REPL-style),
       // else undefined. Kept separate from stdout so the UI can present it as "the value".
       result?: string;
+      // base64 PNG data URIs for any matplotlib figures the cell produced (#200 packages).
+      images?: string[];
       // A Python traceback string when the code raised; the run is not "ok".
       error?: string;
     };
@@ -27,5 +29,6 @@ export interface CodeRunOutcome {
   stdout: string;
   stderr: string;
   result?: string;
+  images?: string[];
   error?: string;
 }

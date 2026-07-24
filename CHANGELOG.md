@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Notebook code cells get numpy / pandas / matplotlib — self-hosted (#200).** Code cells can now
+  `import numpy`, `pandas`, and `matplotlib`; the kernel loads the needed wheels before running, and
+  **matplotlib figures render as inline PNGs** in the cell output. Packages are **self-hosted**: the
+  build's prebuild step downloads the full dependency closure (13 wheels, ~17 MB) from the pinned
+  pyodide release into `dist/pyodide/`, and the worker sets `packageBaseUrl` to our own origin — so at
+  runtime `loadPackage` fetches from us, **never a third-party CDN** (holds the #200 posture). Wheels
+  are lazy: a cell only pulls a package when it imports it. Figure PNGs are hard-validated
+  (`data:image/png;base64,` prefix) before display, and persist with a saved notebook.
 - **Save / open notebooks (#200, phase 2 slice 4).** A notebook now persists as JSON in the corpus
   under a reserved `_notebooks/` prefix, fenced by the same verified tenant/scope boundary as
   documents — **Save** writes it, **Open** lists and reloads it (into a fresh chat, so it never

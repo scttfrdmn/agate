@@ -188,7 +188,7 @@ function renderCodeCell(cell: NotebookCell, cb: NotebookCallbacks): HTMLElement 
   run.disabled = cell.state === "running";
   run.addEventListener("click", () => cb.onRunCode?.(cell.id, editor.value));
   const note = el("span", "notebook-code-note");
-  note.textContent = "Runs locally in your browser (Python stdlib).";
+  note.textContent = "Runs locally in your browser (Python stdlib + numpy/pandas/matplotlib).";
   bar.append(run, note);
   wrap.appendChild(bar);
 
@@ -214,6 +214,17 @@ function renderCodeOutput(out: NonNullable<NotebookCell["output"]>): HTMLElement
     const pre = el("pre", "notebook-code-result");
     pre.textContent = out.result;
     box.appendChild(pre);
+  }
+  // matplotlib figures as inline PNGs. The data URI is produced by our own worker; we still
+  // hard-validate the `data:image/png;base64,` prefix before assigning src, so a malformed or
+  // unexpected value can never become an arbitrary URL.
+  for (const img of out.images ?? []) {
+    if (typeof img !== "string" || !img.startsWith("data:image/png;base64,")) continue;
+    const el2 = document.createElement("img");
+    el2.className = "notebook-code-image";
+    el2.alt = "figure output";
+    el2.src = img;
+    box.appendChild(el2);
   }
   if (out.stderr && !out.error) {
     const pre = el("pre", "notebook-code-stderr");

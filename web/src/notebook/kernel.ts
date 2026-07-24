@@ -53,7 +53,13 @@ export class CodeKernel {
       const resolve = this.pending.get(msg.id);
       if (resolve) {
         this.pending.delete(msg.id);
-        resolve({ stdout: msg.stdout, stderr: msg.stderr, result: msg.result, error: msg.error });
+        resolve({
+          stdout: msg.stdout,
+          stderr: msg.stderr,
+          result: msg.result,
+          images: msg.images,
+          error: msg.error,
+        });
       }
     }
   }

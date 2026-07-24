@@ -136,6 +136,30 @@ describe("renderNotebook", () => {
     expect(target.querySelector(".notebook-code-error")?.textContent).toContain("NameError");
   });
 
+  it("renders matplotlib figure PNGs and rejects non-PNG data URIs", () => {
+    const png = "data:image/png;base64,iVBORw0KGgo=";
+    const nb: Notebook = {
+      cells: [
+        {
+          id: "c",
+          kind: "code",
+          prompt: "plot",
+          state: "idle",
+          output: {
+            stdout: "",
+            stderr: "",
+            images: [png, "javascript:alert(1)", "data:text/html;base64,x"],
+          },
+        },
+      ],
+    };
+    const target = host();
+    renderNotebook(nb, target);
+    const imgs = target.querySelectorAll<HTMLImageElement>(".notebook-code-image");
+    expect(imgs).toHaveLength(1); // only the valid PNG data URI is rendered
+    expect(imgs[0].src).toBe(png);
+  });
+
   it("shows a running/loading state for a code cell in flight", () => {
     const nb: Notebook = {
       cells: [{ id: "c", kind: "code", prompt: "1", state: "running", error: "Downloading…" }],

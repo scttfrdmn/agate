@@ -42,7 +42,7 @@ export function serializeNotebook(nb: Notebook, name: string, savedAt: string): 
       if (c.answer !== undefined) s.answer = c.answer;
       if (c.sources) s.sources = c.sources;
       if (c.meta) s.meta = c.meta;
-      if (c.output) s.output = c.output;
+      if (c.output) s.output = c.output; // includes any captured figure PNGs
       return s;
     }),
   };

@@ -205,8 +205,13 @@ Data does **not** connect through a pile of connectors. It connects through **id
   prefix it may read. A student enrolled in CHEM-101 (roster from LTI NRPS) gets a
   session tag binding them to that course's index and nothing else.
 
-FERPA is therefore not a feature layer — it falls out of the IAM/ABAC scoping that
-already governs the model call.
+This means FERPA-aligned controls are not a bolted-on feature layer — the same IAM/ABAC
+scoping that governs the model call also fences data access. To be precise about the
+shared-responsibility line: agate is *designed to support* FERPA-aligned controls through
+institution-managed identity, scoped authorization, auditable access, configurable
+retention, and institution-owned AWS boundaries. Actual compliance still depends on the
+institution's configuration, operational practices, data classification, contracts, and
+applicable policy — the architecture makes those controls enforceable, not automatic.
 
 ---
 

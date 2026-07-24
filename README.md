@@ -1,9 +1,22 @@
 # agate
 
-An open-source, **AWS-native GenAI gateway for higher education** with **zero standing cost**.
-A person federates their campus identity, receives short-lived credentials scoped to exactly
-the models and documents they're entitled to, and the browser talks to Amazon Bedrock and
-S3 Vectors directly — with both the talking and the documents fenced by the *same* boundary.
+An open-source, **identity-native, serverless GenAI access layer for higher education** with
+**no fixed cost floor** in the default path. A person federates their campus identity and
+receives short-lived credentials scoped to exactly the models and documents they're entitled
+to. From there agate uses **direct AWS access where the service and authorization boundaries
+permit it, and narrow serverless mediation where they don't** — with all four paths fenced by
+the *same* ABAC boundary:
+
+| Path | How it runs |
+|------|-------------|
+| **CLI / native** model call | scoped credentials → Amazon Bedrock directly |
+| **Browser** model call ("Ask") | browser → serverless **chokepoint** → Bedrock *(Bedrock's runtime has no browser CORS)* |
+| **Scoped retrieval** | browser → **retrieval proxy** → S3 Vectors *(IAM can't express the sub-tenant filter alone)* |
+| **Agent** execution | user authority → **AgentCore**-mediated run |
+
+"No fixed cost floor" means the default path adds **no bill-by-the-wall-clock-hour compute or
+network** (see NO CLOCKS below); usage-based storage, logs, retained artifacts, requests, and
+opt-in services (e.g. memory) still incur cost.
 
 - **Architecture (source of truth):** [`docs/agate-design.md`](docs/agate-design.md)
 - **Agent platform vision (where it goes):** [`docs/agate-agents-vision.md`](docs/agate-agents-vision.md) — agate as the governance layer over the open agent stack; *agenkit builds the agent, agate governs it* ([agenkit.dev](https://agenkit.dev))
@@ -62,8 +75,8 @@ tests/    pure-logic unit tests (no AWS).
 ## Quickstart (dev)
 
 ```bash
-# Python / CDK
-cd infra
+# Everything runs from the REPO ROOT — pyproject.toml, uv.lock, cdk.json and the
+# aws-cdk CLI's package.json all live at the root (there is no infra/ project).
 uv sync                       # install CDK + deps into .venv
 uv run pytest                 # pure-logic unit tests (no AWS)
 uv run ruff check && uv run ruff format
@@ -75,7 +88,7 @@ npm install                    # installs the pinned aws-cdk CLI (schema-compati
 npm run synth                  # -> cdk synth   (likewise: npm run diff / npm run deploy)
 
 # Go CLI
-cd ../cli && go build ./... && go test ./...
+(cd cli && go build ./... && go test ./...)
 ```
 
 ### `cdk bootstrap` notes
@@ -95,9 +108,14 @@ Pin the region to where Bedrock + S3 Vectors are available for your institution.
 
 ## Deploying a demo
 
-The eight stacks are independent; deploy only what a given demo needs. The Tier 0 path
+The stacks are independent; deploy only what a given demo needs. The Tier 0 path
 (`agate-identity`) is $0-idle and the safest first deploy; the data/agent/web stacks add
-storage + a container.
+storage + a container. The CDK app currently defines 16 stacks — the load-bearing core
+(`agate-identity`, `agate-data`, `agate-audit`), the browser demo (`agate-web`,
+`agate-chokepoint`, `agate-demo-idp`), and optional product/experimental stacks
+(`agate-agent`, `agate-governance`, `agate-corpus`, `agate-memory`, `agate-rooms`,
+`agate-drafting`, `agate-authoring`, `agate-deploy`, `agate-admin`, `agate-lti`). See the
+maturity matrix (docs) for what each is and how settled it is.
 
 **0. Refresh per-model pricing (optional, recommended).** Bake authoritative Bedrock
 list rates into the cost engine before deploying the metering stacks. Read-only against
@@ -209,4 +227,4 @@ in `agate-data`/`agate-audit` are kept deliberately — delete them by hand when
 
 ## License
 
-See [`LICENSE`](LICENSE) (to be added). Open source by construction — no vendor capture.
+[Apache License 2.0](LICENSE) (see also [`NOTICE`](NOTICE)). Open source by construction — no vendor capture.

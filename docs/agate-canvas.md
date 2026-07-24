@@ -162,6 +162,25 @@ self-budgeting behaviour (plan → check remaining → decide next step), and **
 (cap inputs, live spend/time-against-cap, cap-bounded result). Background/async execution + progress
 streaming is the main new runtime surface.
 
+**Governed external reach (the escape hatch).** A research agent needs to reach outside the tenant,
+and agate already has the governed door: **`web-fetch`** is a declared, clampable agentspec
+capability (`agate/agentspec.py`) — "fetch one allowlisted HTTPS URL, read-only, **off unless
+explicitly granted**." It flows through the **Cedar `call_tool` policy** (`policy/cedar.py` —
+`resource.tool in principal.allowed_tools`), so Cedar decides *whether this principal may use the
+tool at all*, and its **effect is bounded server-side** by four independent layers: (1) an
+institution **host allowlist**, default-deny; (2) the **SSRF guard** (https-only, no
+private/IMDS/CGNAT hosts, socket pinned to the validated IP, no private redirects); (3) the
+**budget cascade** (a fetch is a priced action); (4) tenant/scope ABAC on the acting credential.
+This is the same claims→tags→Cedar pipeline that fences *data*, now fencing *web reach* — exactly
+the governed escape hatch an agent cell should use.
+
+**Gap this surfaces: web *search*, not just fetch.** Today only `web-fetch` (one allowlisted URL)
+exists — there is **no `web-search` capability**. A capped research agent ("scan the literature for
+$2") needs search, not just fetch-a-known-URL. Adding a `web-search` capability (same Cedar-gated,
+allowlist/budget-bounded pattern, pointed at an institution-approved search endpoint) is a
+prerequisite for agent cells to do genuine research, and should be designed with the same
+default-deny discipline.
+
 **Hard parts specific to this:**
 - **Enforcement vs. self-governance are different guarantees.** The agent is *told* its budget so it
   can plan well, but the cap is *enforced* by the pre-call cascade regardless — a confused or
@@ -263,6 +282,19 @@ and/or a budget cap, reusing move #5) so a runaway loop can't silently spend.
 
 **[vision]** — none of the control flow beyond simple references is built; this section names the
 destination so the earlier, buildable moves (1–6) are chosen to point at it rather than away from it.
+
+## The code-cell environment is a curated internal repository **[built]**
+
+A consequence of the security frame worth stating plainly: code cells have **no public
+`pip install` / PyPI / CDN reach at runtime.** The pyodide runtime and its package wheels
+(`ROOT_PACKAGES` in `web/scripts/copy-pyodide.mjs` — today numpy/pandas/matplotlib + their closure)
+are **vendored at build time from a pinned pyodide release and served from agate's own origin**
+(`packageBaseUrl` pinned to `/pyodide/`, no CDN fallback). So agate *is* its own **curated,
+self-hosted package repository** for the code environment — an institution-reviewed allowlist of
+libraries, not a proxy to the open index. Adding scipy/astropy/etc. is a config change to
+`ROOT_PACKAGES` (the institution curates its set), expressed as build-time vendoring rather than a
+running package-server (keeps NO CLOCKS — no always-on Artifactory/proxy). This mirrors, on the
+code side, the same default-deny egress posture that `web-fetch` applies on the network side.
 
 ## Reproducibility & git (marimo-style) **[vision]**
 
@@ -374,3 +406,10 @@ control, while preserving the cost-aware "never spend tokens silently" guarantee
   sub-stream inside the cell)?
 - **Time-cap semantics.** Wall-clock is a soft bound (stop starting new steps); is that enough, or
   do some workflows need a hard deadline that abandons an in-flight step? Start soft.
+- **`web-search` capability.** Agent cells need governed *search*, not just `web-fetch` (one URL).
+  Design a `web-search` capability on the same Cedar-gated, allowlist/budget-bounded, default-deny
+  pattern — pointed at an institution-approved search endpoint. Prerequisite for real research
+  agents; not built.
+- **Curated package set per institution.** `ROOT_PACKAGES` is a global default today. Should the
+  vendored library set be per-tenant/per-scope (a chemistry course gets rdkit; a stats course gets
+  statsmodels)? That's an institutional-curation UX + a per-tenant build/serve question.

@@ -18,8 +18,12 @@ from agate.tags import SessionTags
 
 def _spec(**over):
     d = {
-        "agent": "chem101-ta", "description": "d", "role": "ta",
-        "scope": "chemistry/chem-101", "reasoning": "lit-review", "tools": ["hpc-monitor"],
+        "agent": "chem101-ta",
+        "description": "d",
+        "role": "ta",
+        "scope": "chemistry/chem-101",
+        "reasoning": "lit-review",
+        "tools": ["hpc-monitor"],
     }
     d.update(over)
     return parse_spec(d)
@@ -86,8 +90,11 @@ def test_legacy_session_is_unattributed_never_fabricated():
 
 def test_to_dict_carries_all_three_answers():
     aa = acting_as_from_session(
-        "chem@alice", agent="chem/ta", agent_version="abc123",
-        remit={"tier": "oss", "scope": "chemistry", "tools": []}, chain="ta",
+        "chem@alice",
+        agent="chem/ta",
+        agent_version="abc123",
+        remit={"tier": "oss", "scope": "chemistry", "tools": []},
+        chain="ta",
     )
     d = aa.to_dict()
     assert d["agent"] == "chem/ta"  # WHO
@@ -140,13 +147,28 @@ def test_compiled_agent_carries_version():
 def _graph():
     root = parse_spec(
         {
-            "agent": "root", "description": "d", "role": "researcher", "scope": "lab",
+            "agent": "root",
+            "description": "d",
+            "role": "researcher",
+            "scope": "lab",
             "reasoning": "lit-review",
             "agents": [
-                {"agent": "lit", "description": "d", "role": "student",
-                 "scope": "lab/photonics", "reasoning": "lit-review",
-                 "agents": [{"agent": "cite", "description": "d", "role": "student",
-                             "scope": "lab/photonics", "reasoning": "lit-review"}]}
+                {
+                    "agent": "lit",
+                    "description": "d",
+                    "role": "student",
+                    "scope": "lab/photonics",
+                    "reasoning": "lit-review",
+                    "agents": [
+                        {
+                            "agent": "cite",
+                            "description": "d",
+                            "role": "student",
+                            "scope": "lab/photonics",
+                            "reasoning": "lit-review",
+                        }
+                    ],
+                }
             ],
         }
     )

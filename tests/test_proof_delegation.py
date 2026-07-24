@@ -206,14 +206,26 @@ _AGENT = parse_spec(
     }
 )
 _ALICE = instantiate_for_invoker(
-    SessionTags(affiliation="student", tenant="chem", courses=("chem-101",), tier="oss",
-                scope="chemistry/chem-101"),
-    _AGENT, subject="alice",
+    SessionTags(
+        affiliation="student",
+        tenant="chem",
+        courses=("chem-101",),
+        tier="oss",
+        scope="chemistry/chem-101",
+    ),
+    _AGENT,
+    subject="alice",
 )
 _BOB = instantiate_for_invoker(
-    SessionTags(affiliation="student", tenant="chem", courses=("chem-202",), tier="oss",
-                scope="chemistry/chem-202"),
-    _AGENT, subject="bob",
+    SessionTags(
+        affiliation="student",
+        tenant="chem",
+        courses=("chem-202",),
+        tier="oss",
+        scope="chemistry/chem-202",
+    ),
+    _AGENT,
+    subject="bob",
 )
 
 

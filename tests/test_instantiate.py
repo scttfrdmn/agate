@@ -108,12 +108,8 @@ def test_two_invokers_of_same_agent_get_disjoint_scopes():
     # An agent scoped per the invoker (spec scope contains both leaves) instantiated by
     # two students in different courses → disjoint child scopes.
     spec = _spec(invokers="scope:chemistry", scope="chemistry")
-    a = instantiate_for_invoker(
-        _invoker(scope="chemistry/chem-101"), spec, subject="alice"
-    )
-    b = instantiate_for_invoker(
-        _invoker(scope="chemistry/chem-202"), spec, subject="bob"
-    )
+    a = instantiate_for_invoker(_invoker(scope="chemistry/chem-101"), spec, subject="alice")
+    b = instantiate_for_invoker(_invoker(scope="chemistry/chem-202"), spec, subject="bob")
     assert a.child_tags.scope == "chemistry/chem-101"
     assert b.child_tags.scope == "chemistry/chem-202"
     # neither scope contains the other — disjoint by construction

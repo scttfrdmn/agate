@@ -135,22 +135,16 @@ def delegate_mandate(
     )
 
 
-def authorize_spend(
-    mandate: Mandate, *, price_usd: float, spend_so_far: float
-) -> PrecallResult:
+def authorize_spend(mandate: Mandate, *, price_usd: float, spend_so_far: float) -> PrecallResult:
     """The spend gate for ONE priced action under a mandate (the chokepoint pattern for a
     priced call). A thin wrapper over `cost.evaluate_priced_call` against the mandate's
     `limit_usd`: an action whose price would push `spend_so_far` over the ceiling is rejected
     — regardless of how the vendor quoted the price, because the ceiling is the authority. A
     negative price fails closed."""
-    return evaluate_priced_call(
-        price_usd=price_usd, spend=spend_so_far, budget=mandate.limit_usd
-    )
+    return evaluate_priced_call(price_usd=price_usd, spend=spend_so_far, budget=mandate.limit_usd)
 
 
-def priced_action_row(
-    mandate: Mandate, *, price_usd: float, label: str, vendor: str = ""
-) -> dict:
+def priced_action_row(mandate: Mandate, *, price_usd: float, label: str, vendor: str = "") -> dict:
     """The receipt/spend row for a SETTLED priced call — recorded + attributed exactly like a
     model call (mirrors the meter's `CostRow`/receipt shape). `kind="x402"` marks it a priced
     action; `actingAs` is the mandate's #137 attribution (who · on whose authority · remit),

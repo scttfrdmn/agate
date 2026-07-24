@@ -99,8 +99,12 @@ def _data_lines(scope: str) -> tuple[list[BoundaryItem], list[BoundaryItem]]:
     return (
         [BoundaryItem("data", True, f"read documents under {{tenant}}/{scope}/ only")],
         [
-            BoundaryItem("data", False, f"read documents outside {{tenant}}/{scope}/ "
-                         "(sibling or parent subtrees, or another tenant)"),
+            BoundaryItem(
+                "data",
+                False,
+                f"read documents outside {{tenant}}/{scope}/ "
+                "(sibling or parent subtrees, or another tenant)",
+            ),
         ],
     )
 
@@ -156,6 +160,4 @@ def describe_instantiated(inst) -> EffectiveBoundary:
     tier/scope this specific invoker's instance carries (`inst.child_tags`), with the
     invoker named. Shows exactly what one student's instance of a shared agent can do."""
     tags = inst.child_tags
-    return _describe(
-        inst.spec.name, tags.tier, tags.scope, inst.spec, subject=inst.invoker_subject
-    )
+    return _describe(inst.spec.name, tags.tier, tags.scope, inst.spec, subject=inst.invoker_subject)

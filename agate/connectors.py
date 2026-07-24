@@ -88,13 +88,9 @@ def all_connectors() -> tuple[Connector, ...]:
 
 
 # The six sources from #133. user-oauth sources reach via AgentCore Gateway (→ #136).
-register_connector(
-    Connector("gdrive", "Google Drive", "user-oauth", gateway_target=True)
-)
+register_connector(Connector("gdrive", "Google Drive", "user-oauth", gateway_target=True))
 register_connector(Connector("box", "Box", "user-oauth", gateway_target=True))
-register_connector(
-    Connector("teams", "Microsoft Teams (Graph)", "user-oauth", gateway_target=True)
-)
+register_connector(Connector("teams", "Microsoft Teams (Graph)", "user-oauth", gateway_target=True))
 register_connector(Connector("discord", "Discord", "user-oauth", gateway_target=True))
 register_connector(Connector("s3", "Amazon S3 (scoped role)", "scoped-role"))
 register_connector(Connector("nfs", "NFS / file share (ingest Lambda)", "ingest-lambda"))
@@ -119,9 +115,7 @@ def _safe_item_segments(item_path: str) -> list[str]:
     return segs or ["item"]
 
 
-def connector_dest_key(
-    *, tenant: str, scope: str, connector: str, item_path: str
-) -> str:
+def connector_dest_key(*, tenant: str, scope: str, connector: str, item_path: str) -> str:
     """Build the destination S3 key for one connector-ingested item, PROVABLY confined to
     `{tenant}/{scope}/`. The existing ingest pipeline + #80 IAM fence + #84 scope filter then
     govern it exactly like an uploaded document — no new boundary.

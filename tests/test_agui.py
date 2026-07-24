@@ -77,9 +77,7 @@ def test_traversal_event_scope_fails_closed():
 
 def test_sibling_prefix_scope_is_dropped():
     # chemistry-annex is NOT contained by chemistry (no string-prefix bug) -> dropped
-    assert (
-        govern_event({"type": "x", "scope": "chemistry-annex"}, tags=_tags("chemistry")) is None
-    )
+    assert govern_event({"type": "x", "scope": "chemistry-annex"}, tags=_tags("chemistry")) is None
 
 
 def test_non_canonical_scope_segments_are_dropped():
@@ -87,8 +85,7 @@ def test_non_canonical_scope_segments_are_dropped():
     # (no audit ambiguity), matching the tags scope grammar.
     assert govern_event({"type": "x", "scope": "chemistry/."}, tags=_tags("chemistry")) is None
     assert (
-        govern_event({"type": "x", "scope": "chemistry//chem-101"}, tags=_tags("chemistry"))
-        is None
+        govern_event({"type": "x", "scope": "chemistry//chem-101"}, tags=_tags("chemistry")) is None
     )
 
 

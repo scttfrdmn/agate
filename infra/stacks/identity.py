@@ -252,9 +252,7 @@ class IdentityStack(Stack):
                                 "Effect": "Allow",
                                 "Action": "lambda:InvokeFunction",
                                 "Resource": chokepoint_fn_arn,
-                                "Condition": {
-                                    "Bool": {"lambda:InvokedViaFunctionUrl": "true"}
-                                },
+                                "Condition": {"Bool": {"lambda:InvokedViaFunctionUrl": "true"}},
                             },
                         ],
                     }

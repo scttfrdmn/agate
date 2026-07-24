@@ -264,8 +264,11 @@ def run_model_router(
     if pin and pin in entitled:
         emit({"type": "model_route", "model": pin, "reason": "pinned by the user", "pinned": True})
         return ModelChoice(
-            model_id=pin, reason="pinned by the user", policy=policy,
-            difficulty=DEFAULT_DIFFICULTY, degraded=False,
+            model_id=pin,
+            reason="pinned by the user",
+            policy=policy,
+            difficulty=DEFAULT_DIFFICULTY,
+            degraded=False,
         )
 
     max_tok = int(router.get("max_tokens", 5))

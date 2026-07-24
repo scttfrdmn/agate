@@ -60,19 +60,27 @@ def _invoke(req: dict) -> dict | None:
         return None
 
 
-def recall(idp_token: str, *, tier: str = "personal", query: str = "", session_id: str = "",
-           max_results: int = 5) -> list[dict]:
+def recall(
+    idp_token: str,
+    *,
+    tier: str = "personal",
+    query: str = "",
+    session_id: str = "",
+    max_results: int = 5,
+) -> list[dict]:
     """Recall records from one memory tier for the verified caller. Returns [] when memory
     is disabled or on any failure. Identity/namespace are resolved server-side by the tool —
     the container passes only the verified token + the tier it wants."""
-    body = _invoke({
-        "idp_token": idp_token,
-        "op": "recall",
-        "tier": tier,
-        "query": query,
-        "session_id": session_id,
-        "max_results": max_results,
-    })
+    body = _invoke(
+        {
+            "idp_token": idp_token,
+            "op": "recall",
+            "tier": tier,
+            "query": query,
+            "session_id": session_id,
+            "max_results": max_results,
+        }
+    )
     if not body:
         return []
     records = body.get("records")
@@ -84,12 +92,14 @@ def record(idp_token: str, payload: list[dict], *, session_id: str) -> bool:
     False when disabled or on any failure (best-effort — never breaks the turn)."""
     if not payload or not session_id:
         return False
-    body = _invoke({
-        "idp_token": idp_token,
-        "op": "record",
-        "session_id": session_id,
-        "payload": payload,
-    })
+    body = _invoke(
+        {
+            "idp_token": idp_token,
+            "op": "record",
+            "session_id": session_id,
+            "payload": payload,
+        }
+    )
     return bool(body and body.get("recorded"))
 
 

@@ -122,9 +122,7 @@ def gate_fetch(*, tenant: str, scope: str, price_usd: float, spend_lookup) -> Fe
     no budget row imposes no cap. Returns the decision so the handler fetches only on allow."""
     nodes = fetch_cascade_nodes(tenant, scope, spend_lookup)
     result = evaluate_priced_cascade(price_usd=price_usd, nodes=nodes)
-    return FetchDecision(
-        allowed=result.decision == "allow", cascade=result, reason=result.reason
-    )
+    return FetchDecision(allowed=result.decision == "allow", cascade=result, reason=result.reason)
 
 
 def validate_url(url: str, allowlist: tuple[str, ...]) -> str:

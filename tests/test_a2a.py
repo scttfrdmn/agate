@@ -57,11 +57,23 @@ def test_authority_depends_only_on_caller_and_request_not_other_card_fields():
     # Two peers with the SAME (requested_scope, requested_role) but wildly different
     # name/origin produce the SAME credential — no other card field influences authority.
     base = _caller("lab", tier="mid")
-    a = admit_peer(base, PeerRequest(name="a", requested_scope="lab/x", requested_role="ta",
-                                     origin="https://good.example"), subject="p")
-    b = admit_peer(base, PeerRequest(name="b-totally-different", requested_scope="lab/x",
-                                     requested_role="ta", origin="https://evil.example"),
-                   subject="p")
+    a = admit_peer(
+        base,
+        PeerRequest(
+            name="a", requested_scope="lab/x", requested_role="ta", origin="https://good.example"
+        ),
+        subject="p",
+    )
+    b = admit_peer(
+        base,
+        PeerRequest(
+            name="b-totally-different",
+            requested_scope="lab/x",
+            requested_role="ta",
+            origin="https://evil.example",
+        ),
+        subject="p",
+    )
     assert a.child_tags == b.child_tags  # identical credential — the card name/origin is inert
 
 
@@ -139,7 +151,8 @@ def test_peer_call_rejected_when_an_ancestor_budget_is_breached():
     )
     # the caller's "root" ancestor is at its cap -> a priced peer call is rejected there
     nodes = peer_cascade_nodes(
-        ("uni@prof", "root"), a,
+        ("uni@prof", "root"),
+        a,
         lambda label: (0.0, 0.000001) if label == "root" else (0.0, None),
     )
     res = evaluate_priced_cascade(price_usd=0.5, nodes=nodes)

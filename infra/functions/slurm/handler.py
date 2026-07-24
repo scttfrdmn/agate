@@ -147,8 +147,11 @@ def process(req: dict) -> dict:
     if tool == "hpc-submit":
         job_spec = req.get("job_spec") or {}
         return submit(
-            tags, subject, job_spec,
-            spend_reader=_real_spend_reader, submit_job=_real_submit_job,
+            tags,
+            subject,
+            job_spec,
+            spend_reader=_real_spend_reader,
+            submit_job=_real_submit_job,
         )
     raise SlurmToolError(f"unknown tool: {tool!r}")
 

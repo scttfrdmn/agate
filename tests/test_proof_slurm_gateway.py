@@ -35,8 +35,12 @@ boto3 = pytest.importorskip("boto3")
 def _hpc_spec(tools):
     return parse_spec(
         {
-            "agent": "lab-agent", "description": "d", "role": "researcher",
-            "scope": "lab/photonics", "reasoning": "lit-review", "tools": tools,
+            "agent": "lab-agent",
+            "description": "d",
+            "role": "researcher",
+            "scope": "lab/photonics",
+            "reasoning": "lit-review",
+            "tools": tools,
         }
     )
 
@@ -53,10 +57,16 @@ def iam_client():
 
 def _tags(tenant="uni") -> list[dict]:
     return [
-        {"ContextKeyName": f"aws:PrincipalTag/{tag_key('tenant')}", "ContextKeyType": "string",
-         "ContextKeyValues": [tenant]},
-        {"ContextKeyName": f"aws:PrincipalTag/{tag_key('scope')}", "ContextKeyType": "string",
-         "ContextKeyValues": ["lab/photonics"]},
+        {
+            "ContextKeyName": f"aws:PrincipalTag/{tag_key('tenant')}",
+            "ContextKeyType": "string",
+            "ContextKeyValues": [tenant],
+        },
+        {
+            "ContextKeyName": f"aws:PrincipalTag/{tag_key('scope')}",
+            "ContextKeyType": "string",
+            "ContextKeyValues": ["lab/photonics"],
+        },
     ]
 
 
@@ -72,11 +82,15 @@ def _eval(iam_client, policy, *, action, resource, tags) -> str:
 
 @pytest.mark.aws
 def test_declared_hpc_submit_invokes_own_tenant_gateway(iam_client):
-    c = compile_agent(_hpc_spec(["hpc-submit"]), region=REGION, account=ACCOUNT,
-                      gateway_arn=GATEWAY_ARN)
+    c = compile_agent(
+        _hpc_spec(["hpc-submit"]), region=REGION, account=ACCOUNT, gateway_arn=GATEWAY_ARN
+    )
     d = _eval(
-        iam_client, c.tool_policy, action="bedrock-agentcore:InvokeGateway",
-        resource=OWN_TENANT_GATEWAY, tags=_tags("uni"),
+        iam_client,
+        c.tool_policy,
+        action="bedrock-agentcore:InvokeGateway",
+        resource=OWN_TENANT_GATEWAY,
+        tags=_tags("uni"),
     )
     assert d == "allowed"
 
@@ -85,11 +99,15 @@ def test_declared_hpc_submit_invokes_own_tenant_gateway(iam_client):
 def test_cross_tenant_gateway_is_denied(iam_client):
     # A `uni` agent cannot invoke the `other` tenant's gateway — the principal-tag
     # interpolation fences the ARN to the caller's own tenant.
-    c = compile_agent(_hpc_spec(["hpc-submit"]), region=REGION, account=ACCOUNT,
-                      gateway_arn=GATEWAY_ARN)
+    c = compile_agent(
+        _hpc_spec(["hpc-submit"]), region=REGION, account=ACCOUNT, gateway_arn=GATEWAY_ARN
+    )
     d = _eval(
-        iam_client, c.tool_policy, action="bedrock-agentcore:InvokeGateway",
-        resource=OTHER_TENANT_GATEWAY, tags=_tags("uni"),
+        iam_client,
+        c.tool_policy,
+        action="bedrock-agentcore:InvokeGateway",
+        resource=OTHER_TENANT_GATEWAY,
+        tags=_tags("uni"),
     )
     assert d in ("implicitDeny", "explicitDeny")
 
@@ -99,16 +117,20 @@ def test_agent_with_no_tools_cannot_invoke_the_gateway(iam_client):
     # An agent that declared NO tools gets no InvokeGateway allow — denied by absence.
     c = compile_agent(_hpc_spec([]), region=REGION, account=ACCOUNT, gateway_arn=GATEWAY_ARN)
     d = _eval(
-        iam_client, c.tool_policy, action="bedrock-agentcore:InvokeGateway",
-        resource=OWN_TENANT_GATEWAY, tags=_tags("uni"),
+        iam_client,
+        c.tool_policy,
+        action="bedrock-agentcore:InvokeGateway",
+        resource=OWN_TENANT_GATEWAY,
+        tags=_tags("uni"),
     )
     assert d in ("implicitDeny", "explicitDeny")
 
 
 @pytest.mark.aws
 def test_no_tenant_tag_denies_invocation(iam_client):
-    c = compile_agent(_hpc_spec(["hpc-submit"]), region=REGION, account=ACCOUNT,
-                      gateway_arn=GATEWAY_ARN)
+    c = compile_agent(
+        _hpc_spec(["hpc-submit"]), region=REGION, account=ACCOUNT, gateway_arn=GATEWAY_ARN
+    )
     resp = iam_client.simulate_custom_policy(
         PolicyInputList=[json.dumps(c.tool_policy)],
         ActionNames=["bedrock-agentcore:InvokeGateway"],

@@ -57,9 +57,7 @@ def test_scoped_agent_confined_to_subtree_with_denial():
 
 
 def test_tenant_wide_agent_says_tenant_wide():
-    b = parse_spec(
-        {"agent": "a", "description": "d", "role": "ta", "reasoning": "lit-review"}
-    )
+    b = parse_spec({"agent": "a", "description": "d", "role": "ta", "reasoning": "lit-review"})
     t = _text(describe(compile_agent(b)))
     assert "tenant-wide" in t
     assert "another tenant's documents" in t  # still denies cross-tenant
@@ -90,7 +88,10 @@ def test_spend_ceiling_rendered():
 
 def test_no_budget_says_no_ceiling():
     d = {
-        "agent": "a", "description": "d", "role": "ta", "scope": "chemistry/chem-101",
+        "agent": "a",
+        "description": "d",
+        "role": "ta",
+        "scope": "chemistry/chem-101",
         "reasoning": "lit-review",
     }
     t = _text(describe(compile_agent(parse_spec(d))))
@@ -112,7 +113,10 @@ def test_describe_instantiated_names_invoker_and_narrowed_scope():
         }
     )
     alice = SessionTags(
-        affiliation="student", tenant="chem", courses=("chem-101",), tier="oss",
+        affiliation="student",
+        tenant="chem",
+        courses=("chem-101",),
+        tier="oss",
         scope="chemistry/chem-101",
     )
     inst = instantiate_for_invoker(alice, spec, subject="alice")

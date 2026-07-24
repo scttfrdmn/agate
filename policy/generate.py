@@ -234,9 +234,7 @@ def corpus_rw_policy(bucket: str | None = None) -> dict:
                 "Effect": "Allow",
                 "Action": ["s3:ListBucket"],
                 "Resource": f"arn:aws:s3:::{docs_bucket}",
-                "Condition": {
-                    "StringLike": {"s3:prefix": [f"{tenant_tag}/*", f"{tenant_tag}"]}
-                },
+                "Condition": {"StringLike": {"s3:prefix": [f"{tenant_tag}/*", f"{tenant_tag}"]}},
             },
             {
                 # Fail closed: no tenant tag -> no corpus access at all.

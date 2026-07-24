@@ -33,15 +33,26 @@ boto3 = pytest.importorskip("boto3")
 # same scope. So the grandchild is oss + chemistry/chem-101.
 _ROOT_SPEC = parse_spec(
     {
-        "agent": "root", "description": "d", "role": "researcher", "scope": "chemistry",
+        "agent": "root",
+        "description": "d",
+        "role": "researcher",
+        "scope": "chemistry",
         "reasoning": "lit-review",
         "agents": [
             {
-                "agent": "lit", "description": "d", "role": "researcher",
-                "scope": "chemistry/chem-101", "reasoning": "lit-review",
+                "agent": "lit",
+                "description": "d",
+                "role": "researcher",
+                "scope": "chemistry/chem-101",
+                "reasoning": "lit-review",
                 "agents": [
-                    {"agent": "ta", "description": "d", "role": "student",
-                     "scope": "chemistry/chem-101", "reasoning": "lit-review"}
+                    {
+                        "agent": "ta",
+                        "description": "d",
+                        "role": "student",
+                        "scope": "chemistry/chem-101",
+                        "reasoning": "lit-review",
+                    }
                 ],
             }
         ],
@@ -67,12 +78,21 @@ def iam_client():
 
 def _tags_ctx(node) -> list[dict]:
     return [
-        {"ContextKeyName": f"aws:PrincipalTag/{tag_key('tenant')}", "ContextKeyType": "string",
-         "ContextKeyValues": [node.tags.tenant]},
-        {"ContextKeyName": f"aws:PrincipalTag/{tag_key('tier')}", "ContextKeyType": "string",
-         "ContextKeyValues": [node.tags.tier]},
-        {"ContextKeyName": f"aws:PrincipalTag/{tag_key('scope')}", "ContextKeyType": "string",
-         "ContextKeyValues": [node.tags.scope]},
+        {
+            "ContextKeyName": f"aws:PrincipalTag/{tag_key('tenant')}",
+            "ContextKeyType": "string",
+            "ContextKeyValues": [node.tags.tenant],
+        },
+        {
+            "ContextKeyName": f"aws:PrincipalTag/{tag_key('tier')}",
+            "ContextKeyType": "string",
+            "ContextKeyValues": [node.tags.tier],
+        },
+        {
+            "ContextKeyName": f"aws:PrincipalTag/{tag_key('scope')}",
+            "ContextKeyType": "string",
+            "ContextKeyValues": [node.tags.scope],
+        },
     ]
 
 
@@ -96,13 +116,19 @@ def test_grandchild_is_narrowed_pure():
 def test_grandchild_reads_only_its_narrowed_subtree(iam_client):
     dp = data_scope_policy(bucket=DOCS_BUCKET)
     inside = _eval(
-        iam_client, _GC, policy=dp, action="s3:GetObject",
+        iam_client,
+        _GC,
+        policy=dp,
+        action="s3:GetObject",
         resource=f"arn:aws:s3:::{DOCS_BUCKET}/chem/chemistry/chem-101/wk.pdf",
     )
     # The ROOT could read all of chemistry; the grandchild was narrowed to chem-101 and
     # CANNOT read a sibling course under chemistry.
     sibling = _eval(
-        iam_client, _GC, policy=dp, action="s3:GetObject",
+        iam_client,
+        _GC,
+        policy=dp,
+        action="s3:GetObject",
         resource=f"arn:aws:s3:::{DOCS_BUCKET}/chem/chemistry/chem-202/wk.pdf",
     )
     assert inside == "allowed"
@@ -119,7 +145,8 @@ def test_grandchild_cannot_invoke_above_its_min_tier(iam_client):
     )
     oss = foundation_model_arn("openai.gpt-oss-20b-1:0", region=REGION)
     assert _eval(iam_client, _GC, policy=mp, action="bedrock:Converse", resource=opus) in (
-        "implicitDeny", "explicitDeny"
+        "implicitDeny",
+        "explicitDeny",
     )
     assert _eval(iam_client, _GC, policy=mp, action="bedrock:Converse", resource=oss) == "allowed"
 
@@ -128,7 +155,10 @@ def test_grandchild_cannot_invoke_above_its_min_tier(iam_client):
 def test_grandchild_cross_tenant_denied(iam_client):
     dp = data_scope_policy(bucket=DOCS_BUCKET)
     d = _eval(
-        iam_client, _GC, policy=dp, action="s3:GetObject",
+        iam_client,
+        _GC,
+        policy=dp,
+        action="s3:GetObject",
         resource=f"arn:aws:s3:::{DOCS_BUCKET}/psych/chemistry/chem-101/wk.pdf",
     )
     assert d in ("implicitDeny", "explicitDeny")

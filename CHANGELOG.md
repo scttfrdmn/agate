@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **CI (GitHub Actions) matching the CONTRIBUTING checks (review #215).** A `ci.yml` runs on every
+  PR: Python (`ruff check`, `ruff format --check`, `pytest` with the >=60% coverage gate), web
+  (`npm ci`, typecheck, vitest, build), IaC (`cdk synth` via the repo-pinned CLI, offline), and Go
+  (`gofmt`, `vet`, `test`). No AWS creds used. The web build skips the ~17 MB pyodide wheel download
+  in CI via `AGATE_SKIP_WHEELS=1`. Added `tests/conftest.py` setting dummy AWS region+credentials
+  so the suite is self-contained — handler modules build boto3 clients at import time, which
+  previously needed ambient AWS env to even collect (fails on a fresh CI runner or an
+  un-configured contributor machine). Also normalized the whole tree with `ruff format` so the
+  format-clean check is truthful.
 - **Notebook code cells get numpy / pandas / matplotlib — self-hosted (#200).** Code cells can now
   `import numpy`, `pandas`, and `matplotlib`; the kernel loads the needed wheels before running, and
   **matplotlib figures render as inline PNGs** in the cell output. Packages are **self-hosted**: the

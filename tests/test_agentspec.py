@@ -198,9 +198,7 @@ def test_triggers_parsed_and_classified():
 
 
 def test_schedule_trigger_classified():
-    spec = parse_spec(
-        _base(triggers=[{"on": "schedule:cron(0 9 ? * MON *)", "then": "summarize"}])
-    )
+    spec = parse_spec(_base(triggers=[{"on": "schedule:cron(0 9 ? * MON *)", "then": "summarize"}]))
     t = spec.triggers[0]
     assert t.kind == "schedule" and t.detail == "cron(0 9 ? * MON *)"
 

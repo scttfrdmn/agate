@@ -58,7 +58,9 @@ def test_skill_capabilities_are_all_real():
 
 def test_skill_naming_an_uncatalogued_capability_fails_validation():
     bogus = Skill(
-        name="bogus-skill", title="x", description="x",
+        name="bogus-skill",
+        title="x",
+        description="x",
         capabilities=("library-search", "delete-the-internet"),
     )
     with pytest.raises(SpecError):  # get_capability raises SpecError for the bad one

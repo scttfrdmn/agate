@@ -80,10 +80,17 @@ async function fetchWheel(name) {
   return true;
 }
 
-let fetched = 0;
-for (const w of wheels) {
-  if (await fetchWheel(w)) fetched++;
+// CI just needs a type-checkable, buildable tree — not a deployable one. Set
+// AGATE_SKIP_WHEELS=1 to skip the ~17 MB wheel download (and its network dependency); a
+// real build/deploy leaves it unset so the wheels are present in dist/.
+if (process.env.AGATE_SKIP_WHEELS === "1") {
+  console.log(`[copy-pyodide] wheels: skipped (AGATE_SKIP_WHEELS=1) — ${wheels.length} in closure`);
+} else {
+  let fetched = 0;
+  for (const w of wheels) {
+    if (await fetchWheel(w)) fetched++;
+  }
+  console.log(
+    `[copy-pyodide] wheels: ${fetched} downloaded, ${wheels.length} total for [${ROOT_PACKAGES.join(", ")}] closure`,
+  );
 }
-console.log(
-  `[copy-pyodide] wheels: ${fetched} downloaded, ${wheels.length} total for [${ROOT_PACKAGES.join(", ")}] closure`,
-);

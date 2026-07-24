@@ -46,7 +46,10 @@ def test_compile_debate_pattern_resolves_roles_to_entitled_models():
 
 def test_model_preference_resolution():
     p = Pattern(
-        key="x", title="x", description="x", mode="DEBATE",
+        key="x",
+        title="x",
+        description="x",
+        mode="DEBATE",
         roles=(
             Role(label="a", system="s", model="cheapest"),
             Role(label="b", system="s", model="balanced"),
@@ -69,8 +72,13 @@ def test_compile_with_no_entitled_models_fails_closed():
 
 
 def test_synthesis_pattern_builds_generator_not_roster():
-    p = Pattern(key="s", title="s", description="s", mode="SYNTHESIS",
-                roles=(Role(label="ask", system="", model="cheapest"),))
+    p = Pattern(
+        key="s",
+        title="s",
+        description="s",
+        mode="SYNTHESIS",
+        roles=(Role(label="ask", system="", model="cheapest"),),
+    )
     payload = compile_pattern(p, question="q", entitled_models=ENTITLED)
     assert payload["generator"]["tier"] == "cheap-model"
     assert "roster" not in payload

@@ -89,7 +89,8 @@ def can_surface_action(action: PanelAction, tools: tuple[str, ...]) -> ActionVer
         return ActionVerdict(action, allowed=True, reason="display-only (no capability)")
     if cap not in tools:
         return ActionVerdict(
-            action, allowed=False,
+            action,
+            allowed=False,
             reason=f"agent does not hold capability {cap!r} (denied by absence)",
         )
     try:
@@ -101,7 +102,9 @@ def can_surface_action(action: PanelAction, tools: tuple[str, ...]) -> ActionVer
             action, allowed=False, reason=f"unknown capability {cap!r} (not in catalog)"
         )
     return ActionVerdict(
-        action, allowed=True, reason="within the agent's held capabilities",
+        action,
+        allowed=True,
+        reason="within the agent's held capabilities",
         write=capability.grant.write,
     )
 

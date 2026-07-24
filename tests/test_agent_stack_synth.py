@@ -63,9 +63,7 @@ def test_memory_hook_absent_without_context():
     # no InvokeMemoryTool statement anywhere
     pols = t.find_resources("AWS::IAM::Policy")
     sids = [
-        s.get("Sid")
-        for p in pols.values()
-        for s in p["Properties"]["PolicyDocument"]["Statement"]
+        s.get("Sid") for p in pols.values() for s in p["Properties"]["PolicyDocument"]["Statement"]
     ]
     assert "InvokeMemoryTool" not in sids
 
@@ -142,11 +140,7 @@ def test_gateway_execution_role_can_invoke_the_slurm_lambda(template):
             "PolicyDocument": assertions.Match.object_like(
                 {
                     "Statement": assertions.Match.array_with(
-                        [
-                            assertions.Match.object_like(
-                                {"Action": "lambda:InvokeFunction"}
-                            )
-                        ]
+                        [assertions.Match.object_like({"Action": "lambda:InvokeFunction"})]
                     )
                 }
             )

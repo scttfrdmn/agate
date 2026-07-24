@@ -136,9 +136,7 @@ register_capability(
     Capability(
         name="gradebook-drafts",
         title="Write feedback to a draft queue (instructor approves before it goes live)",
-        grant=CapabilityGrant(
-            actions=("s3:PutObject",), resource_kind="drafts-queue", write=True
-        ),
+        grant=CapabilityGrant(actions=("s3:PutObject",), resource_kind="drafts-queue", write=True),
     )
 )
 

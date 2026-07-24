@@ -36,10 +36,14 @@ def _root_tags(*, tier="frontier", scope="lab"):
 def _graph():
     spec = parse_spec(
         _node(
-            "grant-writer", "researcher", "lab",
+            "grant-writer",
+            "researcher",
+            "lab",
             agents=[
                 _node(
-                    "lit", "researcher", "lab/photonics",
+                    "lit",
+                    "researcher",
+                    "lab/photonics",
                     agents=[_node("cite-check", "student", "lab/photonics")],
                 ),
                 _node("budget", "staff", "lab/photonics"),
@@ -78,7 +82,9 @@ def test_grandchild_subset_of_child_subset_of_root():
     g = _graph()
     nodes = {"/".join(n.path): n for n in flatten(g)}
     root, lit, gc = (
-        nodes["grant-writer"], nodes["grant-writer/lit"], nodes["grant-writer/lit/cite-check"]
+        nodes["grant-writer"],
+        nodes["grant-writer/lit"],
+        nodes["grant-writer/lit/cite-check"],
     )
     # scope containment: gc ⊆ lit ⊆ root
     assert gc.tags.scope.startswith(lit.tags.scope) or gc.tags.scope == lit.tags.scope
@@ -91,8 +97,12 @@ def test_grandchild_subset_of_child_subset_of_root():
 
 def test_disjoint_scope_child_refuses_to_build():
     spec = parse_spec(
-        _node("root", "researcher", "chemistry",
-              agents=[_node("rogue", "researcher", "physics/phys-101")])  # disjoint
+        _node(
+            "root",
+            "researcher",
+            "chemistry",
+            agents=[_node("rogue", "researcher", "physics/phys-101")],
+        )  # disjoint
     )
     with pytest.raises(GraphError, match="cannot delegate"):
         build_graph(spec, _root_tags(scope="chemistry"), subject="p")
@@ -106,8 +116,13 @@ def test_max_fanout_breach_refused_at_parse():
 
     with pytest.raises(SpecError, match="max_fanout"):
         parse_spec(
-            _node("root", "staff", "lab", max_fanout=1,
-                  agents=[_node("a", "staff", "lab"), _node("b", "staff", "lab")])
+            _node(
+                "root",
+                "staff",
+                "lab",
+                max_fanout=1,
+                agents=[_node("a", "staff", "lab"), _node("b", "staff", "lab")],
+            )
         )
 
 
@@ -143,8 +158,13 @@ def test_parse_rejects_wide_tree_by_node_budget():
 def test_max_depth_breach_refused_at_build():
     # depth 2 chain with the root capped at max_depth=1 -> refused.
     spec = parse_spec(
-        _node("root", "staff", "lab", max_depth=1,
-              agents=[_node("c1", "staff", "lab", agents=[_node("c2", "staff", "lab")])])
+        _node(
+            "root",
+            "staff",
+            "lab",
+            max_depth=1,
+            agents=[_node("c1", "staff", "lab", agents=[_node("c2", "staff", "lab")])],
+        )
     )
     with pytest.raises(GraphError, match="max_depth"):
         build_graph(spec, _root_tags(scope="lab"), subject="p")
@@ -185,6 +205,7 @@ def test_call_allowed_when_it_fits_every_ancestor_budget():
 def test_call_rejected_when_an_ancestor_budget_is_exhausted():
     g = _graph()
     gc = flatten(g)[2]
+
     # the MIDDLE ancestor (lit) has only $0.000001 left -> the family ceiling rejects,
     # naming the breaching node (the #112 guarantee).
     def lookup(node, i, label):
@@ -193,7 +214,9 @@ def test_call_rejected_when_an_ancestor_budget_is_exhausted():
     nodes = cascade_nodes(gc, lookup)
     res = evaluate_cascade(
         model_id="us.anthropic.claude-opus-4-1-20250805-v1:0",
-        input_tokens=100000, max_tokens=4000, nodes=nodes,
+        input_tokens=100000,
+        max_tokens=4000,
+        nodes=nodes,
     )
     assert res.decision == "reject"
     assert res.breaching_node == "lit"

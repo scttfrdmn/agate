@@ -205,8 +205,12 @@ def test_thrifty_and_best_differ_on_hard():
 def test_budget_prunes_pricey_models_and_flags_degraded():
     # A budget that only affords the cheapest models excludes the expensive ones.
     c = select_model(
-        tier="frontier", difficulty="HARD", policy="best",
-        remaining_budget_usd=0.02, input_tokens=1000, max_tokens=1000,
+        tier="frontier",
+        difficulty="HARD",
+        policy="best",
+        remaining_budget_usd=0.02,
+        input_tokens=1000,
+        max_tokens=1000,
     )
     assert c.degraded is True
     # whatever was chosen must have been affordable (cheaper than opus, which is ~$0.09)
@@ -215,8 +219,12 @@ def test_budget_prunes_pricey_models_and_flags_degraded():
 
 def test_zero_budget_degrades_to_cheapest_never_raises():
     c = select_model(
-        tier="frontier", difficulty="HARD", policy="best",
-        remaining_budget_usd=0.0, input_tokens=1000, max_tokens=1000,
+        tier="frontier",
+        difficulty="HARD",
+        policy="best",
+        remaining_budget_usd=0.0,
+        input_tokens=1000,
+        max_tokens=1000,
     )
     assert c.model_id == models_for_tier("frontier")[0]  # cheapest entitled
     assert c.degraded is True
@@ -257,8 +265,13 @@ def test_run_model_router_classifies_then_selects_and_emits():
     backend = FakeDifficultyBackend("SIMPLE")
     meter = FakeMeter()
     choice = run_model_router(
-        backend=backend, meter=meter, emit=emit, question="what is X", router=ROUTER,
-        tier="frontier", policy="thrifty",
+        backend=backend,
+        meter=meter,
+        emit=emit,
+        question="what is X",
+        router=ROUTER,
+        tier="frontier",
+        policy="thrifty",
     )
     assert isinstance(choice, ModelChoice)
     assert backend.calls == 1
@@ -273,8 +286,13 @@ def test_run_model_router_pin_short_circuits_no_call_no_spend():
     meter = FakeMeter()
     pinned = models_for_tier("oss")[1]
     choice = run_model_router(
-        backend=backend, meter=meter, emit=emit, question="x", router=ROUTER,
-        tier="oss", pin=pinned,
+        backend=backend,
+        meter=meter,
+        emit=emit,
+        question="x",
+        router=ROUTER,
+        tier="oss",
+        pin=pinned,
     )
     assert choice.model_id == pinned
     assert backend.calls == 0  # no classifier call
@@ -286,8 +304,13 @@ def test_run_model_router_drops_unentitled_pin_and_routes():
     events, emit = _collect()
     backend = FakeDifficultyBackend("SIMPLE")
     choice = run_model_router(
-        backend=backend, meter=FakeMeter(), emit=emit, question="x", router=ROUTER,
-        tier="oss", pin="us.anthropic.claude-opus-4-1-20250805-v1:0",  # not entitled
+        backend=backend,
+        meter=FakeMeter(),
+        emit=emit,
+        question="x",
+        router=ROUTER,
+        tier="oss",
+        pin="us.anthropic.claude-opus-4-1-20250805-v1:0",  # not entitled
     )
     assert backend.calls == 1  # unentitled pin dropped -> classifier runs
     assert choice.model_id in set(models_for_tier("oss"))  # stays in tier

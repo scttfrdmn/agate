@@ -44,9 +44,7 @@ def test_lambda_only_assumes_the_fenced_role_no_direct_s3():
             acts = s["Action"] if isinstance(s["Action"], list) else [s["Action"]]
             all_actions.append((s.get("Effect"), acts))
     # an AssumeRole+TagSession grant exists
-    assert any(
-        s_eff == "Allow" and "sts:AssumeRole" in acts for s_eff, acts in all_actions
-    )
+    assert any(s_eff == "Allow" and "sts:AssumeRole" in acts for s_eff, acts in all_actions)
 
 
 def test_corpus_role_is_scope_fenced():

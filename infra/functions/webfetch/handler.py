@@ -225,8 +225,12 @@ def process(req: dict) -> dict:
     if not isinstance(url, str) or not url:
         raise WebFetchToolError("missing url")
     return fetch_tool(
-        tags, subject, url,
-        resolve=_real_resolve, fetch=_real_fetch, spend_reader=_real_spend_reader,
+        tags,
+        subject,
+        url,
+        resolve=_real_resolve,
+        fetch=_real_fetch,
+        spend_reader=_real_spend_reader,
     )
 
 

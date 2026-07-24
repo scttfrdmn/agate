@@ -50,7 +50,9 @@ def test_unknown_connector_fails_closed():
 
 def test_dest_key_lands_under_tenant_scope():
     k = connector_dest_key(
-        tenant="chem", scope="chemistry/chem-101", connector="gdrive",
+        tenant="chem",
+        scope="chemistry/chem-101",
+        connector="gdrive",
         item_path="Shared/notes.gdoc",
     )
     assert k.startswith("chem/chemistry/chem-101/_connectors/gdrive/")
@@ -128,7 +130,5 @@ def test_dest_key_round_trips_through_ingest_parsers():
 
 def test_confine_rejects_cross_tenant_key():
     # A key under a DIFFERENT tenant is not confined for `chem`.
-    other = connector_dest_key(
-        tenant="physics", scope="phys", connector="s3", item_path="f.txt"
-    )
+    other = connector_dest_key(tenant="physics", scope="phys", connector="s3", item_path="f.txt")
     assert confine_dest_key("chem", "chemistry", other) is False

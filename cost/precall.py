@@ -155,9 +155,7 @@ def evaluate_cascade(
 # closed (mirrors the negative-spend guard). agate gates + debits; the x402 wire is agenkit's.
 
 
-def evaluate_priced_call(
-    *, price_usd: float, spend: float, budget: float | None
-) -> PrecallResult:
+def evaluate_priced_call(*, price_usd: float, spend: float, budget: float | None) -> PrecallResult:
     """Allow/reject ONE flat-priced action before it fires (the chokepoint pattern, for a
     priced call instead of a model call). `price_usd` is the worst-case cost; a negative
     price is rejected. Same allow/reject rule as `evaluate_precall`."""

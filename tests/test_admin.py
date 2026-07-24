@@ -85,9 +85,7 @@ def admin_token(monkeypatch):
     monkeypatch.setattr(admin_handler, "verify_token", fake_verify)
     monkeypatch.setattr(admin_handler, "config_from_env", lambda: {})
     monkeypatch.setattr(admin_handler, "SPEND_TABLE", "agate-spend")
-    monkeypatch.setattr(
-        admin_handler._ddb, "Table", lambda _n: _FakeTable(ITEMS), raising=False
-    )
+    monkeypatch.setattr(admin_handler._ddb, "Table", lambda _n: _FakeTable(ITEMS), raising=False)
 
 
 def _event(claims: dict, period: str | None = None) -> dict:

@@ -54,9 +54,7 @@ def test_read_action_is_not_marked_write():
 def test_unknown_capability_in_tools_is_denied_not_raised():
     # belt-and-suspenders: if a (malformed) tools set carries a capability NOT in the #113
     # catalog, the action is DENIED, never raised/surfaced.
-    v = can_surface_action(
-        PanelAction("evil", "delete-the-internet"), ("delete-the-internet",)
-    )
+    v = can_surface_action(PanelAction("evil", "delete-the-internet"), ("delete-the-internet",))
     assert v.allowed is False
     assert "unknown capability" in v.reason
 
@@ -112,12 +110,20 @@ def test_composes_with_a_disposed_agent_tool_set():
     from agate.tags import SessionTags
 
     author = SessionTags(
-        affiliation="faculty", tenant="uni", courses=(), tier="mid", role="member",
+        affiliation="faculty",
+        tenant="uni",
+        courses=(),
+        tier="mid",
+        role="member",
         scope="chemistry",
     )
     draft = {
-        "agent": "ta", "description": "d", "role": "ta", "scope": "chemistry/chem-101",
-        "reasoning": "lit-review", "tools": ["course-materials-reader", "gradebook-drafts"],
+        "agent": "ta",
+        "description": "d",
+        "role": "ta",
+        "scope": "chemistry/chem-101",
+        "reasoning": "lit-review",
+        "tools": ["course-materials-reader", "gradebook-drafts"],
     }
     out = dispose_draft(draft, author, subject="prof")
     assert out.ok

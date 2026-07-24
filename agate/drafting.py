@@ -88,9 +88,7 @@ class DraftOutcome:
         return self.boundary.summary()
 
 
-def dispose_draft(
-    draft: dict, author_tags: SessionTags, *, subject: str
-) -> DraftOutcome:
+def dispose_draft(draft: dict, author_tags: SessionTags, *, subject: str) -> DraftOutcome:
     """Dispose an UNTRUSTED draft dict (an LLM's JSON output) against the author's VERIFIED
     `SessionTags`. Runs the existing pure pipeline, fail-closed at each step:
 

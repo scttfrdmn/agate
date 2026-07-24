@@ -69,9 +69,7 @@ def rows_from_items(items: list[dict]) -> list[SpendRow]:
         except (TypeError, ValueError):
             amount = 0.0
         rows.append(
-            SpendRow(
-                tenant=parsed.tenant, user=parsed.user, period=parsed.period, spend_usd=amount
-            )
+            SpendRow(tenant=parsed.tenant, user=parsed.user, period=parsed.period, spend_usd=amount)
         )
     return rows
 

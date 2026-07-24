@@ -20,8 +20,12 @@ def _author(scope="chemistry", tier="frontier", tenant="uni", aff="researcher"):
 
 def _draft(**over):
     d = {
-        "agent": "paper-sweep", "description": "summarize new papers", "role": "researcher",
-        "scope": "chemistry/chem-101", "reasoning": "lit-review", "tools": ["library-search"],
+        "agent": "paper-sweep",
+        "description": "summarize new papers",
+        "role": "researcher",
+        "scope": "chemistry/chem-101",
+        "reasoning": "lit-review",
+        "tools": ["library-search"],
     }
     d.update(over)
     return d
@@ -109,7 +113,10 @@ def test_non_dict_draft_rejected():
 def test_skills_draft_expands_and_is_disposed():
     # a draft using a SKILL (no explicit reasoning) is disposed like any other.
     d = {
-        "agent": "r", "description": "d", "role": "researcher", "scope": "chemistry",
+        "agent": "r",
+        "description": "d",
+        "role": "researcher",
+        "scope": "chemistry",
         "skills": ["lit-reviewer"],
     }
     out = dispose_draft(d, _author("chemistry"), subject="p")

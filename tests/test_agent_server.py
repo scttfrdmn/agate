@@ -169,10 +169,14 @@ def test_pattern_per_role_system_prompt_reaches_backend(monkeypatch):
 
         def converse(self, tier, system, prompt, max_tokens):
             seen.append(system)
-            return ("SYNTHESIS" if "Reply with one word" in system else "ok"), {
-                "inputTokens": 1,
-                "outputTokens": 1,
-            }, None
+            return (
+                ("SYNTHESIS" if "Reply with one word" in system else "ok"),
+                {
+                    "inputTokens": 1,
+                    "outputTokens": 1,
+                },
+                None,
+            )
 
     monkeypatch.setattr(server, "BedrockBackend", CapturingBackend)
     monkeypatch.setattr(server, "CODE_INTERPRETER_ID", "")
@@ -213,10 +217,14 @@ def test_memory_recall_prepended_to_evidence(stub_backends, monkeypatch):
 
         def converse(self, tier, system, prompt, max_tokens):
             seen_prompts.append(prompt)
-            return ("SYNTHESIS" if "Reply with one word" in system else "ok"), {
-                "inputTokens": 1,
-                "outputTokens": 1,
-            }, None
+            return (
+                ("SYNTHESIS" if "Reply with one word" in system else "ok"),
+                {
+                    "inputTokens": 1,
+                    "outputTokens": 1,
+                },
+                None,
+            )
 
     monkeypatch.setattr(server, "BedrockBackend", CapturingBackend)
     monkeypatch.setattr(memory_client, "enabled", lambda: True)
@@ -225,7 +233,8 @@ def test_memory_recall_prepended_to_evidence(stub_backends, monkeypatch):
     )
     recorded = {}
     monkeypatch.setattr(
-        memory_client, "record",
+        memory_client,
+        "record",
         lambda token, payload, **k: recorded.update(token=token, payload=payload) or True,
     )
     events = server.run_invocation(

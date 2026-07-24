@@ -45,7 +45,9 @@ def test_fetch_allowlisted_public_host(wired):
     fetch = lambda url, ip: (200, {}, b"hello from the web", None)  # noqa: E731
     out = _invoke(
         {"idp_token": "t", "tool": "web-fetch", "url": "https://arxiv.org/abs/1"},
-        resolve, fetch, wired,
+        resolve,
+        fetch,
+        wired,
     )
     assert out["status"] == 200
     assert out["body"]["content"] == "hello from the web"
@@ -105,7 +107,9 @@ def test_fetch_is_pinned_to_the_validated_ip(wired):
 def test_blocks_non_allowlisted_host(wired):
     out = _invoke(
         {"idp_token": "t", "url": "https://attacker.com/x"},
-        lambda h: ["8.8.8.8"], lambda u, ip: (200, {}, b"", None), wired,
+        lambda h: ["8.8.8.8"],
+        lambda u, ip: (200, {}, b"", None),
+        wired,
     )
     assert out["status"] == 403
 
@@ -114,7 +118,9 @@ def test_blocks_host_resolving_to_metadata_ip(wired):
     # Host is allowlisted, but DNS resolves to the IMDS address — blocked (rebinding).
     out = _invoke(
         {"idp_token": "t", "url": "https://example.edu/x"},
-        lambda host: ["169.254.169.254"], lambda u, ip: (200, {}, b"secret", None), wired,
+        lambda host: ["169.254.169.254"],
+        lambda u, ip: (200, {}, b"secret", None),
+        wired,
     )
     assert out["status"] == 403
     assert "content" not in out["body"]  # no bytes leaked from the blocked host
@@ -136,9 +142,7 @@ def test_blocks_redirect_to_private_host(wired):
 
     # internal.local isn't allowlisted either, so it's blocked at validate_url too — use a
     # host that IS allowlisted but resolves private to prove the IP re-check specifically.
-    out = _invoke(
-        {"idp_token": "t", "url": "https://example.edu/start"}, resolve, fetch, wired
-    )
+    out = _invoke({"idp_token": "t", "url": "https://example.edu/start"}, resolve, fetch, wired)
     assert out["status"] == 403
 
 
@@ -187,6 +191,8 @@ def test_empty_allowlist_denies_all(monkeypatch):
     monkeypatch.setattr(h, "validate_idp_token", lambda tok: _claims())
     out = _invoke(
         {"idp_token": "t", "url": "https://arxiv.org/a"},
-        lambda host: ["151.101.0.4"], lambda u, ip: (200, {}, b"", None), monkeypatch,
+        lambda host: ["151.101.0.4"],
+        lambda u, ip: (200, {}, b"", None),
+        monkeypatch,
     )
     assert out["status"] == 403

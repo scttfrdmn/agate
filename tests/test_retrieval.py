@@ -82,9 +82,7 @@ def stub(monkeypatch):
     monkeypatch.setattr(retrieval, "verify_token", fake_verify)
     # Assume-role returns our capturing vectors client; embedding is a fixed vector.
     monkeypatch.setattr(retrieval, "embed_query", lambda q: [0.1, 0.2, 0.3])
-    monkeypatch.setattr(
-        retrieval, "embed_mm_query", lambda t, i, f: [0.4, 0.5, 0.6], raising=True
-    )
+    monkeypatch.setattr(retrieval, "embed_mm_query", lambda t, i, f: [0.4, 0.5, 0.6], raising=True)
     monkeypatch.setattr(retrieval.boto3, "client", lambda *a, **k: vectors, raising=False)
     return sts, vectors
 
@@ -197,9 +195,7 @@ def test_mm_text_query_hits_mm_index_with_injected_filter(stub):
     assert resp["statusCode"] == 200
     # The MULTIMODAL index, and the SAME token-derived scope filter as the text path.
     assert vectors.last_query["indexName"] == "agate-chem-mm"
-    assert vectors.last_query["filter"] == scope_filter(
-        retrieval_nodes("chemistry/chem-101", ())
-    )
+    assert vectors.last_query["filter"] == scope_filter(retrieval_nodes("chemistry/chem-101", ()))
 
 
 def test_mm_image_query_embeds_and_queries_mm_index(stub):

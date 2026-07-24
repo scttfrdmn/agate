@@ -25,7 +25,10 @@ boto3 = pytest.importorskip("boto3")
 
 # A chemistry/chem-101-scoped chem-tenant session.
 _TAGS = SessionTags(
-    affiliation="student", tenant="chem", courses=("chem-101",), tier="oss",
+    affiliation="student",
+    tenant="chem",
+    courses=("chem-101",),
+    tier="oss",
     scope="chemistry/chem-101",
 )
 _POLICY = memory_access_policy(memory_arn=MEMORY_ARN)

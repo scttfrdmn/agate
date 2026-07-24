@@ -79,9 +79,7 @@ def test_namespace_is_stable_for_same_inputs():
 def test_slash_laden_ids_cannot_escape_their_fence():
     # A tenant/subject id containing `/` must NOT inject extra path levels that escape
     # the tenant fence — the `/` is stripped so the whole id collapses to ONE segment.
-    t = SessionTags(
-        affiliation="student", tenant="chem/../evil", courses=(), tier="oss", scope=""
-    )
+    t = SessionTags(affiliation="student", tenant="chem/../evil", courses=(), tier="oss", scope="")
     ns = personal_namespace(t, "alice/../bob")
     # Exactly the fixed shape: agate / <one-tenant-seg> / personal / <one-subject-seg> /
     parts = ns.strip("/").split("/")

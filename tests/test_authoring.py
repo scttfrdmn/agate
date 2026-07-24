@@ -122,8 +122,11 @@ def test_broadest_offered_selection_stays_within_author():
     broadest_scope = "chemistry"  # the author's own / broadest offered
     assert broadest_scope in opts.offerable_scopes
     spec = build_spec(
-        agent="max", description="d", role="researcher",  # researcher -> frontier ask
-        scope=broadest_scope, reasoning="lit-review",
+        agent="max",
+        description="d",
+        role="researcher",  # researcher -> frontier ask
+        scope=broadest_scope,
+        reasoning="lit-review",
         tools=tuple(c["name"] for c in opts.capabilities),
     )
     out = author_from_options(spec, author, subject="prof")
@@ -153,8 +156,12 @@ def test_forged_selection_outside_menu_is_rejected_by_disposer():
 def test_author_from_options_equals_dispose_draft():
     author = _author(scope="chemistry")
     spec = build_spec(
-        agent="r", description="d", role="researcher", scope="chemistry/chem-101",
-        reasoning="lit-review", tools=("library-search",),
+        agent="r",
+        description="d",
+        role="researcher",
+        scope="chemistry/chem-101",
+        reasoning="lit-review",
+        tools=("library-search",),
     )
     via_builder = author_from_options(spec, author, subject="prof")
     via_draft = dispose_draft(spec, author, subject="prof")

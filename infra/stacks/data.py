@@ -169,9 +169,7 @@ class DataStack(Stack):
                     sid="AllowVectorReaderDecrypt",
                     effect=iam.Effect.ALLOW,
                     principals=[
-                        iam.ArnPrincipal(
-                            f"arn:aws:iam::{self.account}:role/{HANDLE}-vector-reader"
-                        )
+                        iam.ArnPrincipal(f"arn:aws:iam::{self.account}:role/{HANDLE}-vector-reader")
                     ],
                     actions=["kms:Decrypt", "kms:DescribeKey"],
                     resources=["*"],

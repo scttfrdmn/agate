@@ -131,9 +131,7 @@ def open_room(creator: SessionTags, *, room_id: str, subject: str) -> Room:
     creator's; every later member can only narrow them."""
     member = Member(kind="human", subject=subject, tags=creator)
     scope, tier = _derive(creator.tenant, (member,))
-    return Room(
-        id=room_id, tenant=creator.tenant, members=(member,), scope=scope, tier=tier
-    )
+    return Room(id=room_id, tenant=creator.tenant, members=(member,), scope=scope, tier=tier)
 
 
 def add_member(room: Room, member: Member) -> Room:
@@ -216,9 +214,7 @@ def room_message(room: Room, member: Member, *, text: str, agent: str = "") -> R
         agent=agent or member.subject,
         remit={"scope": eff.scope, "tier": eff.tier, "room": room.id},
     )
-    return RoomMessage(
-        author_subject=member.subject, kind=member.kind, text=text, acting_as=acting
-    )
+    return RoomMessage(author_subject=member.subject, kind=member.kind, text=text, acting_as=acting)
 
 
 # --- transcript = a saved session (#109) ------------------------------------
@@ -249,9 +245,7 @@ def room_to_saved_session(
     )
 
 
-def room_cascade_nodes(
-    room: Room, spend_lookup
-) -> list[tuple[str, float, float | None]]:
+def room_cascade_nodes(room: Room, spend_lookup) -> list[tuple[str, float, float | None]]:
     """The `cost.evaluate_cascade` node-list for an action in the room: one `(label, spend,
     budget)` row PER MEMBER, so an action must fit under EVERY member's remaining budget —
     the flat, peer analogue of the agent-graph's ancestor cascade (#112). `spend_lookup(

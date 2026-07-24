@@ -81,8 +81,11 @@ def test_cascade_nodes_are_scope_ancestors_broad_to_specific():
 
 def test_submit_rejected_over_allocation_names_breaching_node():
     d = gate_submit(
-        tenant="chem", scope="lab/photonics", model_id=_MODEL,
-        input_tokens=100000, max_tokens=4000,
+        tenant="chem",
+        scope="lab/photonics",
+        model_id=_MODEL,
+        input_tokens=100000,
+        max_tokens=4000,
         spend_lookup=lambda label: (0.0, 0.000001) if label == "lab/photonics" else (0.0, None),
     )
     assert d.allowed is False
@@ -92,8 +95,11 @@ def test_submit_rejected_over_allocation_names_breaching_node():
 
 def test_submit_allowed_within_budget():
     d = gate_submit(
-        tenant="chem", scope="lab/photonics", model_id=_MODEL,
-        input_tokens=10, max_tokens=10,
+        tenant="chem",
+        scope="lab/photonics",
+        model_id=_MODEL,
+        input_tokens=10,
+        max_tokens=10,
         spend_lookup=lambda label: (0.0, 1000.0),
     )
     assert d.allowed is True
@@ -107,7 +113,8 @@ def test_submit_ignores_payload_supplied_account():
     # A malicious job_spec carrying another lab's account must have NO effect — the account
     # is derived from the verified scope.
     res = h.submit(
-        _tags(scope="lab/photonics"), "prof",
+        _tags(scope="lab/photonics"),
+        "prof",
         {"account": "physics-EVIL", "scope": "physics", "script": "run.sh"},
         spend_reader=lambda label: (0.0, 1000.0),
         submit_job=lambda acct, spec: f"job-on-{acct}",
@@ -118,7 +125,9 @@ def test_submit_ignores_payload_supplied_account():
 
 def test_submit_emits_obo_attribution():
     res = h.submit(
-        _tags(), "prof", {"script": "run.sh"},
+        _tags(),
+        "prof",
+        {"script": "run.sh"},
         spend_reader=lambda label: (0.0, 1000.0),
         submit_job=lambda acct, spec: "job-1",
     )
@@ -133,7 +142,9 @@ def test_submit_raises_when_over_budget_before_scheduler():
     calls = []
     with pytest.raises(h.SlurmToolError):
         h.submit(
-            _tags(), "prof", {"script": "run.sh"},
+            _tags(),
+            "prof",
+            {"script": "run.sh"},
             spend_reader=lambda label: (0.0, 0.000001),
             submit_job=lambda acct, spec: calls.append(acct) or "job",
         )

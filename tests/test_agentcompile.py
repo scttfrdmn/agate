@@ -106,8 +106,14 @@ def test_gateway_tool_resource_is_the_gateway_arn():
     from policy.generate import agent_tool_policy
 
     arn = "arn:aws:bedrock-agentcore:us-east-1:123:gateway/agate-*"
-    grants = [{"sid": "ToolHpcSubmit", "actions": ["bedrock-agentcore:InvokeGateway"],
-               "resource_kind": "gateway-tool", "write": True}]
+    grants = [
+        {
+            "sid": "ToolHpcSubmit",
+            "actions": ["bedrock-agentcore:InvokeGateway"],
+            "resource_kind": "gateway-tool",
+            "write": True,
+        }
+    ]
     doc = agent_tool_policy(grants, gateway_arn=arn)
     allow = next(s for s in doc["Statement"] if s["Sid"] == "ToolHpcSubmit")
     assert allow["Resource"] == [arn]
@@ -172,9 +178,7 @@ def test_triggers_are_shape_only_descriptors():
 
 
 def test_compile_emits_typed_trigger_bindings():
-    c = compile_agent(
-        _spec(triggers=[{"on": "schedule:rate(1 day)", "then": "summarize"}])
-    )
+    c = compile_agent(_spec(triggers=[{"on": "schedule:rate(1 day)", "then": "summarize"}]))
     assert len(c.trigger_bindings) == 1
     b = c.trigger_bindings[0]
     assert b.kind == "schedule" and b.expression == "rate(1 day)" and b.handler == "summarize"

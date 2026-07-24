@@ -214,9 +214,7 @@ class AuditStack(Stack):
                     principals=[iam.ServicePrincipal("cloudtrail.amazonaws.com")],
                     actions=["s3:PutObject"],
                     resources=[
-                        trail_bucket.arn_for_objects(
-                            f"{key_prefix}/AWSLogs/{self.account}/*"
-                        )
+                        trail_bucket.arn_for_objects(f"{key_prefix}/AWSLogs/{self.account}/*")
                     ],
                     conditions={
                         "StringEquals": {

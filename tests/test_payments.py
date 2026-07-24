@@ -24,8 +24,11 @@ from agate.tags import role_session_name
 
 def _agent(scope="lab/photonics", budget="$50 / user / month"):
     d = {
-        "agent": "researcher", "description": "d", "role": "researcher",
-        "scope": scope, "reasoning": "lit-review",
+        "agent": "researcher",
+        "description": "d",
+        "role": "researcher",
+        "scope": scope,
+        "reasoning": "lit-review",
     }
     if budget is not None:
         d["budget"] = budget
@@ -65,8 +68,11 @@ def test_child_mandate_capped_to_parent_remaining():
     parent = mandate_from_budget(_agent(), tenant="uni", subject="prof")  # $50
     # child asks for MORE than the parent -> capped to the parent's ceiling
     child = delegate_mandate(
-        parent, BudgetSpec(usd=80.0, per="user", period_kind="month"),
-        child_subject="sub", child_scope="lab/photonics", child_acting_as=_caa(),
+        parent,
+        BudgetSpec(usd=80.0, per="user", period_kind="month"),
+        child_subject="sub",
+        child_scope="lab/photonics",
+        child_acting_as=_caa(),
     )
     assert child.limit_usd == 50.0
 
@@ -74,8 +80,11 @@ def test_child_mandate_capped_to_parent_remaining():
 def test_child_mandate_respects_its_smaller_ask():
     parent = mandate_from_budget(_agent(), tenant="uni", subject="prof")  # $50
     child = delegate_mandate(
-        parent, BudgetSpec(usd=20.0, per="user", period_kind="month"),
-        child_subject="sub", child_scope="lab/photonics/sub", child_acting_as=_caa(),
+        parent,
+        BudgetSpec(usd=20.0, per="user", period_kind="month"),
+        child_subject="sub",
+        child_scope="lab/photonics/sub",
+        child_acting_as=_caa(),
     )
     assert child.limit_usd == 20.0
     assert child.scope == "lab/photonics/sub"  # narrowed to the deeper scope
@@ -85,19 +94,29 @@ def test_disjoint_child_scope_refused():
     parent = mandate_from_budget(_agent(), tenant="uni", subject="prof")
     with pytest.raises(PaymentError):
         delegate_mandate(
-            parent, None, child_subject="sub", child_scope="physics", child_acting_as=_caa(),
+            parent,
+            None,
+            child_subject="sub",
+            child_scope="physics",
+            child_acting_as=_caa(),
         )
 
 
 def test_delegation_is_monotonic_over_two_hops():
     parent = mandate_from_budget(_agent(), tenant="uni", subject="prof")  # $50
     child = delegate_mandate(
-        parent, BudgetSpec(usd=30.0, per="user", period_kind="month"),
-        child_subject="c", child_scope="lab/photonics", child_acting_as=_caa("c"),
+        parent,
+        BudgetSpec(usd=30.0, per="user", period_kind="month"),
+        child_subject="c",
+        child_scope="lab/photonics",
+        child_acting_as=_caa("c"),
     )
     grandchild = delegate_mandate(
-        child, BudgetSpec(usd=40.0, per="user", period_kind="month"),  # asks MORE than child
-        child_subject="g", child_scope="lab/photonics", child_acting_as=_caa("g"),
+        child,
+        BudgetSpec(usd=40.0, per="user", period_kind="month"),  # asks MORE than child
+        child_subject="g",
+        child_scope="lab/photonics",
+        child_acting_as=_caa("g"),
     )
     # grandchild ⊆ child ⊆ parent: 40 asked, but child only has 30, parent only 50
     assert grandchild.limit_usd == 30.0

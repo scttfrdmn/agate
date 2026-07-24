@@ -64,8 +64,7 @@ def get_skill(name: str) -> Skill:
 def skill_catalog() -> list[dict[str, str]]:
     """The selectable skills, for the §8.5 authoring UI (name/title/description)."""
     return [
-        {"name": s.name, "title": s.title, "description": s.description}
-        for s in _SKILLS.values()
+        {"name": s.name, "title": s.title, "description": s.description} for s in _SKILLS.values()
     ]
 
 

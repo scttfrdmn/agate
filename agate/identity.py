@@ -122,8 +122,12 @@ def acting_as_from_session(
     tenant = tenant_from_session_name(session_name)
     if tenant is None:
         return ActingAs(
-            agent=agent, agent_version=agent_version, tenant="",
-            subject=UNATTRIBUTED, remit=remit or {}, chain=chain,
+            agent=agent,
+            agent_version=agent_version,
+            tenant="",
+            subject=UNATTRIBUTED,
+            remit=remit or {},
+            chain=chain,
         )
     return ActingAs(
         agent=agent,

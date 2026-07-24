@@ -242,8 +242,7 @@ def instantiate_for_invoker(
     assume happens via `spawn_child` at the deferred instantiation endpoint."""
     if not is_eligible_invoker(invoker, spec):
         raise DelegationError(
-            f"invoker is not eligible to run agent {spec.name!r} "
-            f"(invokers={spec.invokers})"
+            f"invoker is not eligible to run agent {spec.name!r} (invokers={spec.invokers})"
         )
     child = delegate(invoker, spec, subject=subject)
     return InstantiatedAgent(

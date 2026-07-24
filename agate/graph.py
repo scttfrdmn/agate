@@ -60,8 +60,15 @@ def build_graph(root_spec: AgentSpec, root_tags: SessionTags, *, subject: str = 
     out-tier its parent, and a disjoint-scope child raises `GraphError` (via delegate's
     DelegationError). `max_depth`/`max_fanout` come from the ROOT (one ceiling for the
     whole family, not per-node), so a sub-agent can't widen the bound."""
-    return _build(root_spec, root_tags, subject, root_spec.max_depth, root_spec.max_fanout, 0,
-                  (root_spec.name,))
+    return _build(
+        root_spec,
+        root_tags,
+        subject,
+        root_spec.max_depth,
+        root_spec.max_fanout,
+        0,
+        (root_spec.name,),
+    )
 
 
 def _build(
@@ -89,8 +96,13 @@ def _build(
             ) from exc
         children.append(
             _build(
-                child_spec, child_tags, subject, max_depth, max_fanout,
-                depth + 1, (*path, child_spec.name),
+                child_spec,
+                child_tags,
+                subject,
+                max_depth,
+                max_fanout,
+                depth + 1,
+                (*path, child_spec.name),
             )
         )
     return GraphNode(spec=spec, tags=tags, depth=depth, path=path, children=tuple(children))
@@ -137,9 +149,7 @@ def node_acting_as(node: GraphNode, *, session_name: str) -> ActingAs:
     )
 
 
-def cascade_nodes(
-    node: GraphNode, spend_lookup
-) -> list[tuple[str, float, float | None]]:
+def cascade_nodes(node: GraphNode, spend_lookup) -> list[tuple[str, float, float | None]]:
     """The `cost.evaluate_cascade` node-list for a call AT `node`: one (label, spend,
     budget) row per ANCESTOR (root→node), so the call must fit under EVERY ancestor's
     remaining budget — the family ceiling (#112). `spend_lookup(GraphNode) -> (spend,

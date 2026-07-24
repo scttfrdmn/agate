@@ -203,9 +203,7 @@ def build_spec(
     return spec
 
 
-def author_from_options(
-    spec: dict, author_tags: SessionTags, *, subject: str
-) -> DraftOutcome:
+def author_from_options(spec: dict, author_tags: SessionTags, *, subject: str) -> DraftOutcome:
     """Funnel a builder-assembled (or template-filled) spec dict through the SAME disposer an
     LLM draft uses (#118): parse → clamp to the author → render the effective boundary to
     confirm. So the boundary is enforced by the compiler, never the UI — a forged selection

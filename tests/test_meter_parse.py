@@ -125,8 +125,6 @@ def test_unknown_model_id_still_prices_via_pricebook_default():
 def test_frontier_id_meters_at_frontier_not_oss():
     # #88 end-to-end: a real frontier id now meters at frontier rates (the bug was
     # every id falling back to oss). Compare identical token counts across tiers.
-    opus = parse_invocation_record(
-        record(modelId="us.anthropic.claude-opus-4-1-20250805-v1:0")
-    )
+    opus = parse_invocation_record(record(modelId="us.anthropic.claude-opus-4-1-20250805-v1:0"))
     gpt_oss = parse_invocation_record(record(modelId="openai.gpt-oss-20b-1:0"))
     assert opus.cost_usd > gpt_oss.cost_usd * 10  # frontier ≫ oss for the same usage

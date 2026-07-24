@@ -118,9 +118,7 @@ def plan_triggered_run(
     try:
         child_tags = delegate(author_tags, compiled.spec, subject=subject)
     except DelegationError as exc:  # disjoint scope etc. — fail closed
-        raise TriggerError(
-            f"cannot bind trigger for agent {compiled.spec.name!r}: {exc}"
-        ) from exc
+        raise TriggerError(f"cannot bind trigger for agent {compiled.spec.name!r}: {exc}") from exc
 
     session_name = role_session_name(child_tags.tenant, subject)
     record = acting_as(compiled, session_name=session_name)

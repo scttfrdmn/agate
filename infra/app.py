@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """agate CDK app entry point.
 
-One app, small focused stacks (design §11). Phase 0/1 ships only the identity
-stack — the load-bearing crux. Later phases add data/audit/lti/meter/web stacks.
+One app, small focused stacks (design §11). The load-bearing crux is the identity
+stack (claims→scoped-STS broker + ABAC); the app now defines the full set — core
+(identity/data/audit), the browser demo (web/chokepoint/demo-idp), and optional
+product/experimental stacks (agent, governance, corpus, memory, rooms, drafting,
+authoring, deploy, admin, lti). Each stack is independent; deploy only what a demo needs.
 """
 
 from __future__ import annotations

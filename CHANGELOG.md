@@ -63,6 +63,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **✕ delete** (confirmed when the chat has turns; an empty scratch chat deletes in one click).
   Deleting the active chat switches to a neighbour; deleting the last chat starts a fresh one.
 
+### Changed
+- **README tells the true request-path story + accurate claims (review #213/#214).** The intro no
+  longer implies "the browser talks to Bedrock and S3 Vectors directly"; it now names all four real
+  paths (CLI→Bedrock direct, browser→chokepoint→Bedrock, browser→retrieval-proxy→S3 Vectors,
+  agent→AgentCore) and reframes agate as an "identity-native, serverless access layer — direct where
+  boundaries permit, serverless mediation where they don't." Corrected stale facts: "eight stacks" →
+  the real 16 (grouped core/demo/optional), license "to be added" → Apache-2.0, the quickstart's
+  `cd infra` → run from the repo root (pyproject/uv.lock/cdk.json all live at root),
+  and `infra/app.py`'s "ships only the identity stack" header. Softened over-categorical claims to
+  shared-responsibility wording: "zero standing cost" → "no fixed cost floor in the default path
+  (usage-based storage/logs/requests still apply)"; FERPA "falls out" → "designed to support
+  FERPA-aligned controls; compliance depends on institutional configuration and practices."
+
 ### Fixed
 - **Web deploy handles the larger bundle.** Self-hosting the pyodide runtime + package wheels grew
   `dist/` to ~33 MB, which OOM-killed the default 128 MB S3 `BucketDeployment` Lambda mid-publish

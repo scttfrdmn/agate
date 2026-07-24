@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Notebook code cells can import numpy/pandas/matplotlib again (#200 fix).** Package loading failed
+  in the browser with "Failed to construct 'URL': Invalid base URL" (surfacing only as a downstream
+  `ModuleNotFoundError`): pyodide resolves a wheel's relative `file_name` via `new URL(file_name,
+  packageBaseUrl)`, and a root-relative `/pyodide/` is not a valid base inside a Web Worker. The
+  worker now passes ABSOLUTE URLs (built from the worker origin) for `indexURL` / `lockFileURL` /
+  `packageBaseUrl`, keeping wheels on our own origin. Also stopped swallowing genuine
+  `loadPackagesFromImports` errors so future load failures surface directly.
+
 ### Changed
 - **Frontend decomposition — step 3 (review #221).** Extracted the five pop-out feature screens
   (Admin, Documents/corpus, Draft, Build, Rooms) + their post-login clients and the room

@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Docs landing page + request-paths reference (review #219).** New `docs/index.md` routes readers
+  by task into the existing essays (which stay as deep reference), and `docs/architecture/request-paths.md`
+  is a standalone quick-reference for the four real paths. README links both up top. Fixes the "reader
+  must synthesize the answer across essays" problem without destructively fragmenting the source docs.
 - **One-command demo deploy: `scripts/deploy-demo.sh` (review #217).** An evaluator path that
   validates prereqs, shows a plan and asks before deploying, brings up only the smallest coherent
   set (identity/data/audit/chokepoint/web + demo-idp), **derives every `VITE_*` from stack outputs

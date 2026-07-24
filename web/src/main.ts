@@ -739,7 +739,9 @@ function main(): void {
       b.classList.toggle("active", on);
       b.setAttribute("aria-pressed", String(on));
     });
-    // The composer belongs to the chat view; hide it in the notebook (cells run themselves).
+    // The chat composer (input + chips) belongs to the chat view; hide it in the notebook,
+    // where cells are the input. The controls row (view toggle + Mode/Model) lives OUTSIDE the
+    // form, so it stays visible in both views — including the toggle to switch back.
     form.hidden = view === "notebook";
     if (chipsHost) chipsHost.hidden = view === "notebook" || modeSel.value !== "ask";
     if (emptyState) emptyState.hidden = view === "notebook" || chats.current.turns > 0;

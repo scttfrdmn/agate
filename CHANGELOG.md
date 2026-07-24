@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Ask/Notebook UX cleanup (#236).** Moved the controls row (Chat|Notebook toggle + Mode + Model)
+  OUT of the chat `<form>` so it stays visible in the Notebook view — previously hiding the composer
+  in Notebook mode would also have hidden the toggle, so it wasn't hidden at all and the chat input
+  sat awkwardly below the cells. Now the Notebook view hides just the chat input + chips (cells are
+  the input), while the toggle/Mode/Model bar persists. Added visible **Mode** and **Model** labels
+  above those dropdowns (they were bare selects with only aria-labels).
+
 ### Fixed
 - **Notebook code cells can import numpy/pandas/matplotlib again (#200 fix).** Package loading failed
   in the browser with "Failed to construct 'URL': Invalid base URL" (surfacing only as a downstream

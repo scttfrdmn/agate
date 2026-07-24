@@ -14,6 +14,8 @@ reference. If you only read one thing to calibrate what's real today, read the
 | **Deploy a demo** in one command | [README → Deploying a demo](../README.md#deploying-a-demo) (`scripts/deploy-demo.sh`) |
 | Do a real / campus deploy | [README → Deploying a demo](../README.md#deploying-a-demo) (manual sequence) |
 | Understand the **security model** | [CISO brief](agate-security-ciso.md) |
+| See the **threat model + credential lifecycle** | [Threat model](security/threat-model.md) |
+| Check **region / AWS-service support** before deploying | [Regions & service support](reference/regions-and-service-support.md) |
 | Understand **identity → scoped credentials → ABAC** | [Architecture](agate-design.md) §3, §5 |
 | Understand the **cost model / NO CLOCKS** | [README → NO CLOCKS](../README.md#the-governing-principle-no-clocks), [Architecture](agate-design.md) §9 |
 | See the **academic interaction model** (Ask/Panel/Analyze) | [Academic interaction model](academic-interaction-model.md) |
@@ -35,6 +37,8 @@ above tells you which section answers a given question.
   distinct intellectual activities.
 - **[product/maturity-matrix.md](product/maturity-matrix.md)** — per-stack/feature status.
 - **[architecture/request-paths.md](architecture/request-paths.md)** — the four real request paths.
+- **[security/threat-model.md](security/threat-model.md)** — assets, trust boundaries, adversaries, credential lifecycle.
+- **[reference/regions-and-service-support.md](reference/regions-and-service-support.md)** — region-specific AWS service support + behavior assumptions.
 
 ## The three agates (keep them distinct)
 

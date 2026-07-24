@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Threat model + credential-flow diagram (review #223).** New `docs/security/threat-model.md`:
+  assets, trust boundaries (browser / broker / mediator Lambdas / AWS services / other tenants),
+  adversaries and what stops each, and the claims→verify→derive-tags→AssumeRole→scoped-creds
+  lifecycle as a diagram — including why `AssumeRole` (derived tier) not `AssumeRoleWithWebIdentity`,
+  and the 15-min session blast-radius argument. Linked from the docs index.
+- **Region / AWS-service-support matrix (review #224).** New
+  `docs/reference/regions-and-service-support.md`: what each path needs, the region-sensitive
+  services (S3 Vectors, Bedrock models, AgentCore, Guardrails; Price List API is us-east-1-only),
+  the load-bearing service-behavior assumptions (no Bedrock browser CORS → chokepoint; IAM can't
+  express the sub-tenant filter → retrieval proxy), and how to choose a region.
 - **Frontend decomposition — first step (review #221).** Began splitting the ~1,490-line `main.ts`
   orchestration monolith: extracted the dependency-free DOM helpers (`renderScopeChips`,
   `renderMemorySeed`, `renderError`) into a new `web/src/app/dom.ts`, establishing the `app/`

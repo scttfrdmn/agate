@@ -84,6 +84,12 @@ class WebStack(Stack):
                 destination_bucket=site_bucket,
                 distribution=distribution,
                 distribution_paths=["/*"],  # invalidate cache on deploy
+                # The self-hosted pyodide runtime + package wheels (#200) push dist/ to ~33 MB.
+                # The default 128 MB deploy Lambda OOMs unzipping + syncing that; bump memory and
+                # scratch space so the publish completes. (NO CLOCKS unaffected — this Lambda only
+                # runs during a deploy, not at request time.)
+                memory_limit=1024,
+                ephemeral_storage_size=cdk.Size.mebibytes(1024),
             )
 
         cdk.CfnOutput(self, "SiteUrl", value=f"https://{distribution.distribution_domain_name}")

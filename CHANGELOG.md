@@ -64,6 +64,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Deleting the active chat switches to a neighbour; deleting the last chat starts a fresh one.
 
 ### Fixed
+- **Web deploy handles the larger bundle.** Self-hosting the pyodide runtime + package wheels grew
+  `dist/` to ~33 MB, which OOM-killed the default 128 MB S3 `BucketDeployment` Lambda mid-publish
+  (leaving the stack stuck until rollback). The deploy Lambda now gets 1024 MB memory + 1 GB scratch.
+  Deploy-time only — no request-time resource, so NO CLOCKS is unaffected.
 - **CDK CLI pin tracks the library schema.** Bumped the pinned `aws-cdk` CLI floor to `^2.1126.0`
   so it can read the cloud-assembly schema (v54) emitted by the current `aws-cdk-lib` — a global
   `npx cdk` could resolve a stale CLI and fail deploys with "cloud assembly schema version mismatch."

@@ -68,8 +68,11 @@ uv sync                       # install CDK + deps into .venv
 uv run pytest                 # pure-logic unit tests (no AWS)
 uv run ruff check && uv run ruff format
 
-# CDK synth (needs Node for the aws-cdk CLI + jsii)
-npx cdk synth
+# CDK synth (needs Node for the aws-cdk CLI + jsii). Install the repo-pinned CLI and use it
+# via `npm run` (or ./node_modules/.bin/cdk) — NOT a global `npx cdk`, which can be stale and
+# fail with a "cloud assembly schema version mismatch" against the newer aws-cdk-lib.
+npm install                    # installs the pinned aws-cdk CLI (schema-compatible with aws-cdk-lib)
+npm run synth                  # -> cdk synth   (likewise: npm run diff / npm run deploy)
 
 # Go CLI
 cd ../cli && go build ./... && go test ./...

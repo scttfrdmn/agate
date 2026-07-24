@@ -46,6 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Deleting the active chat switches to a neighbour; deleting the last chat starts a fresh one.
 
 ### Fixed
+- **CDK CLI pin tracks the library schema.** Bumped the pinned `aws-cdk` CLI floor to `^2.1126.0`
+  so it can read the cloud-assembly schema (v54) emitted by the current `aws-cdk-lib` — a global
+  `npx cdk` could resolve a stale CLI and fail deploys with "cloud assembly schema version mismatch."
+  README now says to `npm install` the repo-pinned CLI and deploy via `npm run` / the local binary.
 - **Follow-up suggestions stay within the corpus.** When RAG grounding is active, the follow-up
   chips are now generated from the SAME retrieved excerpts that grounded the answer and constrained
   to be answerable from them — so we no longer suggest good-looking questions the grounded assistant

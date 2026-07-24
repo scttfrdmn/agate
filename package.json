@@ -9,6 +9,6 @@
     "deploy": "cdk deploy"
   },
   "devDependencies": {
-    "aws-cdk": "^2.1029.0"
+    "aws-cdk": "^2.1126.0"
   }
 }

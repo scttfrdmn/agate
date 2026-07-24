@@ -30,6 +30,20 @@ opt-in services (e.g. memory) still incur cost.
 > of bedrock). Session-tag namespace `agate:`; docs bucket prefix `agate-docs`. The name is
 > still provisional ("for now").
 
+## A quick tour
+
+<!-- Screenshots pending (#220). Drop PNGs in docs/images/ and uncomment:
+![Ask — grounded answer with citations and a cost receipt](docs/images/ask.png)
+![Notebook — a code cell rendering a matplotlib plot inline](docs/images/notebook.png)
+![Context panel — send window / clear / compress, with the running cost meter](docs/images/context.png)
+-->
+
+The SPA has **Ask** (grounded chat with citations + a per-answer cost receipt), a **Notebook**
+view (prompt cells + client-side Python code cells that render plots inline), a **Context** panel
+(clear / sliding-window / compress), and — when their stacks are deployed — Documents, Memory,
+Rooms, drafting/authoring, and an admin console. Screenshots are tracked in
+[#220](https://github.com/scttfrdmn/agate/issues/220); see [`docs/images/`](docs/images/).
+
 ## The governing principle: NO CLOCKS
 
 Nothing in the default (Tier 0) design bills by the wall-clock hour while idle — no NAT

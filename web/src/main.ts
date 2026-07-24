@@ -42,6 +42,7 @@ import { runCell } from "./chat/notebook-run";
 import { dependentsOf, nextCellName, resolveSource } from "./chat/dag";
 import { deserializeNotebook, serializeNotebook } from "./chat/notebook-store";
 import { CodeKernel } from "./notebook/kernel";
+import { renderError, renderMemorySeed, renderScopeChips } from "./app/dom";
 import { type RetrievedChunk, withContext } from "./rag/context";
 import { Retriever } from "./rag/retriever";
 import { AgentCoreTransport } from "./transport/agentcore";
@@ -185,69 +186,6 @@ function render(app: HTMLElement): void {
     </div>`;
 }
 
-// Render the session's verified access as chips (tier / tenant / affiliation /
-// courses). These are display-only echoes of the broker's scope — authority lives
-// server-side. Called once creds.scope is known.
-function renderScopeChips(scope: {
-  tier?: string;
-  tenant?: string;
-  affiliation?: string;
-  courses?: string[];
-}): void {
-  const host = document.getElementById("scope-chips");
-  if (!host) return;
-  const chips: Array<[string, string]> = [];
-  if (scope.tier) chips.push(["tier", scope.tier]);
-  if (scope.tenant) chips.push(["tenant", scope.tenant]);
-  if (scope.affiliation) chips.push(["role", scope.affiliation]);
-  for (const c of scope.courses ?? []) chips.push(["course", c]);
-  host.replaceChildren(
-    ...chips.map(([k, v]) => {
-      const chip = document.createElement("span");
-      chip.className = "scope-chip";
-      const key = document.createElement("span");
-      key.className = "scope-chip-key";
-      key.textContent = k;
-      const val = document.createElement("span");
-      val.className = "scope-chip-val";
-      val.textContent = v;
-      chip.append(key, val);
-      return chip;
-    }),
-  );
-}
-
-// Show the recalled "what I remember about you" block in the empty-chat state (#194
-// follow-up), so a returning user sees their continuity before asking. Replaces any prior
-// seed; cleared when a turn arrives (the empty state hides).
-function renderMemorySeed(text: string): void {
-  const empty = document.getElementById("empty");
-  if (!empty || empty.hidden) return;
-  let seed = document.getElementById("memory-seed");
-  if (!seed) {
-    seed = document.createElement("div");
-    seed.id = "memory-seed";
-    seed.className = "memory-seed";
-    empty.appendChild(seed);
-  }
-  const title = document.createElement("div");
-  title.className = "memory-seed-title";
-  title.textContent = "From your earlier sessions";
-  const body = document.createElement("div");
-  body.className = "memory-seed-body";
-  body.textContent = text.replace(/^Relevant remembered context:\n/, "");
-  seed.replaceChildren(title, body);
-}
-
-// Errors are announced assertively (role=alert) so a screen reader interrupts to
-// read them, rather than waiting for the polite answer queue.
-function renderError(out: HTMLElement, message: string): void {
-  const box = document.createElement("p");
-  box.className = "error-msg";
-  box.setAttribute("role", "alert");
-  box.textContent = `Error: ${message}`;
-  out.replaceChildren(box);
-}
 
 function main(): void {
   const app = document.getElementById("app");

@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Frontend decomposition — first step (review #221).** Began splitting the ~1,490-line `main.ts`
+  orchestration monolith: extracted the dependency-free DOM helpers (`renderScopeChips`,
+  `renderMemorySeed`, `renderError`) into a new `web/src/app/dom.ts`, establishing the `app/`
+  composition seam. main.ts → 1,428 lines; behavior unchanged (231 web tests pass). The
+  feature-controller extraction (ask/notebook/corpus/…) continues under #221.
+- **Quick-tour section + screenshots slot (review #220).** README gains a "quick tour" describing
+  the SPA surfaces, and `docs/images/` is scaffolded for the pending screenshots (image capture is
+  the remaining manual step, tracked in #220).
 - **Docs landing page + request-paths reference (review #219).** New `docs/index.md` routes readers
   by task into the existing essays (which stay as deep reference), and `docs/architecture/request-paths.md`
   is a standalone quick-reference for the four real paths. README links both up top. Fixes the "reader

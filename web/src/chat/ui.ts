@@ -141,8 +141,13 @@ export class ChatTranscript {
 // receipt / copy markup. `idPrefix` namespaces the citation anchor ids so multiple cells
 // on one page don't collide (a chat transcript renders one answer at a time → default "").
 export function renderSources(chunks: RetrievedChunk[], idPrefix = ""): HTMLElement {
-  const box = el("div", "sources");
-  const title = el("div", "sources-title");
+  // A collapsible <details> (default open, so citation [n] anchors still resolve and the sources
+  // are visible by default). Users can fold it away once they've checked the grounding.
+  const box = document.createElement("details");
+  box.className = "sources";
+  box.open = true;
+  const title = document.createElement("summary");
+  title.className = "sources-title";
   title.textContent = `Sources (${chunks.length})`;
   box.appendChild(title);
   const list = el("ol", "sources-list");

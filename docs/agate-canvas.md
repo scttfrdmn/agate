@@ -51,6 +51,27 @@ cell at the end of the chain** — the composer at the bottom is the in-progress
 also insert a cell anywhere, make it code or prompt, and reference earlier outputs. One mental
 model: *a document of cells that reason and compute, newest at the bottom, composed at the bottom.*
 
+### One model, two renderers (the load-bearing UX rule)
+
+**"Chat is a document of only-prompt cells" is the right *implementation* model and a dangerous
+*presentation* model.** It is true for the builder, not the user. Someone asking a quick question
+does not want it to become a visible, named `c1` with an editable textarea and a freeze/stale
+lifecycle — they want an answer. So:
+
+- **Unify the data model** (everything is a cell underneath), but **ship two renderers over it.**
+  A prompt turn renders as a **conversational turn** (read-only answer + citations + one receipt);
+  a code cell renders as **cell chrome** (monospace editor, Run, output/plot, `$0.00 (local)`).
+- A prompt turn **becomes** a visible, editable, named cell only when the user **edits it or
+  references it** — the costume change is a deliberate signal, not a default. Same object, two
+  costumes; intent drives which.
+- The mental model to sell is **"a chat that can grow a spine,"** not "a notebook that starts
+  empty." When a code cell enters (via the composer's Code affordance or "Run this" on an emitted
+  block), the document visibly *levels up* — that transition is the teaching moment, and only then
+  do prior prompt turns show their `cN` handles.
+
+This is the highest-severity rule for Phase 1 (validated by UX review): if prompt turns ship as
+visible editable cells, we rebuild the notebook and *lose* chat — the opposite of the goal.
+
 ### Why this is the right UX
 
 - **One mental model**, not two you toggle between. The "which view am I in?" question disappears.
@@ -385,6 +406,37 @@ control, while preserving the cost-aware "never spend tokens silently" guarantee
    iteration and/or budget cap. Reaching here means the Canvas is a two-layer language; only pursue
    it if moves 1–8 have kept the "still feels like chat" bet intact. The destination, not a
    near-term deliverable.
+
+## Phase 1 UX spec (from UX review)
+
+Concrete decisions for the unification, validated by a UX-designer review. Build to these:
+
+- **Two renderers, one model** (see "One model, two renderers" above) — the load-bearing rule.
+- **Empty state = a chat app.** Composer only. No `+Prompt`/`+Code`/Save/Open chrome in an empty
+  doc (that screams "notebook" and kills first-contact simplicity). Gate those on content existing.
+- **Composer `Ask · Code` is Ask-weighted, not a 50/50 toggle.** Ask is the default state; Code is a
+  quiet mode-in (a `</>`/`{}` affordance or `/code`), not an equal peer tab — an equal toggle tells
+  users "this is a code tool" and undermines "just chat."
+- **Sticky-mode reset (day-one bug if missed):** after submitting a code cell, reset the composer to
+  Ask, so the next typed question isn't sent as Python. Mode must be visually unambiguous per
+  submission.
+- **Autoscroll discipline:** newest-at-bottom + autoscroll on stream, BUT if the user has scrolled
+  up, do not yank them down — show a "↓ new" pill (standard chat pattern). Notebook users scroll up
+  to read; don't fight them. Build this in Phase 1, not later.
+- **Progressive disclosure — visible to a newcomer:** composer + Ask/Code (Ask-weighted) + Model
+  (quiet) + streaming indicator + answer/citations/receipt. **Hidden until reached for:** `+Code`
+  (reach via the switch or "Run this"), `{{cN}}` refs and cell **names** (auto-assigned but not
+  shown until ≥2 cells AND a referential action), per-cell **re-run** (hover/overflow on prompt
+  turns; always shown on free code cells), Save/Open (appear once ≥1 turn), the stale/frozen badge
+  (only after an edit creates staleness).
+- **One receipt per turn.** A prompt turn's answer already has a receipt; do NOT add a second
+  standing per-cell cost line on top of it (reconciles move #3a — the standing `$0.00 (local)` line
+  is for *code* cells, which otherwise have no receipt).
+- **Mode (Ask/Panel/Analyze) demoted, or at minimum labeled + visually separated from Model.** An
+  unlabeled dropdown next to Model is the actual reported bug — don't carry it forward. Model is a
+  legitimate per-turn control near the composer; Mode is better as an action invoked on a prompt
+  (a "get a panel" choice / `/panel`) than a global mode you're persistently *in* (Panel is a
+  library function, move #6). Full Mode refactor can wait, but the label/separation cannot.
 
 ## Open questions
 

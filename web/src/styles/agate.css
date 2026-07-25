@@ -457,10 +457,32 @@ body {
   gap: 0.5rem;
   flex-shrink: 0;
 }
+/* `[hidden]` must actually hide — a `display:flex` rule on a flex container overrides the UA
+   `[hidden]{display:none}`, so any element that toggles `hidden` needs this guard (the old
+   composer-hide bug: the form stayed visible in the notebook view). */
+.composer-bar[hidden],
+.suggestions[hidden] {
+  display: none;
+}
 .composer-controls {
   display: flex;
   gap: 0.5rem;
   align-items: flex-end;
+}
+/* Model is the prominent per-turn control; Mode is demoted (narrower, muted) and separated
+   from it by an auto margin so the two never read as one undifferentiated pair of dropdowns. */
+.control-field-model {
+  flex: 2;
+}
+.control-field-mode {
+  flex: 0 0 auto;
+  margin-left: auto;
+  max-width: 12rem;
+}
+/* Demote Mode via its caption + narrower footprint — NOT by muting the select's value text
+   (that's an interactive control; its text must keep full contrast). */
+.control-field-mode .control-label {
+  opacity: 0.85;
 }
 /* A labelled control: a small caption above its select, so Mode/Model aren't bare dropdowns. */
 .control-field {
@@ -502,6 +524,44 @@ select,
 }
 .input-bar:focus-within {
   border-color: var(--accent);
+}
+/* Ask · Code switch — a quiet, Ask-weighted mode-in (NOT a 50/50 tab). It's a small monospace
+   glyph inside the input bar; pressed = Code mode (accent-tinted). Default (Ask) reads as a
+   faint affordance you reach for, so the surface still says "just chat" on first contact. */
+.code-toggle {
+  flex-shrink: 0;
+  align-self: flex-end;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.code-toggle:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.code-toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.code-toggle.active {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* Code mode monospaces the composer so a filled field still reads as code, not prose — the
+   mode stays unambiguous after the placeholder is gone. */
+.input-bar textarea.code-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9rem;
 }
 .input-bar textarea {
   flex: 1;
@@ -1128,27 +1188,9 @@ button {
   display: none;
 }
 
-/* ── notebook view (#185) ─────────────────────────────────────── */
+/* ── cell view (Canvas #242, formerly the notebook view #185) ─── */
 .notebook-pane[hidden] {
   display: none;
-}
-.view-toggle {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-.view-btn {
-  background: var(--surface);
-  border: none;
-  color: var(--muted);
-  font-size: 0.78rem;
-  padding: 0.4rem 0.7rem;
-}
-.view-btn.active {
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
 }
 .notebook {
   display: flex;

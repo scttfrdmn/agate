@@ -20,20 +20,23 @@ export function renderShell(app: HTMLElement): void {
           <p id="scope" class="empty-hint" role="status" aria-live="polite"></p>
         </div>
 
-        <!-- Composer + chips flow right after the transcript: empty, they sit near
-             the top; as answers stream in the transcript grows and pushes them down
-             (the whole column scrolls). -->
-        <!-- Controls (view toggle + mode + model) live OUTSIDE the form so they stay visible
-             in the Notebook view, where the chat composer below is hidden (cells are the input). -->
+        <!-- The composer is the in-progress tail cell (Canvas #242): it flows right after the
+             transcript, newest work above it, and you author at the bottom edge. There is no
+             Chat/Notebook view toggle — an Ask · Code switch on the composer picks the next
+             cell's kind, and reaching for Code is what grows the document a spine. -->
+        <!-- Controls sit just above the composer. Model is the prominent per-turn control; Mode
+             (Ask/Panel/Analyze) is demoted + separated (it competed with a redundant toggle before). -->
         <div class="composer-controls">
-          <!-- Chat | Notebook view toggle (#185): a view of the current chat. -->
-          <div id="view-toggle" class="view-toggle" role="group" aria-label="View">
-            <button type="button" class="view-btn active" data-view="chat" aria-pressed="true">Chat</button>
-            <button type="button" class="view-btn" data-view="notebook" aria-pressed="false">Notebook</button>
-          </div>
-          <label class="control-field">
+          <label class="control-field control-field-model">
+            <span class="control-label">Model</span>
+            <select id="model" aria-label="Model"
+                    title="Auto routes within your entitlement + budget; or pin a model">
+              <option value="auto">Auto (entitlement-aware)</option>
+            </select>
+          </label>
+          <label class="control-field control-field-mode">
             <span class="control-label">Mode</span>
-            <select id="mode" aria-label="Mode">
+            <select id="mode" aria-label="Answer mode">
               ${UI_MODES.map((m) => `<option value="${m.value}">${m.label}</option>`).join("")}
               <optgroup label="Reasoning patterns">
                 <option value="pattern:lit-review">Pattern · Literature synthesis</option>
@@ -41,16 +44,14 @@ export function renderShell(app: HTMLElement): void {
               </optgroup>
             </select>
           </label>
-          <label class="control-field">
-            <span class="control-label">Model</span>
-            <select id="model" aria-label="Model"
-                    title="Auto routes within your entitlement + budget; or pin a model">
-              <option value="auto">Auto (entitlement-aware)</option>
-            </select>
-          </label>
         </div>
         <form id="f" class="composer composer-bar" aria-label="Ask agate">
           <div class="input-bar">
+            <!-- Ask · Code switch, Ask-weighted: a quiet mode-in, not an equal peer tab. Off = Ask
+                 (a question, billed); on = Code (Python that runs locally in your browser, free). -->
+            <button type="button" id="code-toggle" class="code-toggle" aria-pressed="false"
+                    aria-label="Write code instead of asking"
+                    title="Write code — runs locally in your browser (free)">&lt;/&gt;</button>
             <textarea id="q" rows="1" placeholder="Ask a question…"
                       autocomplete="off" aria-label="Your question"
                       aria-describedby="scope"></textarea>

@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Canvas Phase 1 — composer restructure (#242).** Removed the Chat/Notebook view toggle and
+  unified on one surface (design `docs/agate-canvas.md`). The composer is now the in-progress tail
+  cell with an Ask-weighted **Ask · Code** switch: a quiet `</>` mode-in (default Ask), not a 50/50
+  tab — so the surface still reads as "just chat" on first contact. Reaching for **Code** grows the
+  document a spine: the first Code submit levels the surface up to the cell view, runs the Python
+  locally in the browser (free), and resets the composer back to Ask (sticky-mode reset, so the next
+  typed line isn't sent as Python). In Code mode the composer monospaces its field, relabels itself
+  for screen readers, and the send button becomes a Run glyph, so the active mode is unambiguous per
+  submission. **Model** is now the prominent per-turn control and **Mode** (Ask/Panel/Analyze) is
+  demoted + visually separated from it (the unlabeled adjacent dropdown was the reported #236 bug).
+  Also fixed the `.composer-bar{display:flex}` vs `[hidden]` bug so a hidden composer/suggestions
+  group actually hides. Note: appending a prompt cell in the cell view still uses the standalone
+  metered notebook run (no token streaming / multi-turn history / memory record) — the two-renderer
+  "chat costume" that restores full conversational fidelity is Phase 1 PR2.
 - **Ask/Notebook UX cleanup (#236).** Moved the controls row (Chat|Notebook toggle + Mode + Model)
   OUT of the chat `<form>` so it stays visible in the Notebook view — previously hiding the composer
   in Notebook mode would also have hidden the toggle, so it wasn't hidden at all and the chat input

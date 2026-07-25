@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Grounded answers can now apply the material, not just recite it.** The RAG grounding prompt told
+  the model it was "a grounded document assistant, not a general chatbot" and to answer "using only
+  this context" — so a computational request like "plot Gibbs free energy vs temperature" (grounded
+  in the course notes' Gibbs equation) was refused rather than answered with code. The prompt now
+  separates FACTS (must come from the cited excerpts; refuse if absent) from APPLYING them (compute,
+  plot, derive, write runnable Python), which is explicitly encouraged. This unbreaks the Canvas
+  "Run this" path (#243): the model now emits a ```python block a student can Run.
+
 ### Added
 - **Canvas Phase 2 — "Run this" on code in AI answers (#243).** Every runnable (python) code block
   in an assistant answer now carries a **▶ Run** action beside Copy. Clicking it spawns a live code

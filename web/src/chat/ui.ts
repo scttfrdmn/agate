@@ -8,6 +8,7 @@ import type { RetrievedChunk } from "../rag/context";
 import type { BudgetStatus } from "../transport";
 import { renderInto } from "../render/markdown";
 import { modelLabel } from "../router";
+import type { ScrollAnchor } from "./scroll";
 
 export interface AnswerMeta {
   usage?: { inputTokens: number; outputTokens: number };
@@ -34,20 +35,18 @@ export interface AssistantTurn {
 export class ChatTranscript {
   private readonly history: HTMLElement;
 
-  // `appendHost` is where the transcript DOM lives; `scrollHost` is the element that
-  // actually scrolls (the main column, since the composer flows beneath the
-  // transcript). They differ so new answers scroll the column, not just the region.
+  // `appendHost` is where the transcript DOM lives; `anchor` is the shared chat-anchored scroll
+  // model over the main column (Canvas #242) — the SAME anchor drives the cell view, so scrolling
+  // behaves identically in both renderers. If none is passed (older callers/tests), scrolling is a
+  // no-op and the transcript just renders.
   constructor(
     appendHost: HTMLElement,
-    private readonly scrollHost: HTMLElement = appendHost,
+    private readonly anchor?: ScrollAnchor,
   ) {
     this.history = document.createElement("div");
     this.history.className = "chat-history";
     appendHost.appendChild(this.history);
-    this.watchScroll();
   }
-
-  private userScrolled = false;
 
   /** Start a new turn: append the user bubble + an empty assistant bubble. */
   begin(question: string): AssistantTurn {
@@ -81,8 +80,7 @@ export class ChatTranscript {
 
     pair.append(userBubble, asst);
     this.history.appendChild(pair);
-    this.userScrolled = false; // a new question resumes auto-scroll
-    this.scrollDown();
+    this.anchor?.onNewTurn(); // a new question resumes auto-scroll (chat-anchored)
 
     let acc = "";
     let think: HTMLElement | null = thinking;
@@ -101,7 +99,7 @@ export class ChatTranscript {
         clearThinking();
         acc += delta;
         body.textContent = acc; // live plain-text stream
-        this.scrollDown();
+        this.anchor?.maybeScroll();
       },
       finalize: (text, sources, meta) => {
         clearThinking();
@@ -123,7 +121,7 @@ export class ChatTranscript {
         if (sources.length) asst.appendChild(renderSources(sources));
         asst.appendChild(renderReceipt(meta));
         asst.appendChild(copyAnswerBtn(text));
-        this.scrollDown();
+        this.anchor?.maybeScroll();
       },
       fail: (message) => {
         clearThinking();
@@ -131,36 +129,9 @@ export class ChatTranscript {
         err.setAttribute("role", "alert");
         err.textContent = `Error: ${message}`;
         body.replaceWith(err);
-        this.scrollDown();
+        this.anchor?.maybeScroll();
       },
     };
-  }
-
-  /** Smoothly pin to the bottom unless the user scrolled up to read. */
-  private scrollDown(): void {
-    if (this.userScrolled) return;
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        if (!this.userScrolled) {
-          this.scrollHost.scrollTo({ top: this.scrollHost.scrollHeight, behavior: "smooth" });
-        }
-      }),
-    );
-  }
-
-  private watchScroll(): void {
-    let last = 0;
-    this.scrollHost.addEventListener(
-      "scroll",
-      () => {
-        const host = this.scrollHost;
-        const fromBottom = host.scrollHeight - host.scrollTop - host.clientHeight;
-        if (host.scrollTop < last && fromBottom > 120) this.userScrolled = true;
-        if (fromBottom < 24) this.userScrolled = false;
-        last = host.scrollTop;
-      },
-      { passive: true },
-    );
   }
 }
 

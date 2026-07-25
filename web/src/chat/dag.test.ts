@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { NotebookCell } from "./notebook";
-import { buildDeps, dependentsOf, nextCellName, refsIn, resolveSource } from "./dag";
+import { buildDeps, dependentsOf, nextCellName, referencedNames, refsIn, resolveSource } from "./dag";
 
 function cell(part: Partial<NotebookCell> & { id: string; name: string }): NotebookCell {
   return { kind: "prompt", prompt: "", state: "idle", ...part };
@@ -96,5 +96,26 @@ describe("nextCellName", () => {
   it("returns c1 for an empty notebook and max+1 otherwise", () => {
     expect(nextCellName([])).toBe("c1");
     expect(nextCellName([cell({ id: "1", name: "c1" }), cell({ id: "3", name: "c3" })])).toBe("c4");
+  });
+});
+
+describe("referencedNames", () => {
+  it("is empty when no cell references another (names stay hidden)", () => {
+    const cells = [cell({ id: "1", name: "c1", prompt: "a" }), cell({ id: "2", name: "c2", prompt: "b" })];
+    expect(referencedNames(cells).size).toBe(0);
+  });
+  it("returns names that another cell references via {{cN}}", () => {
+    const cells = [
+      cell({ id: "1", name: "c1", prompt: "a" }),
+      cell({ id: "2", name: "c2", prompt: "build on {{c1}}" }),
+    ];
+    expect([...referencedNames(cells)]).toEqual(["c1"]);
+  });
+  it("ignores self-references and unknown names", () => {
+    const cells = [
+      cell({ id: "1", name: "c1", prompt: "loop {{c1}} and {{c9}}" }),
+      cell({ id: "2", name: "c2", prompt: "b" }),
+    ];
+    expect(referencedNames(cells).size).toBe(0);
   });
 });

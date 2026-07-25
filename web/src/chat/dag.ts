@@ -120,6 +120,25 @@ export function dependentsOf(cells: NotebookCell[], changedId: string): Notebook
   return order.map((id) => byId.get(id)!).filter(Boolean);
 }
 
+/**
+ * The set of cell names that are actually referenced by some *other* cell via {{cN}} — i.e. a
+ * "referential action" has occurred. The Canvas surface uses this to decide when to disclose cell
+ * names/handles (they stay hidden until the graph is real). Self-references don't count. Pure.
+ */
+export function referencedNames(cells: NotebookCell[]): Set<string> {
+  const known = new Set<string>();
+  for (const c of cells) if (c.name) known.add(c.name);
+  const named = byName(cells);
+  const out = new Set<string>();
+  for (const c of cells) {
+    for (const name of refsIn(c.prompt, known)) {
+      const ref = named.get(name);
+      if (ref && ref.id !== c.id) out.add(name);
+    }
+  }
+  return out;
+}
+
 /** The next free `cN` name for a notebook (max existing number + 1). Pure. */
 export function nextCellName(cells: NotebookCell[]): string {
   let max = 0;

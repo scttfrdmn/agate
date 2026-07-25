@@ -7,6 +7,7 @@
 import type { ChatMessage, Transport } from "../transport";
 import { ChatSession, type ContextProvider } from "./session";
 import { ChatTranscript } from "./ui";
+import type { ScrollAnchor } from "./scroll";
 import { type Notebook, cellsFromHistory } from "./notebook";
 import { type ContextPolicy, bodyLength, selectContext } from "./context";
 import { contextWindow } from "../router";
@@ -49,9 +50,10 @@ export interface ChatRecord {
 }
 
 export interface ManagerDeps {
-  // Where transcripts mount (the #out region) and what scrolls (the main column).
+  // Where transcripts mount (the #out region). The chat-anchored scroll model over the main
+  // column (Canvas #242) is shared with the cell view; passed in so both renderers use one anchor.
   appendHost: HTMLElement;
-  scrollHost: HTMLElement;
+  anchor?: ScrollAnchor;
   listHost: HTMLElement; // sidebar session list
   transport: Transport;
   contextProvider?: ContextProvider;
@@ -95,7 +97,7 @@ export class ChatManager {
     notebookEl.className = "notebook-pane";
     notebookEl.hidden = true;
     this.deps.appendHost.appendChild(notebookEl);
-    const transcript = new ChatTranscript(el, this.deps.scrollHost);
+    const transcript = new ChatTranscript(el, this.deps.anchor);
     const history: ChatMessage[] = [];
     const contextPolicy: ContextPolicy = {};
     const chat: ChatRecord = {

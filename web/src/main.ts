@@ -26,9 +26,10 @@ import { reduce, type RunState, emptyRunState } from "./events/collector";
 import type { RunEvent } from "./events/protocol";
 import { renderCells, renderPanel } from "./panes/render";
 import { ChatManager } from "./chat/manager";
+import { ScrollAnchor } from "./chat/scroll";
 import { SessionMeter } from "./chat/meter";
 import { suggestFollowups } from "./chat/followups";
-import { type NotebookCell, newCell } from "./chat/notebook";
+import { type NotebookCell, isEditedSinceRun, newCell } from "./chat/notebook";
 import { renderNotebook } from "./chat/notebook-ui";
 import { runCell } from "./chat/notebook-run";
 import { dependentsOf, nextCellName, resolveSource } from "./chat/dag";
@@ -202,6 +203,11 @@ function main(): void {
 
   const out = document.getElementById("out")!;
   const mainCol = document.getElementById("main")!;
+  // One chat-anchored scroll model over the main column, shared by BOTH renderers (chat transcript
+  // + cell view) so scrolling feels identical whichever costume a turn wears (Canvas #242). The
+  // "↓ new" pill lets a scrolled-up reader jump back to the newest content.
+  const scroll = new ScrollAnchor(mainCol);
+  scroll.mountPill();
   const input = document.getElementById("q") as HTMLTextAreaElement;
   const modeSel = document.getElementById("mode") as HTMLSelectElement;
   const modelSel = document.getElementById("model") as HTMLSelectElement;
@@ -282,7 +288,7 @@ function main(): void {
   const seededChats = new Set<number>();
   chats = new ChatManager({
     appendHost: out,
-    scrollHost: mainCol,
+    anchor: scroll,
     listHost: document.getElementById("chat-list")!,
     transport: askTransport,
     contextProvider: groundingProvider,
@@ -290,6 +296,9 @@ function main(): void {
     onActiveChange: (chat) => {
       renderContext(chat, contextWindowFor(chat.modelId));
       if (emptyState) emptyState.hidden = chat.turns > 0;
+      // Switching chats swaps the visible pane — re-anchor at the new chat's bottom so a "↓ New"
+      // pill from the previous chat can't linger and the reader isn't left at a stale scroll pos.
+      scroll.reset();
       // Memory seed (#194 follow-up): on first view of an EMPTY chat, recall the caller's
       // personal memory once and show what the assistant remembers — so continuity is
       // visible before the first question. Best-effort, billable-op-aware (once per chat).
@@ -537,6 +546,9 @@ function main(): void {
   // re-runnable as a STANDALONE metered call (not a ChatSession turn, so it never pollutes
   // the transcript). The context gauge stays chat-scoped (cell runs don't touch history).
   const resolvePin = (): string => (modelSel.value === AUTO ? AUTO : modelSel.value);
+  // Snapshot of an expanded prompt cell's pre-edit state (prompt + stale), so collapsing without a
+  // re-run reverts exactly. Cleared on a successful re-run (the new answer is what we keep).
+  const preEditState = new Map<string, { prompt: string; stale: boolean }>();
   // Editing a cell's source keeps it in sync and stale-marks any dependents (#200 slice 3), so a
   // downstream cell that references {{cN}} shows "stale — re-run" once cN's source changes. We
   // only repaint when the stale set actually changes, so ordinary typing doesn't disturb the caret.
@@ -545,9 +557,17 @@ function main(): void {
     const cell = nb.cells.find((c: NotebookCell) => c.id === cellId);
     if (!cell) return;
     cell.prompt = source;
+    // Editing an answered cell away from the prompt that produced its answer makes IT stale (not
+    // just its dependents): the frozen answer no longer corresponds to the question, so we must
+    // never re-present it as an authoritative chat turn. We only SET stale here (never clear it —
+    // clearing happens on an explicit Run or a Cancel/revert), so an upstream-triggered stale flag
+    // isn't lost. (Data-integrity fix — the displayed answer/question must always match.)
+    const wasStale = cell.stale ?? false;
+    if (isEditedSinceRun(cell)) cell.stale = true;
+    const selfStaleChanged = (cell.stale ?? false) !== wasStale;
     const deps = dependentsOf(nb.cells, cellId);
     const newlyStale = deps.filter((d) => !d.stale);
-    if (newlyStale.length) {
+    if (newlyStale.length || selfStaleChanged) {
       for (const d of newlyStale) d.stale = true;
       paintNotebook();
     }
@@ -563,13 +583,32 @@ function main(): void {
       onRun: (cellId, prompt) => void runNotebookCell(cellId, prompt),
       onRunCode: (cellId, code) => void runNotebookCode(cellId, code),
       onEdit: (cellId, source) => onNotebookEdit(cellId, source),
-      onAddCell: (kind) => {
-        nb.cells.push(newCell("", kind, nextCellName(nb.cells)));
+      // Two-renderer costume change (#242): "Edit" grows a chat turn into its editable cell;
+      // collapsing (Cancel/Done) DISCARDS unrun edits by reverting the cell to EXACTLY its
+      // pre-edit state (prompt + stale flag snapshotted on expand). So an accidental edit is freely
+      // reversible and can never strand a mismatched Q&A, while a genuine upstream-stale flag isn't
+      // wrongly cleared. (A real re-run collapses via runPromptCore instead, keeping the new
+      // prompt+answer.) Focus the editor on expand so typing is immediate.
+      onToggleExpand: (cellId, expanded) => {
+        const cell = nb.cells.find((c: NotebookCell) => c.id === cellId);
+        if (!cell) return;
+        if (expanded) {
+          preEditState.set(cellId, { prompt: cell.prompt, stale: cell.stale ?? false });
+        } else {
+          const snap = preEditState.get(cellId);
+          if (snap) {
+            cell.prompt = snap.prompt; // discard unrun edits
+            cell.stale = snap.stale; // restore the exact pre-edit staleness
+            preEditState.delete(cellId);
+          }
+        }
+        cell.expanded = expanded;
         paintNotebook();
-        const last = chat.notebookEl.querySelector<HTMLTextAreaElement>(
-          ".notebook-cell:last-of-type .notebook-cell-prompt",
-        );
-        last?.focus();
+        if (expanded) {
+          chat.notebookEl
+            .querySelector<HTMLTextAreaElement>(`[data-cell-id="${cellId}"] .notebook-cell-prompt`)
+            ?.focus();
+        }
       },
       // Save/Open only when the corpus endpoint is configured (persistence available).
       onSave: screens.corpusClient() ? () => void saveNotebook() : undefined,
@@ -582,6 +621,9 @@ function main(): void {
         if (caret !== null) again.setSelectionRange(caret, caret);
       }
     }
+    // Keep the column pinned to the newest cell as it streams/repaints — unless the reader
+    // scrolled up (the shared anchor no-ops then and shows the "↓ new" pill instead).
+    scroll.maybeScroll();
   };
 
   // Notebook save/open (#200 slice 4). A notebook persists as JSON under the corpus
@@ -702,6 +744,8 @@ function main(): void {
       };
       cell.state = "idle";
       cell.stale = false;
+      cell.expanded = false; // a fresh answer collapses back to the read-only chat costume
+      cell.answeredPrompt = cell.prompt; // this answer corresponds to this exact prompt
       meter.record(result.cost, result.budget);
       return true;
     } catch (err) {
@@ -753,6 +797,7 @@ function main(): void {
     const cell = nb.cells.find((c: NotebookCell) => c.id === cellId);
     if (!cell || cell.kind !== "prompt" || !prompt.trim()) return;
     cell.prompt = prompt;
+    preEditState.delete(cellId); // a real re-run commits the edit; nothing to revert to
     const ok = await runPromptCore(cell, nb);
     if (ok) await cascadeFrom(cell.id, nb);
     paintNotebook();
@@ -776,6 +821,7 @@ function main(): void {
     if (chipsHost) chipsHost.hidden = view === "notebook" || codeMode || modeSel.value !== "ask";
     if (emptyState) emptyState.hidden = view === "notebook" || chats.current.turns > 0;
     if (view === "notebook") paintNotebook();
+    scroll.reset(); // flipping the view swaps the content wholesale — re-anchor at its bottom
   };
 
   // Append a fresh cell of `kind` seeded with `source`, level the surface up to the cell view,
@@ -784,6 +830,7 @@ function main(): void {
     const nb = chats.notebookFor(chats.current);
     const cell = newCell(source, kind, nextCellName(nb.cells));
     nb.cells.push(cell);
+    scroll.onNewTurn(); // a new cell at the bottom resumes anchoring, like a new chat turn
     if (chats.current.view !== "notebook") setView("notebook");
     else paintNotebook();
     if (kind === "code") await runNotebookCode(cell.id, source);

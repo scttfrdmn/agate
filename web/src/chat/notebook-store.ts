@@ -68,7 +68,10 @@ export function deserializeNotebook(raw: unknown): { notebook: Notebook; name: s
       state: "idle",
     };
     if (typeof o.name === "string") cell.name = o.name;
-    if (typeof o.answer === "string") cell.answer = o.answer;
+    if (typeof o.answer === "string") {
+      cell.answer = o.answer;
+      cell.answeredPrompt = cell.prompt; // a loaded answer matches its saved prompt (not stale)
+    }
     if (Array.isArray(o.sources)) cell.sources = o.sources as unknown as RetrievedChunk[];
     if (isRecord(o.meta)) cell.meta = o.meta as unknown as AnswerMeta;
     if (isRecord(o.output)) cell.output = o.output as unknown as CodeOutput;

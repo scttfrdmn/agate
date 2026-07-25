@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ChatMessage } from "../transport";
-import { cellsFromHistory, newCell } from "./notebook";
+import { cellsFromHistory, isEditedSinceRun, newCell } from "./notebook";
 
 describe("cellsFromHistory", () => {
   it("pairs each user message with the following assistant answer", () => {
@@ -64,5 +64,19 @@ describe("newCell", () => {
     expect(c.kind).toBe("code");
     expect(c.prompt).toBe("print(1)");
     expect(c.state).toBe("idle");
+  });
+});
+
+describe("isEditedSinceRun", () => {
+  it("is false for an unanswered cell (nothing to contradict)", () => {
+    expect(isEditedSinceRun(newCell("draft"))).toBe(false);
+  });
+  it("is false when the prompt still matches the answered prompt", () => {
+    const c = { ...newCell("q?"), answer: "a", answeredPrompt: "q?" };
+    expect(isEditedSinceRun(c)).toBe(false);
+  });
+  it("is true once the prompt diverges from the answered prompt", () => {
+    const c = { ...newCell("edited q?"), answer: "a", answeredPrompt: "q?" };
+    expect(isEditedSinceRun(c)).toBe(true);
   });
 });

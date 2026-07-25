@@ -29,6 +29,10 @@ export interface NotebookCell {
   kind: CellKind; // "prompt" (AI turn) or "code" (local computation)
   prompt: string; // the editable source: a question (prompt cell) or code (code cell)
   answer?: string; // the assistant answer, rendered as Markdown (prompt cells; undefined until run)
+  // The prompt text as it was WHEN `answer` was produced. Lets the surface tell "edited since last
+  // run" from "unchanged" so an edited prompt never re-presents a stale answer as authoritative
+  // (the freeze/stale discipline). Not persisted — a loaded cell's prompt already matches its answer.
+  answeredPrompt?: string;
   sources?: RetrievedChunk[]; // per-cell citations (populated on a run)
   meta?: AnswerMeta; // model / usage / cost (populated on a run)
   output?: CodeOutput; // code cells: captured run output (undefined until run)
@@ -37,6 +41,12 @@ export interface NotebookCell {
   // it (free); prompt (AI) cells stay stale until an explicit, billed re-run (#200 slice 3).
   stale?: boolean;
   error?: string;
+  // Two renderers, one model (Canvas #242): an answered prompt cell renders as a read-only chat
+  // turn (question + answer + one receipt) UNTIL the user reaches for more — editing it, or
+  // another cell referencing it — at which point it shows its editable cell chrome. `expanded`
+  // is that user-driven "show me the cell" flag. Code cells always render as cells (this is
+  // ignored for them). Transient UI state — not persisted.
+  expanded?: boolean;
 }
 
 export interface Notebook {
@@ -49,6 +59,17 @@ export function newCellId(): string {
   const c = globalThis.crypto;
   if (c && "randomUUID" in c) return c.randomUUID();
   return `cell-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+}
+
+/**
+ * Whether an answered prompt cell's current source no longer matches the prompt that produced its
+ * answer — i.e. it was edited since its last run and its frozen answer is now stale. A cell with no
+ * answer yet is never "stale" in this sense (it has nothing to contradict). Pure. Used to fence the
+ * two-renderer surface: a mismatched cell must stay an editable cell, never a chat turn presenting
+ * an answer that doesn't correspond to the shown question.
+ */
+export function isEditedSinceRun(cell: NotebookCell): boolean {
+  return cell.answer !== undefined && cell.prompt !== cell.answeredPrompt;
 }
 
 /** A fresh, empty (idle, answerless) cell of the given kind — used by "+ Cell". The optional
@@ -85,6 +106,7 @@ export function cellsFromHistory(history: ChatMessage[]): NotebookCell[] {
         kind: "prompt",
         prompt: pending ?? "",
         answer: msg.content,
+        answeredPrompt: pending ?? "", // the answer corresponds to this prompt as loaded
         state: "idle",
       });
       pending = null;

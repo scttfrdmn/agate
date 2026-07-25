@@ -15,10 +15,10 @@ const fakeTransport: Transport = {
 
 function hosts(confirmDelete: (title: string) => boolean = () => true) {
   const appendHost = document.createElement("div");
-  const scrollHost = document.createElement("div");
   const listHost = document.createElement("div");
-  document.body.append(appendHost, scrollHost, listHost);
-  return { appendHost, scrollHost, listHost, transport: fakeTransport, confirmDelete };
+  document.body.append(appendHost, listHost);
+  // No ScrollAnchor in unit tests — the transcript renders and scrolling is a no-op.
+  return { appendHost, listHost, transport: fakeTransport, confirmDelete };
 }
 
 describe("ChatManager", () => {

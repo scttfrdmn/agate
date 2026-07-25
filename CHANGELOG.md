@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Canvas Phase 1 — two renderers, one model + chat-anchored scroll (#242).** Completes the
+  Phase-1 unification. A prompt turn now renders in **two costumes over one data model**: by default
+  a read-only **chat turn** (question + answer + citations + a single receipt), and only when the
+  user *reaches for it* — clicking **Edit**, or another cell referencing it via `{{cN}}` — does it
+  grow its editable **cell** chrome (textarea + Run + the `cN` handle). "A chat that can grow a
+  spine," not "a notebook that starts empty." Code cells always render as cells and now show a
+  standing **`$0.00 (local)`** line so the free-vs-billed distinction is visible inline.
+  Progressive disclosure: the persistent **+Prompt/+Code** add-bar is gone (the composer is the
+  append path); cell **names/handles** stay hidden until the graph is real (≥2 cells *and* a
+  `{{cN}}` reference exists); Save/Open appear only once the document has content. Introduced a
+  single **chat-anchored scroll model** (`chat/scroll.ts`) shared by both renderers over the main
+  column: newest-at-bottom, autoscroll on stream, but a reader who scrolls up is not yanked
+  down — a **"↓ New"** pill brings them back. Replaces the transcript's private scroll logic so
+  scrolling feels identical in both costumes.
 - **Canvas Phase 1 — composer restructure (#242).** Removed the Chat/Notebook view toggle and
   unified on one surface (design `docs/agate-canvas.md`). The composer is now the in-progress tail
   cell with an Ask-weighted **Ask · Code** switch: a quiet `</>` mode-in (default Ask), not a 50/50

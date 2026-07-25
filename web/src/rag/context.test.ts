@@ -24,9 +24,13 @@ describe("buildContextMessage", () => {
     expect(msg.content).toContain("[1] (source: chem/bio.txt)");
     expect(msg.content).toContain("[2] (source: chem/bio2.txt)");
     expect(msg.content).toContain("photosynthesis converts light");
-    // Grounded-only instruction + a user-legible refusal that names the document scope.
-    expect(msg.content).toContain("only this context");
+    // Facts must be grounded + a user-legible refusal that names the document scope.
+    expect(msg.content).toContain("Ground every FACTUAL claim");
     expect(msg.content).toContain("documents available to this session");
+    // …but applying the material (compute/plot/write python) is explicitly encouraged, so a
+    // computational request grounded in the docs isn't refused (the Canvas "Run this" path).
+    expect(msg.content.toLowerCase()).toContain("python");
+    expect(msg.content).toContain("APPLYING the material is encouraged");
   });
 
   it("omits the citation when no sourceKey is present", () => {

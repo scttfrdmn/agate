@@ -47,6 +47,10 @@ export interface NotebookCell {
   // is that user-driven "show me the cell" flag. Code cells always render as cells (this is
   // ignored for them). Transient UI state — not persisted.
   expanded?: boolean;
+  // For a code cell spawned by "Run this" (#243): the id of the answer cell its code came from, so
+  // several blocks Run from the same answer keep their order (each inserts after the previous one).
+  // Transient — not persisted.
+  spawnedFrom?: string;
 }
 
 export interface Notebook {

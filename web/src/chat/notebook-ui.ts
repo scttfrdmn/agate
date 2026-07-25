@@ -23,6 +23,9 @@ export interface NotebookCallbacks {
   // Reveal ("Edit") or collapse a prompt turn's editable cell chrome — the two-renderer costume
   // change (#242). A no-op for code cells (always shown as cells).
   onToggleExpand?: (cellId: string, expanded: boolean) => void;
+  // "Run this" (#243): a Run button on a python block in an answer spawns a code cell seeded with
+  // that code, inserted directly below the answering cell (`afterCellId`), then runs it.
+  onRunFromAnswer?: (afterCellId: string, code: string) => void;
   // Save / open the whole Canvas to the corpus store (#200 slice 4). Omitted when the corpus
   // endpoint isn't configured; only shown once the document has content (progressive disclosure).
   onSave?: () => void;
@@ -154,7 +157,9 @@ function renderChatTurn(cell: NotebookCell, cb: NotebookCallbacks): HTMLElement 
   head.appendChild(aBadge);
   asst.appendChild(head);
   const body = el("div", "answer-body");
-  renderInto(body, cell.answer ?? "", `${cell.id}-`);
+  renderInto(body, cell.answer ?? "", `${cell.id}-`, {
+    onRunCode: cb.onRunFromAnswer ? (code) => cb.onRunFromAnswer?.(cell.id, code) : undefined,
+  });
   body.classList.add("rendered");
   asst.appendChild(body);
   if (cell.sources && cell.sources.length) asst.appendChild(renderSources(cell.sources, `${cell.id}-`));
@@ -237,7 +242,9 @@ function renderPromptCell(cell: NotebookCell, cb: NotebookCallbacks, showNames: 
     body.appendChild(err);
   } else if (cell.answer && cell.answer.trim()) {
     // Per-cell citation prefix so [n] anchors don't collide across cells on one page.
-    renderInto(body, cell.answer, `${cell.id}-`);
+    renderInto(body, cell.answer, `${cell.id}-`, {
+      onRunCode: cb.onRunFromAnswer ? (code) => cb.onRunFromAnswer?.(cell.id, code) : undefined,
+    });
     body.classList.add("rendered");
   }
   wrap.appendChild(body);

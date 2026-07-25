@@ -63,6 +63,10 @@ export interface ManagerDeps {
   // Confirm a destructive delete (title -> proceed?). Injected so tests don't touch the
   // DOM; main.ts wires it to window.confirm. Defaults to always-proceed.
   confirmDelete: (title: string) => boolean;
+  // "Run this" (#243): passed to each chat transcript so a python block in a streamed answer
+  // gets a Run action. `turnIndex` is the answering turn's ordinal (0-based over answered turns),
+  // used to place the spawned code cell below the right turn after levelling the chat up.
+  onRunCode?: (code: string, turnIndex: number) => void;
 }
 
 // Conservative char/4 token estimate (matches the server's own estimator spirit).
@@ -97,7 +101,7 @@ export class ChatManager {
     notebookEl.className = "notebook-pane";
     notebookEl.hidden = true;
     this.deps.appendHost.appendChild(notebookEl);
-    const transcript = new ChatTranscript(el, this.deps.anchor);
+    const transcript = new ChatTranscript(el, this.deps.anchor, this.deps.onRunCode);
     const history: ChatMessage[] = [];
     const contextPolicy: ContextPolicy = {};
     const chat: ChatRecord = {

@@ -305,6 +305,9 @@ function main(): void {
   });
   document.getElementById("new-chat")?.addEventListener("click", () => {
     chats.newChat(modelSel?.value && modelSel.value !== AUTO ? modelSel.value : undefined);
+    // A fresh chat must read as "a chat app" — never inherit a leftover Code mode from the
+    // previous chat (the toggle is sticky only across a single composer, reset on submit).
+    resetComposerToAsk();
     input.focus();
   });
 
@@ -480,22 +483,54 @@ function main(): void {
     })
     .catch(() => {});
 
-  // Chips only make sense for Ask; hide them in Panel/Analyze/pattern modes. The
-  // placeholder verb also tracks the mode ("Ask a question…" / "Run a panel…" / …).
+  // Chips only make sense for Ask; hide them in Panel/Analyze/pattern modes and in Code. The
+  // placeholder verb also tracks the composer mode ("Ask a question…" / "Write Python…" / …).
   const PLACEHOLDERS: Record<string, string> = {
     ask: "Ask a question…",
     panel: "Pose a question for the panel…",
     analyze: "Describe an analysis to run…",
   };
-  const syncModeUi = () => {
+  // Ask · Code switch (Ask-weighted): Ask (default) sends a billed question; Code sends Python
+  // that runs locally in the pyodide worker (free). Reaching for Code is what grows the document
+  // a spine — the first Code submit levels the surface up to the cell view.
+  let codeMode = false;
+  const codeToggle = document.getElementById("code-toggle") as HTMLButtonElement | null;
+  const sendBtn = form.querySelector(".send-btn") as HTMLButtonElement | null;
+  const syncComposerMode = (): void => {
     const mode = modeSel.value;
-    if (chipsHost) chipsHost.hidden = mode !== "ask";
-    input.placeholder = mode.startsWith("pattern:")
-      ? "Pose a question for this reasoning pattern…"
-      : (PLACEHOLDERS[mode] ?? "Ask a question…");
+    codeToggle?.setAttribute("aria-pressed", String(codeMode));
+    codeToggle?.classList.toggle("active", codeMode);
+    input.placeholder = codeMode
+      ? "Write Python — runs locally in your browser…"
+      : mode.startsWith("pattern:")
+        ? "Pose a question for this reasoning pattern…"
+        : (PLACEHOLDERS[mode] ?? "Ask a question…");
+    // The mode must be unambiguous per submission even after the placeholder is gone (spec):
+    // Code mode monospaces the field and relabels it for screen readers, and the send button
+    // becomes a Run glyph. Toggling refocuses the textarea, so its new label is announced.
+    input.classList.toggle("code-input", codeMode);
+    input.setAttribute("aria-label", codeMode ? "Python code — runs locally in your browser" : "Your question");
+    if (sendBtn) {
+      sendBtn.innerHTML = codeMode ? "&#x25B6;" : "&#x2191;";
+      const verb = codeMode ? "Run" : "Send";
+      sendBtn.setAttribute("aria-label", verb);
+      sendBtn.title = verb;
+    }
+    // Suggestion chips are for Ask only: hidden in Code, in the cell view, and in Panel/Analyze.
+    if (chipsHost) chipsHost.hidden = codeMode || chats.current.view === "notebook" || mode !== "ask";
   };
-  modeSel.addEventListener("change", syncModeUi);
-  syncModeUi();
+  codeToggle?.addEventListener("click", () => {
+    codeMode = !codeMode;
+    syncComposerMode();
+    input.focus();
+  });
+  const resetComposerToAsk = (): void => {
+    if (!codeMode) return;
+    codeMode = false;
+    syncComposerMode();
+  };
+  modeSel.addEventListener("change", syncComposerMode);
+  syncComposerMode();
 
   // --- Notebook view (#185) -------------------------------------------------
   // A view of the current chat: the transcript projected into editable prompt cells, each
@@ -732,24 +767,28 @@ function main(): void {
     if (ok) await cascadeFrom(cell.id, nb);
     paintNotebook();
   };
+  // Switch which projection of the active chat is showing. There is no user-facing toggle
+  // anymore (Canvas #242): the surface flips to the cell view when the document grows a spine
+  // (the composer's Code affordance, or opening a saved notebook). The composer is the
+  // in-progress tail cell and stays visible in BOTH views — it is never hidden.
   const setView = (view: "chat" | "notebook"): void => {
     chats.setView(chats.current.id, view);
-    document.querySelectorAll<HTMLButtonElement>(".view-btn").forEach((b) => {
-      const on = b.dataset.view === view;
-      b.classList.toggle("active", on);
-      b.setAttribute("aria-pressed", String(on));
-    });
-    // The chat composer (input + chips) belongs to the chat view; hide it in the notebook,
-    // where cells are the input. The controls row (view toggle + Mode/Model) lives OUTSIDE the
-    // form, so it stays visible in both views — including the toggle to switch back.
-    form.hidden = view === "notebook";
-    if (chipsHost) chipsHost.hidden = view === "notebook" || modeSel.value !== "ask";
+    if (chipsHost) chipsHost.hidden = view === "notebook" || codeMode || modeSel.value !== "ask";
     if (emptyState) emptyState.hidden = view === "notebook" || chats.current.turns > 0;
     if (view === "notebook") paintNotebook();
   };
-  document.querySelectorAll<HTMLButtonElement>(".view-btn").forEach((b) => {
-    b.addEventListener("click", () => setView((b.dataset.view as "chat" | "notebook") ?? "chat"));
-  });
+
+  // Append a fresh cell of `kind` seeded with `source`, level the surface up to the cell view,
+  // and run it. Shared by the composer's Code path (and, once we're in the cell view, Ask).
+  const submitAsCell = async (kind: "prompt" | "code", source: string): Promise<void> => {
+    const nb = chats.notebookFor(chats.current);
+    const cell = newCell(source, kind, nextCellName(nb.cells));
+    nb.cells.push(cell);
+    if (chats.current.view !== "notebook") setView("notebook");
+    else paintNotebook();
+    if (kind === "code") await runNotebookCode(cell.id, source);
+    else await runNotebookCell(cell.id, source);
+  };
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -758,6 +797,24 @@ function main(): void {
     input.value = "";
     autoGrow();
     if (emptyState) emptyState.hidden = true;
+
+    // Code submission: a local Python cell (free). It levels the surface up to the cell view and
+    // resets the composer back to Ask afterwards, so the next typed line isn't sent as Python
+    // (the sticky-mode day-one bug). Handled before the Ask path — mode/pattern don't apply.
+    if (codeMode) {
+      resetComposerToAsk();
+      await submitAsCell("code", q);
+      input.focus();
+      return;
+    }
+    // Once the document has a spine (cell view), an Ask appends a prompt cell so the sequence
+    // stays one coherent document rather than jumping back to a separate transcript.
+    if (chats.current.view === "notebook") {
+      await submitAsCell("prompt", q);
+      input.focus();
+      return;
+    }
+
     // Fade the suggestion chips out the moment a question is submitted; the new set
     // fades back in once the answer (and any follow-ups) settle.
     fadeChips();

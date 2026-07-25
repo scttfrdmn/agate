@@ -213,6 +213,15 @@ function main(): void {
   const modelSel = document.getElementById("model") as HTMLSelectElement;
   const emptyState = document.getElementById("empty");
 
+  // Empty-chat presentation: show the empty-state hint AND centre the composer as a landing state
+  // (a fresh chat has no transcript above the composer, so top-aligning it just leaves dead space).
+  // One source of truth for both, since three call sites toggle emptiness. `empty` = no turns and
+  // not in the cell view.
+  const syncEmptyState = (empty: boolean): void => {
+    if (emptyState) emptyState.hidden = !empty;
+    mainCol.classList.toggle("landing", empty);
+  };
+
   // A shared retriever for Ask grounding (created once if RAG is wired).
   const retrieverForGrounding = config.retrievalProxyUrl
     ? new Retriever(
@@ -295,7 +304,7 @@ function main(): void {
     confirmDelete: (title) => window.confirm(`Delete “${title}”? This can't be undone.`),
     onActiveChange: (chat) => {
       renderContext(chat, contextWindowFor(chat.modelId));
-      if (emptyState) emptyState.hidden = chat.turns > 0;
+      syncEmptyState(chat.turns === 0 && chat.view === "chat");
       // Switching chats swaps the visible pane — re-anchor at the new chat's bottom so a "↓ New"
       // pill from the previous chat can't linger and the reader isn't left at a stale scroll pos.
       scroll.reset();
@@ -819,7 +828,7 @@ function main(): void {
   const setView = (view: "chat" | "notebook"): void => {
     chats.setView(chats.current.id, view);
     if (chipsHost) chipsHost.hidden = view === "notebook" || codeMode || modeSel.value !== "ask";
-    if (emptyState) emptyState.hidden = view === "notebook" || chats.current.turns > 0;
+    syncEmptyState(view === "chat" && chats.current.turns === 0);
     if (view === "notebook") paintNotebook();
     scroll.reset(); // flipping the view swaps the content wholesale — re-anchor at its bottom
   };
@@ -843,7 +852,7 @@ function main(): void {
     if (!q) return;
     input.value = "";
     autoGrow();
-    if (emptyState) emptyState.hidden = true;
+    syncEmptyState(false); // a submission always leaves the landing state
 
     // Code submission: a local Python cell (free). It levels the surface up to the cell view and
     // resets the composer back to Ask afterwards, so the next typed line isn't sent as Python

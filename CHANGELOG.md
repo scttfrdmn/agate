@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Empty chat reads as a landing state (Canvas #242 follow-up).** A fresh chat now centres the
+  composer + sample chips in the column instead of top-aligning them under an empty transcript
+  region (which left a large blank band above the composer). Flows top-down again the moment a
+  conversation exists.
+- **Sources are collapsible (Canvas #242 follow-up).** The per-answer Sources footer is now a
+  `<details>` (open by default, so citation `[n]` anchors still resolve) — readers can fold it away
+  once they've checked the grounding. Web sources continue to render as clickable external links.
 - **Canvas Phase 1 — two renderers, one model + chat-anchored scroll (#242).** Completes the
   Phase-1 unification. A prompt turn now renders in **two costumes over one data model**: by default
   a read-only **chat turn** (question + answer + citations + a single receipt), and only when the

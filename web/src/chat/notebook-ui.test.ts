@@ -179,6 +179,33 @@ describe("renderNotebook", () => {
     expect(ids).toEqual(["a-cite-1", "b-cite-1"]); // per-cell prefix, no collision
   });
 
+  it("renders Sources as a collapsible <details open> with a web source as a link", () => {
+    const nb: Notebook = {
+      cells: [
+        {
+          id: "a",
+          kind: "prompt",
+          prompt: "q",
+          answer: "see [1]",
+          state: "idle",
+          sources: [
+            { key: "k", text: "corpus text" },
+            { key: "w", text: "web text", sourceSystem: "web", sourceItem: "https://example.edu/paper" },
+          ],
+        },
+      ],
+    };
+    const target = host();
+    renderNotebook(nb, target);
+    const details = target.querySelector("details.sources") as HTMLDetailsElement;
+    expect(details).not.toBeNull();
+    expect(details.open).toBe(true); // default open so citation anchors resolve
+    expect(target.querySelector("summary.sources-title")?.textContent).toContain("Sources (2)");
+    const link = target.querySelector<HTMLAnchorElement>("a.source-link");
+    expect(link?.href).toBe("https://example.edu/paper");
+    expect(link?.rel).toContain("noopener");
+  });
+
   it("renders a code cell whose Run fires onRunCode with the edited source", () => {
     const nb: Notebook = {
       cells: [{ id: "c", kind: "code", prompt: "print('hi')", state: "idle" }],

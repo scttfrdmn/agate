@@ -407,6 +407,15 @@ body {
   padding: 0.75rem 0 1.5rem;
   gap: 0.75rem;
 }
+/* Landing state: an empty chat has no transcript above the composer, so top-aligning it just
+   leaves dead space. Centre the composer + chips in the column instead, so a fresh chat reads as
+   a deliberate entry point. Cleared the moment a conversation exists (then content flows top-down). */
+.main-col.landing {
+  justify-content: center;
+}
+.main-col.landing .answer-region {
+  flex: 0 0 auto;
+}
 
 /* Transcript flows at its natural height (no flex-grow) so the composer follows it. */
 .answer-region {
@@ -898,6 +907,26 @@ button {
   color: var(--muted);
   font-weight: 700;
   margin-bottom: 0.4rem;
+  cursor: pointer;
+  list-style: none; /* hide the default marker; a caret is added below */
+  user-select: none;
+}
+/* Collapsible sources: a rotating caret on the summary, and no marker in either engine. */
+.sources-title::-webkit-details-marker {
+  display: none;
+}
+.sources-title::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 0.35rem;
+  transition: transform 0.15s;
+}
+details.sources[open] > .sources-title::before {
+  transform: rotate(90deg);
+}
+.sources-title:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 .sources-list {
   list-style: decimal;

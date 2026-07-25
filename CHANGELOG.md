@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Canvas Phase 2 — "Run this" on code in AI answers (#243).** Every runnable (python) code block
+  in an assistant answer now carries a **▶ Run** action beside Copy. Clicking it spawns a live code
+  cell seeded with that exact code — directly below the answering turn — and runs it in the existing
+  sandboxed pyodide worker (locally, free, no network). If the surface was still a plain chat, it
+  levels up to the cell view first (the answer projects into a cell, the code lands beneath it).
+  Human-in-the-loop: emitted code is never auto-run — only an explicit Run executes it. Copy-only
+  blocks (bash, json, output dumps) are unaffected; a bare ``` fence is treated as runnable.
+
 ### Changed
 - **Empty chat reads as a landing state (Canvas #242 follow-up).** A fresh chat now centres the
   composer + sample chips in the column instead of top-aligning them under an empty transcript

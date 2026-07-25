@@ -863,12 +863,22 @@ button {
   text-decoration: underline;
 }
 
-/* code block with a copy button */
+/* code block with a Run + Copy action row */
 .code-block {
   position: relative;
   margin: 0.5rem 0;
 }
+/* Actions float top-right over the block; Run (when present) sits left of Copy. */
+.code-actions {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  display: flex;
+  gap: 0.35rem;
+  z-index: 1;
+}
 .code-copy,
+.code-run,
 .answer-copy {
   font-size: 0.7rem;
   color: var(--muted);
@@ -880,15 +890,41 @@ button {
     color 0.15s,
     border-color 0.15s;
 }
-.code-copy {
-  position: absolute;
-  top: 0.4rem;
-  right: 0.4rem;
-}
 .code-copy:hover,
 .answer-copy:hover {
   color: var(--text);
   border-color: var(--accent);
+}
+/* Run is the primary "reach for it" action on emitted code — accent-tinted, not muted. */
+.code-run {
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.code-run:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.code-run:disabled {
+  color: var(--muted);
+  border-color: var(--border);
+  font-weight: 400;
+  cursor: default;
+}
+/* The "· free" hint reads quieter than the verb — the cost story without shouting. */
+.code-run-free {
+  font-weight: 400;
+  opacity: 0.8;
+}
+/* When a code block carries the action row, pad its top so the buttons never sit on the first
+   line of a short (one-line) snippet. */
+.code-block:has(.code-actions) pre,
+.code-block:has(.code-actions) > code {
+  padding-top: 1.9rem;
+}
+.code-run:focus-visible,
+.code-copy:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 .answer-copy {
   margin-top: 0.6rem;

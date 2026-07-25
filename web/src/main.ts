@@ -302,6 +302,18 @@ function main(): void {
     transport: askTransport,
     contextProvider: groundingProvider,
     confirmDelete: (title) => window.confirm(`Delete “${title}”? This can't be undone.`),
+    // "Run this" (#243) from a streamed chat answer: the answer is still a plain chat turn (no cell
+    // id yet). runCodeFromAnswer levels up (projecting history into cells), then we map the answering
+    // turn's ordinal to the matching projected cell (the turnIndex-th answered cell, in order) so the
+    // code lands directly below THAT turn — not at the bottom.
+    onRunCode: (code, turnIndex) =>
+      void runCodeFromAnswer((nb) => {
+        // Match ChatTranscript's ordinal predicate exactly (a non-empty answer). An empty-string
+        // answer is pushed to history but never counted there, so filtering on answer!==undefined
+        // here would drift the index by one; use the same trim() test to stay aligned.
+        const answered = nb.cells.filter((c: NotebookCell) => c.kind === "prompt" && !!c.answer?.trim());
+        return answered[turnIndex]?.id;
+      }, code),
     onActiveChange: (chat) => {
       renderContext(chat, contextWindowFor(chat.modelId));
       syncEmptyState(chat.turns === 0 && chat.view === "chat");
@@ -619,6 +631,8 @@ function main(): void {
             ?.focus();
         }
       },
+      // "Run this" (#243): a python block in a cell's answer spawns a code cell below that cell.
+      onRunFromAnswer: (afterCellId, code) => void runCodeFromAnswer(() => afterCellId, code),
       // Save/Open only when the corpus endpoint is configured (persistence available).
       onSave: screens.corpusClient() ? () => void saveNotebook() : undefined,
       onOpen: screens.corpusClient() ? () => void openNotebook() : undefined,
@@ -844,6 +858,51 @@ function main(): void {
     else paintNotebook();
     if (kind === "code") await runNotebookCode(cell.id, source);
     else await runNotebookCell(cell.id, source);
+  };
+
+  // "Run this" (#243): a python block in an AI answer spawns a live code cell seeded with that code
+  // and runs it — the AI-writes-code bridge. The cell is inserted directly BELOW the answering
+  // turn: `resolveAfterId` is called AFTER we level up to the cell view (so history is projected)
+  // and returns the id of the cell the code should follow, or undefined to append at the end.
+  // Human-in-the-loop: only fires on an explicit Run. Never auto-runs emitted code.
+  const runCodeFromAnswer = async (
+    resolveAfterId: (nb: { cells: NotebookCell[] }) => string | undefined,
+    code: string,
+  ): Promise<void> => {
+    if (!code.trim()) return;
+    // Level the surface up first so the answer is projected into the cell sequence, then insert.
+    if (chats.current.view !== "notebook") setView("notebook");
+    const nb = chats.notebookFor(chats.current);
+    const afterId = resolveAfterId(nb);
+    // Dedupe: if this exact code was already Run from this answer, don't spawn a second cell —
+    // just scroll to the existing one. (A repaint rebuilds the answer's Run button un-disabled, so
+    // the DOM-level guard isn't enough; this state-level check is the real one.)
+    const existing = nb.cells.find(
+      (c: NotebookCell) => c.kind === "code" && c.spawnedFrom === afterId && c.prompt === code,
+    );
+    if (afterId && existing) {
+      paintNotebook();
+      chats.current.notebookEl
+        .querySelector(`[data-cell-id="${existing.id}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    const cell = newCell(code, "code", nextCellName(nb.cells));
+    // Insert after the answering cell, but AFTER any code cells already spawned from the same answer
+    // (so multiple blocks run top-to-bottom keep their order rather than stacking in reverse).
+    let at = afterId ? nb.cells.findIndex((c: NotebookCell) => c.id === afterId) : -1;
+    if (at >= 0) {
+      while (at + 1 < nb.cells.length && nb.cells[at + 1].kind === "code" && nb.cells[at + 1].spawnedFrom === afterId) {
+        at++;
+      }
+      cell.spawnedFrom = afterId;
+      nb.cells.splice(at + 1, 0, cell);
+    } else {
+      nb.cells.push(cell);
+    }
+    scroll.onNewTurn();
+    paintNotebook();
+    await runNotebookCode(cell.id, code);
   };
 
   form.addEventListener("submit", async (e) => {

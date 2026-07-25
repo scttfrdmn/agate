@@ -147,6 +147,29 @@ describe("renderNotebook", () => {
     expect(target.querySelector('.notebook-cell-chat[data-cell-id="b"]')).not.toBeNull();
   });
 
+  it("a Run button on a python block in an answer fires onRunFromAnswer with the cell id + code (#243)", () => {
+    const nb: Notebook = {
+      cells: [
+        {
+          id: "a",
+          kind: "prompt",
+          prompt: "plot it",
+          answer: "Here you go:\n\n```python\nimport matplotlib\n```",
+          state: "idle",
+        },
+      ],
+    };
+    const target = host();
+    const runs: Array<[string, string]> = [];
+    renderNotebook(nb, target, { onRunFromAnswer: (id, code) => runs.push([id, code]) });
+    const run = target.querySelector<HTMLButtonElement>(".code-run");
+    expect(run).not.toBeNull();
+    run!.click();
+    expect(runs).toHaveLength(1);
+    expect(runs[0][0]).toBe("a");
+    expect(runs[0][1]).toContain("import matplotlib");
+  });
+
   it("renders an error state", () => {
     const nb: Notebook = {
       cells: [{ id: "a", kind: "prompt", prompt: "q?", state: "error", error: "boom" }],

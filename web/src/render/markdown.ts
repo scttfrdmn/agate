@@ -131,15 +131,33 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
+export interface RenderOptions {
+  // When present, runnable (python) code blocks in the answer get a "Run" action that hands the
+  // block's source to this callback — the Canvas "Run this" bridge (#243). Copy is always added.
+  onRunCode?: (code: string) => void;
+}
+
 /**
  * Render Markdown-with-math into a target element (sets innerHTML to the sanitized
  * result). The single place answer HTML is injected, so the XSS boundary is here.
- * After rendering, wires up affordances (citation markers, code copy buttons).
+ * After rendering, wires up affordances (citation markers, code copy/Run buttons).
  */
-export function renderInto(el: HTMLElement, src: string, idPrefix = ""): void {
+export function renderInto(el: HTMLElement, src: string, idPrefix = "", opts: RenderOptions = {}): void {
   el.innerHTML = renderMarkdown(src);
   markCitations(el, idPrefix);
-  addCopyButtons(el);
+  addCodeActions(el, opts.onRunCode);
+}
+
+// A fenced block is runnable only if it's explicitly tagged Python (marked writes the inner <code>
+// class `language-python`; also accept `py`). Bare ``` fences are NOT treated as runnable — models
+// use them for output dumps, tracebacks, and ASCII tables as often as for code, and offering an
+// accent "Run" that immediately errors undermines the confidence this affordance is meant to build.
+function isRunnable(codeEl: HTMLElement | null): boolean {
+  const cls = codeEl?.className ?? "";
+  const m = /language-([\w+-]+)/.exec(cls);
+  if (!m) return false;
+  const lang = m[1].toLowerCase();
+  return lang === "python" || lang === "py";
 }
 
 // Turn bare [n] citation markers in the rendered text into superscript anchors that
@@ -180,23 +198,61 @@ export function markCitations(root: HTMLElement, idPrefix = ""): void {
   }
 }
 
-// Add a "Copy" button to each fenced code block. textContent only — no HTML.
-function addCopyButtons(root: HTMLElement): void {
-  for (const pre of Array.from(root.querySelectorAll("pre"))) {
-    if (pre.parentElement?.classList.contains("code-block")) continue;
+// Add a "Copy" button to each fenced code block, and — when `onRunCode` is provided — a "Run"
+// button on runnable (python) blocks (#243). Run hands the block's exact source to the caller,
+// which spawns a live code cell; it never executes here. textContent only — no HTML.
+//
+// The block element is the `<pre>` in a real browser; a bare `<code>` fence (no `<pre>` ancestor)
+// is also handled, so this is robust to sanitizers that unwrap the `<pre>`.
+function addCodeActions(root: HTMLElement, onRunCode?: (code: string) => void): void {
+  const blocks: HTMLElement[] = [];
+  for (const pre of Array.from(root.querySelectorAll("pre"))) blocks.push(pre as HTMLElement);
+  // Handle a fenced block whose <pre> was unwrapped by the sanitizer: a top-level <code> that is a
+  // BLOCK (has a language- class or a newline), never inline `code` (which is a bare <code> too).
+  for (const code of Array.from(root.querySelectorAll("code"))) {
+    if (code.closest("pre")) continue;
+    const isBlock = code.className.includes("language-") || (code.textContent ?? "").includes("\n");
+    if (isBlock) blocks.push(code as HTMLElement);
+  }
+  for (const block of blocks) {
+    if (block.parentElement?.classList.contains("code-block")) continue;
+    const codeEl = block.matches("code") ? block : block.querySelector("code");
     const wrap = document.createElement("div");
     wrap.className = "code-block";
-    pre.replaceWith(wrap);
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "code-copy";
-    btn.textContent = "Copy";
-    btn.addEventListener("click", () => {
-      void navigator.clipboard?.writeText(pre.textContent ?? "").then(() => {
-        btn.textContent = "Copied";
-        setTimeout(() => (btn.textContent = "Copy"), 1200);
+    block.replaceWith(wrap);
+    const actions = document.createElement("div");
+    actions.className = "code-actions";
+
+    if (onRunCode && isRunnable(codeEl)) {
+      const runBtn = document.createElement("button");
+      runBtn.type = "button";
+      runBtn.className = "code-run";
+      // Glyph is decorative — hide it from the accessible name so SR reads just "Run · free".
+      runBtn.innerHTML = '<span aria-hidden="true">▶</span> Run <span class="code-run-free">· free</span>';
+      runBtn.setAttribute("aria-label", "Run this code in a live cell (runs locally, free)");
+      runBtn.title = "Run this in a live code cell (locally, free)";
+      runBtn.addEventListener("click", () => {
+        // Explicit Run only, once per block: relabel + disable so a second click can't spawn a
+        // duplicate cell. The spawned cell (below) is now the place to edit/re-run.
+        onRunCode(block.textContent ?? "");
+        runBtn.disabled = true;
+        runBtn.innerHTML = '<span aria-hidden="true">↓</span> Ran';
+        runBtn.setAttribute("aria-label", "Already run — see the code cell below");
+      });
+      actions.appendChild(runBtn);
+    }
+
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "code-copy";
+    copyBtn.textContent = "Copy";
+    copyBtn.addEventListener("click", () => {
+      void navigator.clipboard?.writeText(block.textContent ?? "").then(() => {
+        copyBtn.textContent = "Copied";
+        setTimeout(() => (copyBtn.textContent = "Copy"), 1200);
       });
     });
-    wrap.append(btn, pre);
+    actions.appendChild(copyBtn);
+    wrap.append(actions, block);
   }
 }

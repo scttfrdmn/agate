@@ -39,14 +39,23 @@ export class ChatTranscript {
   // model over the main column (Canvas #242) — the SAME anchor drives the cell view, so scrolling
   // behaves identically in both renderers. If none is passed (older callers/tests), scrolling is a
   // no-op and the transcript just renders.
+  // `onRunCode`, when set, adds a "Run this" action to python blocks in a finalized answer
+  // (#243): clicking hands the block's source + the answering turn's ordinal to the callback
+  // (which spawns a live code cell BELOW that turn, not at the bottom). The ordinal counts answered
+  // turns in order, matching cellsFromHistory's one-cell-per-answer projection when we level up.
   constructor(
     appendHost: HTMLElement,
     private readonly anchor?: ScrollAnchor,
+    private readonly onRunCode?: (code: string, turnIndex: number) => void,
   ) {
     this.history = document.createElement("div");
     this.history.className = "chat-history";
     appendHost.appendChild(this.history);
   }
+
+  // Count of turns that have produced an answer — the ordinal handed to onRunCode so a spawned
+  // code cell can be placed below the right turn after the surface levels up to cells.
+  private answeredCount = 0;
 
   /** Start a new turn: append the user bubble + an empty assistant bubble. */
   begin(question: string): AssistantTurn {
@@ -113,7 +122,13 @@ export class ChatTranscript {
           modelTag.hidden = false;
         }
         if (text.trim()) {
-          renderInto(body, text);
+          // This answered turn's ordinal (0-based over answered turns) — matches the cell index it
+          // projects to on level-up, so a Run-this here places the code cell below THIS turn.
+          const turnIndex = this.answeredCount++;
+          const onRun = this.onRunCode;
+          renderInto(body, text, "", {
+            onRunCode: onRun ? (code) => onRun(code, turnIndex) : undefined,
+          });
           body.classList.add("rendered");
         } else {
           body.textContent = acc;

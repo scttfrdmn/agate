@@ -18,7 +18,7 @@ from typing import Any, Literal
 from cost.precall import estimate_call_cost
 
 from agate.contracts import Backend, CostMeter, Emit
-from agate.entitlements import Tier, models_for_tier, tier_for_model
+from agate.entitlements import Tier, auto_candidates, models_for_tier, tier_for_model
 
 Mode = Literal["SYNTHESIS", "DEBATE", "ANALYSIS"]
 MODES: tuple[Mode, ...] = ("SYNTHESIS", "DEBATE", "ANALYSIS")
@@ -234,13 +234,17 @@ def select_model(
 ) -> ModelChoice:
     """Pick a model for `tier`, bounded by entitlement AND budget — the heart of #122.
 
-    The candidate set IS `models_for_tier(tier)` (cheapest-first), so the result can
-    NEVER exceed the session's entitled tier. Candidates are filtered to those whose
+    The candidate set is `auto_candidates(tier)` (entitled, ascending-capability, minus toy models
+    that deflect — a quality floor, #247), so the result can NEVER exceed the session's entitled
+    tier and never defaults to a model too weak to answer. Candidates are filtered to those whose
     worst-case cost fits the remaining budget, THEN the policy chooses within that
     affordable set: `thrifty` picks the cheapest that clears the difficulty bar; `best`
     picks the most capable affordable. If nothing is affordable, degrade to the cheapest
     entitled model (never raise, never exceed)."""
-    candidates = models_for_tier(tier)  # cheapest-first, entitled set
+    # Auto-selectable set = entitled models minus the toy models that deflect (#247 follow-up): a
+    # quality FLOOR so Auto never defaults to a model too weak to answer. Those models stay pinnable
+    # (a pin bypasses select_model). Ascending-capability order preserved.
+    candidates = auto_candidates(tier)
     affordable = _affordable(candidates, remaining_budget_usd, input_tokens, max_tokens)
     if not affordable:
         # Budget can't afford even the cheapest entitled model: pick it anyway (the

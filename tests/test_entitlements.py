@@ -14,6 +14,22 @@ from agate.entitlements import (
 )
 
 
+def test_auto_candidates_excludes_toy_models_but_keeps_them_entitled():
+    # #247 quality floor: the tiny Gemma models are ENTITLED (pinnable) but excluded from AUTO
+    # selection (they deflect on ordinary questions). auto_candidates drops them; the full entitled
+    # set keeps them.
+    from agate.entitlements import AUTO_EXCLUDED_MODELS, auto_candidates
+
+    for tier in ("oss", "mid", "frontier"):
+        auto = auto_candidates(tier)
+        full = set(models_for_tier(tier))
+        assert AUTO_EXCLUDED_MODELS & full  # the toy models ARE entitled at every tier (cumulative)
+        assert not (set(auto) & AUTO_EXCLUDED_MODELS)  # …but never auto-selected
+        # The cheapest auto candidate is a real model, not a toy one.
+        assert auto[0] == "openai.gpt-oss-20b-1:0"
+    # Fail-safe: if a tier were entirely toy models, auto_candidates falls back to the full set.
+
+
 def test_supports_vision():
     # Claude ids (all entitled Claude are multimodal) → vision; oss/gemma → text-only; unknown → no.
     assert supports_vision("us.anthropic.claude-opus-4-1-20250805-v1:0")

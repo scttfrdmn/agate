@@ -113,6 +113,30 @@ def test_artifact_carries_roster_for_reproducibility():
     assert art.roster == ROSTER
 
 
+def test_artifact_captures_provenance_from_event():
+    # agate#265: an `artifact` event may carry an optional trust summary; it's parsed onto the
+    # RunArtifact. Absent → provenance stays None (back-compat).
+    prov = {
+        "type": "artifact",
+        "run_id": "r",
+        "url": "s3://x",
+        "provenance": {
+            "record_hash": "abc123",
+            "verified": 5,
+            "unverified": 1,
+            "stability": 0.83,
+            "adversarial_findings": 2,
+        },
+    }
+    art = build_artifact([prov], run_id="r", created_at=CREATED)
+    assert art.provenance is not None
+    assert art.provenance.record_hash == "abc123"
+    assert art.provenance.verified == 5 and art.provenance.adversarial_findings == 2
+    # No provenance on the stream → None.
+    plain = build_artifact([{"type": "answer", "text": "hi"}], run_id="r", created_at=CREATED)
+    assert plain.provenance is None
+
+
 def test_analyze_run_captures_code_cells():
     events = [
         {"type": "route", "mode": "ANALYSIS"},

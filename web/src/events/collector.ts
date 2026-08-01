@@ -7,6 +7,7 @@ import type {
   Emit,
   RouteMode,
   RunEvent,
+  RunProvenance,
 } from "./protocol";
 
 // Collect events in order — the test collector and "save run" serialiser both use
@@ -53,6 +54,9 @@ export interface RunState {
   cells: AnalyzeCell[];
   costTotal: number;
   artifactUrl?: string;
+  // Trust summary from an artifact event's optional provenance (agate#265), so the SPA can badge
+  // trust beside cost. Undefined for producers that don't verify.
+  provenance?: RunProvenance;
 }
 
 function emptyState(): RunState {
@@ -120,6 +124,7 @@ export function reduce(prev: RunState, event: RunEvent): RunState {
 
     case "artifact":
       state.artifactUrl = event.url;
+      if (event.provenance) state.provenance = event.provenance;
       return state;
 
     // citation / receipt / guardrail / policy_denied don't change pane layout

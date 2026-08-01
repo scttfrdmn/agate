@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **quarry ↔ agate integration contract, agate side (#265).** Four additive items so an external
+  decomposition/verification orchestrator can drive agate over the network:
+  (1) an **opt-in server-to-server invoker role** — `cdk deploy agate-chokepoint -c
+  invoker_principal_arn=<arn>` vends an assumable `agate-chokepoint-invoker` role permitting exactly
+  `lambda:InvokeFunctionUrl`/`InvokeFunction` on the chokepoint (no Bedrock, no tables; the handler
+  still assumes the *user's* scoped role for the model call), so a backend that can't use the
+  browser's Cognito creds can SigV4-call the Function URL;
+  (2) a machine-readable **`code`** on the 402 body (`budget_exceeded` | `token_invalid` |
+  `scope_denied` | `bad_request`) so a caller distinguishes a real cap breach from an auth/input
+  error without string-matching the detail;
+  (3) an optional **`provenance`** field on the `artifact` event (record-hash, verified/unverified
+  counts, stability, adversarial-findings) — the trust summary the SPA can badge beside cost;
+  (4) `embedding` added to the TS `ReceiptRow.kind` union (and the artifact twin) to match Python.
+
 ### Fixed
 - **The ▶ Run button stays reachable on long code blocks.** On a tall emitted code block the
   Run/Copy action row scrolled off the top before you could reach it; it now sticks to the top of

@@ -49,7 +49,16 @@ _sts = boto3.client("sts")
 
 
 class ChokepointError(Exception):
-    """Reject the request (4xx). Never falls through to an unmetered call."""
+    """Reject the request (4xx). Never falls through to an unmetered call.
+
+    `code` is a stable machine-readable classifier in the 402 body so a caller (e.g. quarry,
+    agate#265) can distinguish a real budget breach from an auth/scope/input error without
+    string-matching `detail`. Only `budget_exceeded` means "priced out — degrade gracefully"; the
+    rest are hard faults."""
+
+    def __init__(self, detail: str, code: str = "bad_request"):
+        super().__init__(detail)
+        self.code = code
 
 
 # Conservative per-image input-token charge (#244). We have no image tokenizer server-side, so we
@@ -250,7 +259,7 @@ def validate_idp_token(token: str) -> dict:
     try:
         return verify_token(token, **cfg)
     except TokenError as exc:
-        raise ChokepointError(str(exc)) from exc
+        raise ChokepointError(str(exc), code="token_invalid") from exc
 
 
 def _period_now() -> str:
@@ -271,7 +280,7 @@ def process(req: dict, *, period: str | None = None) -> dict:
     try:
         tags = claims_to_tags(claims)
     except ClaimsError as exc:
-        raise ChokepointError(f"cannot scope session: {exc}") from exc
+        raise ChokepointError(f"cannot scope session: {exc}", code="scope_denied") from exc
     tenant = tags.tenant
     user = str(claims.get("sub") or claims.get("subject") or "agate-user")
     period = period or _period_now()
@@ -351,7 +360,8 @@ def process(req: dict, *, period: str | None = None) -> dict:
     )
     if gate.decision == "reject":
         raise ChokepointError(
-            f"pre-call budget check failed at {gate.breaching_node}: {gate.reason}"
+            f"pre-call budget check failed at {gate.breaching_node}: {gate.reason}",
+            code="budget_exceeded",
         )
 
     # If the resolved model is text-only but the turn carries figures, strip the images AND their
@@ -417,7 +427,10 @@ def handler(event: dict, context: object) -> dict:
         req = json.loads(body) if isinstance(body, str) else body
         return _resp(200, process(req))
     except ChokepointError as exc:
-        return _resp(402, {"error": "budget_rejected", "detail": str(exc)})
+        # `code` classifies the rejection (agate#265): budget_exceeded | token_invalid |
+        # scope_denied | bad_request. Only budget_exceeded means "priced out" — a caller maps the
+        # rest to hard faults, not graceful degradation. `error` stays for back-compat.
+        return _resp(402, {"error": "budget_rejected", "code": exc.code, "detail": str(exc)})
     except Exception:  # noqa: BLE001 — fail closed
         # Log the traceback (CloudWatch) so a 500 is diagnosable; the response body
         # stays opaque (no internals leaked to the caller). Behaviour unchanged.

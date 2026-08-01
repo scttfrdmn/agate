@@ -126,3 +126,40 @@ def test_exec_role_can_write_the_scope_spend_debit():
     ]
     assert updates, "the choke point must be able to write the scope-spend debit"
     assert any("agate-spend" in str(s.get("Resource")) for s in updates)
+
+
+def test_invoker_role_created_only_when_principal_supplied():
+    # agate#265: a server-to-server caller (quarry) gets a dedicated assumable role permitting
+    # exactly lambda:InvokeFunctionUrl/InvokeFunction on the chokepoint — and nothing else. Opt-in.
+    t_off = _template()
+    off_names = [
+        r["Properties"].get("RoleName") for r in t_off.find_resources("AWS::IAM::Role").values()
+    ]
+    assert "agate-chokepoint-invoker" not in off_names  # absent by default
+
+    caller = "arn:aws:iam::111122223333:role/quarry-backend"
+    t = _template({"invoker_principal_arn": caller})
+    roles = t.find_resources("AWS::IAM::Role")
+    inv = [
+        r for r in roles.values() if r["Properties"].get("RoleName") == "agate-chokepoint-invoker"
+    ]
+    assert inv, "invoker role must be created when a principal is supplied"
+    # It trusts exactly the supplied principal.
+    trust = inv[0]["Properties"]["AssumeRolePolicyDocument"]["Statement"][0]["Principal"]["AWS"]
+    assert caller in str(trust)
+    # The invoker's inline policy grants exactly the two lambda invoke actions — no Bedrock, no
+    # tables (it never widens data/model access; the handler assumes the USER's role for that).
+    invoker_id = next(
+        rid
+        for rid, r in roles.items()
+        if r["Properties"].get("RoleName") == "agate-chokepoint-invoker"
+    )
+    invoker_actions: list[str] = []
+    for p in t.find_resources("AWS::IAM::Policy").values():
+        if invoker_id not in str(p["Properties"].get("Roles", "")):
+            continue
+        for s in p["Properties"]["PolicyDocument"]["Statement"]:
+            invoker_actions += s["Action"] if isinstance(s["Action"], list) else [s["Action"]]
+    assert "lambda:InvokeFunctionUrl" in invoker_actions
+    assert "lambda:InvokeFunction" in invoker_actions
+    assert not any(a.startswith(("bedrock:", "dynamodb:")) for a in invoker_actions)

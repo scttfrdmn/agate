@@ -92,15 +92,17 @@ def wired(monkeypatch):
 
     # Simulate a VERIFIED token: decode the JSON the test passes as `idp_token`.
     # Real signature/JWKS verification is covered by tests/test_jwt_verify.py.
+    # Mirror the real validate_idp_token's failure code (token_invalid) so 402-code tests are
+    # faithful — the production path raises token_invalid on any TokenError.
     def _decode(token):
         if not token:
-            raise cp.ChokepointError("no token")
+            raise cp.ChokepointError("no token", code="token_invalid")
         try:
             claims = json.loads(token)
         except ValueError as exc:
-            raise cp.ChokepointError("bad token") from exc
+            raise cp.ChokepointError("bad token", code="token_invalid") from exc
         if not isinstance(claims, dict):
-            raise cp.ChokepointError("bad token")
+            raise cp.ChokepointError("bad token", code="token_invalid")
         return claims
 
     monkeypatch.setattr(cp, "validate_idp_token", _decode)
@@ -414,6 +416,24 @@ def test_handler_maps_reject_to_402(wired):
     resp = cp.handler({"body": json.dumps(_req())}, None)
     assert resp["statusCode"] == 402
     assert "budget_rejected" in resp["body"]
+
+
+def test_402_carries_a_machine_code(wired):
+    # agate#265 C1: the 402 body classifies WHY it was rejected so a caller (quarry) doesn't
+    # string-match. A real budget breach → budget_exceeded; a bad token → token_invalid.
+    wired.spend, wired.budget = 0.0, 0.0
+    body = json.loads(cp.handler({"body": json.dumps(_req())}, None)["body"])
+    assert body["code"] == "budget_exceeded"
+
+    bad = cp.handler({"body": json.dumps({"messages": [{"role": "user", "content": "x"}]})}, None)
+    assert bad["statusCode"] == 402
+    assert json.loads(bad["body"])["code"] == "token_invalid"
+
+
+def test_402_bad_request_code_for_missing_messages(wired):
+    resp = cp.handler({"body": json.dumps({"idp_token": _token(), "messages": []})}, None)
+    assert resp["statusCode"] == 402
+    assert json.loads(resp["body"])["code"] == "bad_request"
 
 
 def test_handler_200_on_allow(wired):

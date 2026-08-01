@@ -115,6 +115,19 @@ describe("newCell", () => {
     expect(c.prompt).toBe("print(1)");
     expect(c.state).toBe("idle");
   });
+
+  it("produces an agent cell carrying its cap (#248)", () => {
+    const c = newCell("scan the literature", "agent", "c1", { costUsd: 2, seconds: 300, maxSteps: 8 });
+    expect(c.kind).toBe("agent");
+    expect(c.cap).toEqual({ costUsd: 2, seconds: 300, maxSteps: 8 });
+    expect(c.state).toBe("idle");
+    expect(c.answer).toBeUndefined();
+  });
+
+  it("ignores a cap for non-agent kinds", () => {
+    expect(newCell("q?", "prompt", "c1", { costUsd: 2 }).cap).toBeUndefined();
+    expect(newCell("q?", "agent", "c1").cap).toBeUndefined(); // agent but no cap given
+  });
 });
 
 describe("isEditedSinceRun", () => {

@@ -104,6 +104,11 @@ export class ChatManager {
     const notebookEl = document.createElement("div");
     notebookEl.className = "notebook-pane";
     notebookEl.hidden = true;
+    // A polite live region so screen-reader users hear cell run progress/completion in the Canvas
+    // view too (the transcript's #out live region doesn't cover the notebook pane) — matters most
+    // for a minutes-long, billed agent-cell run (#248 UX review). Updated by the run orchestration.
+    notebookEl.setAttribute("aria-live", "polite");
+    notebookEl.setAttribute("aria-atomic", "false");
     this.deps.appendHost.appendChild(notebookEl);
     const transcript = new ChatTranscript(el, this.deps.anchor, this.deps.onRunCode);
     const history: ChatMessage[] = [];

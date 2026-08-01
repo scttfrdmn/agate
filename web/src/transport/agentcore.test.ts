@@ -22,6 +22,16 @@ describe("parseEventBlob", () => {
   it("handles an empty blob", () => {
     expect(parseEventBlob("")).toEqual([]);
   });
+
+  it("parses the agent-cell receipt event (#248) discriminated by kind", () => {
+    const blob =
+      '{"type":"answer","title":"partial (cap-bounded)","text":"best effort"}\n' +
+      '{"type":"receipt","kind":"agent-cell","answer_cap_bounded":true,"stop_reason":"time cap reached (300s)","spent_usd":0.42,"elapsed_seconds":301,"steps_taken":4}\n';
+    const events = parseEventBlob(blob);
+    expect(events.map((e) => e.type)).toEqual(["answer", "receipt"]);
+    const receipt = events[1];
+    expect(receipt.type === "receipt" && "kind" in receipt && receipt.kind).toBe("agent-cell");
+  });
 });
 
 // A fake AgentCore client: AgentCoreTransport doesn't expose injection, so we

@@ -29,9 +29,9 @@ import { ChatManager } from "./chat/manager";
 import { ScrollAnchor } from "./chat/scroll";
 import { SessionMeter } from "./chat/meter";
 import { suggestFollowups } from "./chat/followups";
-import { type NotebookCell, isEditedSinceRun, newCell } from "./chat/notebook";
+import { type AgentCap, type NotebookCell, isEditedSinceRun, newCell } from "./chat/notebook";
 import { renderNotebook } from "./chat/notebook-ui";
-import { runCell } from "./chat/notebook-run";
+import { runAgentCell, runCell } from "./chat/notebook-run";
 import { dependentsOf, nextCellName, resolveSource, resolveSourceWithImages } from "./chat/dag";
 import { deserializeNotebook, serializeNotebook } from "./chat/notebook-store";
 import { CodeKernel } from "./notebook/kernel";
@@ -226,6 +226,14 @@ function main(): void {
   const modeSel = document.getElementById("mode") as HTMLSelectElement;
   const modelSel = document.getElementById("model") as HTMLSelectElement;
   const emptyState = document.getElementById("empty");
+
+  // Agent-cell mode (#248) only works when the agent runtime is deployed. Remove the option (and
+  // its optgroup) when it isn't, so a user never picks it, does the work, and hits a dead end at
+  // launch (#248 UX review). Panel/Analyze also need `agent`, but those pre-date this and route
+  // differently; gating them is a separate cleanup.
+  if (!agent) {
+    modeSel.querySelector('option[value="agent"]')?.closest("optgroup, option")?.remove();
+  }
 
   // Empty-chat presentation: show the empty-state hint AND centre the composer as a landing state
   // (a fresh chat has no transcript above the composer, so top-aligning it just leaves dead space).
@@ -533,6 +541,7 @@ function main(): void {
     ask: "Ask a question…",
     panel: "Pose a question for the panel…",
     analyze: "Describe an analysis to run…",
+    agent: "Research question — a capped background agent (set its budget next)…",
   };
   // Ask · Code switch (Ask-weighted): Ask (default) sends a billed question; Code sends Python
   // that runs locally in the pyodide worker (free). Reaching for Code is what grows the document
@@ -617,6 +626,8 @@ function main(): void {
     renderNotebook(nb, chat.notebookEl, {
       onRun: (cellId, prompt) => void runNotebookCell(cellId, prompt),
       onRunCode: (cellId, code) => void runNotebookCode(cellId, code),
+      onRunAgent: (cellId, prompt, cap) => void runNotebookAgent(cellId, prompt, cap),
+      onCancelAgent: (cellId) => agentAborters.get(cellId)?.abort(),
       onEdit: (cellId, source) => onNotebookEdit(cellId, source),
       // Two-renderer costume change (#242): "Edit" grows a chat turn into its editable cell;
       // collapsing (Cancel/Done) DISCARDS unrun edits by reverting the cell to EXACTLY its
@@ -657,6 +668,17 @@ function main(): void {
         // yield a different answer — flag it (↻ Refresh) rather than silently disagree (#247).
         if (cell.answer && modelId !== cell.modelId) cell.stale = true;
         cell.modelId = modelId;
+        paintNotebook();
+      },
+      // Agent-cell cap change (#248): the cap is an input to the frozen answer (a bigger cap could
+      // find more), so changing it stales an answered cell — an explicit, billed re-run, never a
+      // silent re-launch. Repaint so the Run button's enabled state (needs ≥1 cap axis) updates.
+      onSetCap: (cellId, cap) => {
+        const cell = nb.cells.find((c: NotebookCell) => c.id === cellId);
+        if (!cell) return;
+        const changed = JSON.stringify(cap) !== JSON.stringify(cell.cap ?? {});
+        if (cell.answer && changed) cell.stale = true;
+        cell.cap = cap;
         paintNotebook();
       },
       modelOptions: creds.scope?.tier
@@ -846,15 +868,94 @@ function main(): void {
     }
   };
 
+  // Per-cell AbortControllers for in-flight agent runs, so a user can Cancel a billed background
+  // run (aborts the client-side wait; the server run still self-bounds by its cap).
+  const agentAborters = new Map<string, AbortController>();
+
+  // Run ONE agent cell (#248, Canvas move #5): a budget/time/step-capped background research run on
+  // AgentCore. Resolves {{cN}} refs first (an agent cell can build on prior output). Never auto-run
+  // (it spends real money) — only from an explicit launch. Requires the agent transport + a token.
+  const runAgentCore = async (cell: NotebookCell, nb: { cells: NotebookCell[] }): Promise<boolean> => {
+    const { resolved } = resolveSource(cell, nb.cells);
+    if (!resolved.trim()) return false;
+    if (!agent) {
+      cell.state = "error";
+      cell.error = "the agent runtime isn't configured for this deployment";
+      return false;
+    }
+    cell.state = "running";
+    cell.error = undefined;
+    cell.answer = undefined; // clear any prior (stale) answer while this run streams
+    const abort = new AbortController();
+    agentAborters.set(cell.id, abort);
+    // Live elapsed readout against the time cap — no black-box spinner for a billed background run
+    // (#248 UX review). A 1s ticker updates the cell's transient liveProgress; cleared on settle.
+    const startedAt = Date.now();
+    const capMin = cell.cap?.seconds ? cell.cap.seconds / 60 : undefined;
+    const tick = () => {
+      const mins = (Date.now() - startedAt) / 60000;
+      cell.liveProgress = capMin
+        ? `researching · ${mins.toFixed(1)} / ${capMin.toFixed(1)} min`
+        : `researching · ${mins.toFixed(1)} min`;
+      paintNotebook();
+    };
+    tick();
+    const ticker = window.setInterval(tick, 1000);
+    try {
+      const { text, receipt } = await runAgentCell(
+        agent,
+        idpToken(),
+        resolved,
+        cell.cap ?? {},
+        // Stream answer text live into the cell so the reader sees progress, not just dots.
+        (delta) => {
+          cell.answer = (cell.answer ?? "") + delta;
+          paintNotebook();
+        },
+        (note) => {
+          cell.liveProgress = note;
+          paintNotebook();
+        },
+        abort.signal,
+      );
+      cell.answer = text;
+      cell.agentReceipt = receipt;
+      cell.state = "idle";
+      cell.stale = false;
+      cell.liveProgress = undefined;
+      cell.answeredPrompt = cell.prompt; // the answer corresponds to this exact question + cap
+      // An agent cell spends real money — fold its spend into the session meter like a prompt cell.
+      meter.record(receipt.spentUsd, undefined);
+      return true;
+    } catch (err) {
+      // A user Cancel aborts the client-side wait; the cell keeps whatever partial text streamed in
+      // and is marked stale (re-run to finish). Any other error surfaces as an error state.
+      if (abort.signal.aborted) {
+        cell.state = "idle";
+        cell.stale = true;
+        cell.liveProgress = undefined;
+        cell.error = undefined;
+        return false;
+      }
+      cell.state = "error";
+      cell.error = (err as Error).message;
+      cell.liveProgress = undefined;
+      return false;
+    } finally {
+      window.clearInterval(ticker);
+      agentAborters.delete(cell.id);
+    }
+  };
+
   // After a cell's value changes, propagate to dependents (#200 slice 3): code dependents
-  // re-run automatically in topological order (free, local WASM); prompt (AI) dependents are
-  // only marked stale — an explicit, billed re-run — so reactivity never spends tokens silently.
+  // re-run automatically in topological order (free, local WASM); prompt (AI) and agent dependents
+  // are only marked stale — an explicit, billed re-run — so reactivity never spends money silently.
   const cascadeFrom = async (cellId: string, nb: { cells: NotebookCell[] }): Promise<void> => {
     for (const dep of dependentsOf(nb.cells, cellId)) {
       if (dep.kind === "code") {
         await runCodeCore(dep, nb);
       } else {
-        dep.stale = true;
+        dep.stale = true; // prompt + agent cells never auto-run (they cost money)
       }
     }
   };
@@ -879,6 +980,18 @@ function main(): void {
     if (ok) await cascadeFrom(cell.id, nb);
     paintNotebook();
   };
+
+  const runNotebookAgent = async (cellId: string, prompt: string, cap: AgentCap): Promise<void> => {
+    const nb = chats.notebookFor(chats.current);
+    const cell = nb.cells.find((c: NotebookCell) => c.id === cellId);
+    if (!cell || cell.kind !== "agent" || !prompt.trim()) return;
+    cell.prompt = prompt;
+    cell.cap = cap;
+    preEditState.delete(cellId);
+    const ok = await runAgentCore(cell, nb);
+    if (ok) await cascadeFrom(cell.id, nb);
+    paintNotebook();
+  };
   // Switch which projection of the active chat is showing. There is no user-facing toggle
   // anymore (Canvas #242): the surface flips to the cell view when the document grows a spine
   // (the composer's Code affordance, or opening a saved notebook). The composer is the
@@ -891,17 +1004,27 @@ function main(): void {
     scroll.reset(); // flipping the view swaps the content wholesale — re-anchor at its bottom
   };
 
-  // Append a fresh cell of `kind` seeded with `source`, level the surface up to the cell view,
-  // and run it. Shared by the composer's Code path (and, once we're in the cell view, Ask).
-  const submitAsCell = async (kind: "prompt" | "code", source: string): Promise<void> => {
+  // A sensible default cap for a newly-authored agent cell (#248): a small dollar + time envelope
+  // the user then tunes in the cell before launching. Never launched automatically.
+  const DEFAULT_AGENT_CAP: AgentCap = { costUsd: 0.5, seconds: 300, maxSteps: 12 };
+
+  // Append a fresh cell of `kind` seeded with `source`, level the surface up to the cell view, and
+  // run it. Shared by the composer's Code path (and, once in the cell view, Ask). An "agent" cell
+  // is the exception: it is NOT auto-run — it's appended with a default cap for the user to tune,
+  // then launched explicitly from its Run button (it spends real money).
+  const submitAsCell = async (kind: "prompt" | "code" | "agent", source: string): Promise<void> => {
     const nb = chats.notebookFor(chats.current);
-    const cell = newCell(source, kind, nextCellName(nb.cells));
+    const cell = newCell(source, kind, nextCellName(nb.cells), kind === "agent" ? DEFAULT_AGENT_CAP : undefined);
     nb.cells.push(cell);
     scroll.onNewTurn(); // a new cell at the bottom resumes anchoring, like a new chat turn
     if (chats.current.view !== "notebook") setView("notebook");
     else paintNotebook();
     if (kind === "code") await runNotebookCode(cell.id, source);
-    else await runNotebookCell(cell.id, source);
+    else if (kind === "agent") {
+      // Don't launch — reveal the cell with its cap inputs; the user reviews the envelope + Runs.
+      cell.expanded = true;
+      paintNotebook();
+    } else await runNotebookCell(cell.id, source);
   };
 
   // "Run this" (#243): a python block in an AI answer spawns a live code cell seeded with that code
@@ -963,6 +1086,17 @@ function main(): void {
     if (codeMode) {
       resetComposerToAsk();
       await submitAsCell("code", q);
+      input.focus();
+      return;
+    }
+    // Agent mode (#248): append a capped-research agent cell (NOT auto-run — it's revealed with a
+    // default cap the user tunes, then launches explicitly). Handled before the notebook-view Ask
+    // path so selecting Agent always creates an agent cell, in either view. Mode stays sticky
+    // (parity with Panel/Analyze, which share this dropdown) — unlike the transient Code toggle;
+    // since an agent cell never auto-runs, a stray Enter appends an idle, review-first cell, not a
+    // billed run, so stickiness here can't spend money by surprise.
+    if (modeSel.value === "agent") {
+      await submitAsCell("agent", q);
       input.focus();
       return;
     }

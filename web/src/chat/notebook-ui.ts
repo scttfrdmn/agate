@@ -9,7 +9,7 @@
 // The markdown/math/citation rendering is delegated to render/markdown.ts (the XSS boundary);
 // the Sources/receipt/copy markup is the exact chat/ui.ts helpers, reused verbatim.
 
-import type { CellKind, Notebook, NotebookCell } from "./notebook";
+import type { AgentCap, CellKind, Notebook, NotebookCell } from "./notebook";
 import { referencedNames } from "./dag";
 import { copyAnswerBtn, renderReceipt, renderSources } from "./ui";
 import { renderInto } from "../render/markdown";
@@ -18,6 +18,12 @@ import { modelLabel } from "../router";
 export interface NotebookCallbacks {
   onRun?: (cellId: string, prompt: string) => void;
   onRunCode?: (cellId: string, code: string) => void;
+  // Launch an agent cell with its authored cap (#248). Billed — never auto-run.
+  onRunAgent?: (cellId: string, prompt: string, cap: AgentCap) => void;
+  // Cancel an in-flight agent run (aborts the client wait; the server self-bounds by its cap).
+  onCancelAgent?: (cellId: string) => void;
+  // The agent cell's cap changed in the editor (cost/time/steps) — stales it like a model change.
+  onSetCap?: (cellId: string, cap: AgentCap) => void;
   onAddCell?: (kind: CellKind) => void;
   // The cell's source changed in the editor — used to stale-mark dependents (#200 slice 3).
   onEdit?: (cellId: string, source: string) => void;
@@ -60,7 +66,9 @@ function thinkingIndicator(): HTMLElement {
 // expanded it, it's marked stale (needs an explicit re-run), or another cell references it (its
 // {{cN}} output is load-bearing, so its handle + source must be visible).
 function showsAsCell(cell: NotebookCell, referenced: Set<string>): boolean {
-  if (cell.kind === "code") return true;
+  // Code + agent cells always wear cell chrome: their controls (code source / cap inputs + a live
+  // spend readout) must stay visible, never collapse into a read-only chat bubble.
+  if (cell.kind === "code" || cell.kind === "agent") return true;
   if (!cell.answer) return true;
   // While a turn is re-running or has errored, show cell chrome so the thinking indicator / error
   // is visible (the chat costume only renders a settled answer).
@@ -103,10 +111,16 @@ export function renderNotebook(
   }
   // Cost trail (#247, move #3): the Canvas's own running total across the chain — the sum of each
   // answered cell's receipt — distinct from the session meter. Shows where money went in THIS
-  // document. Only meaningful once something billed has run (≥1 prompt cell with a cost).
-  const billed = nb.cells.filter((c) => c.kind === "prompt" && typeof c.meta?.cost === "number");
+  // document. Prompt cells bill via `meta.cost`; agent cells (#248) spend real money via
+  // `agentReceipt.spentUsd` — count both, or the total undercounts. Code cells are free.
+  const cellCost = (c: NotebookCell): number | undefined => {
+    if (c.kind === "prompt" && typeof c.meta?.cost === "number") return c.meta.cost;
+    if (c.kind === "agent" && c.agentReceipt) return c.agentReceipt.spentUsd;
+    return undefined;
+  };
+  const billed = nb.cells.filter((c) => typeof cellCost(c) === "number");
   if (billed.length) {
-    const total = billed.reduce((sum, c) => sum + (c.meta?.cost ?? 0), 0);
+    const total = billed.reduce((sum, c) => sum + (cellCost(c) ?? 0), 0);
     const staleCount = nb.cells.filter((c) => c.stale).length;
     const trail = el("div", "notebook-cost-trail");
     const billedLabel = `${billed.length} billed cell${billed.length === 1 ? "" : "s"}`;
@@ -138,6 +152,7 @@ function renderCell(
   showNames: boolean,
 ): HTMLElement {
   if (cell.kind === "code") return renderCodeCell(cell, cb, showNames);
+  if (cell.kind === "agent") return renderAgentCell(cell, cb, showNames);
   return showsAsCell(cell, referenced)
     ? renderPromptCell(cell, cb, showNames)
     : renderChatTurn(cell, cb);
@@ -380,6 +395,210 @@ function renderCodeCell(cell: NotebookCell, cb: NotebookCallbacks, showNames: bo
     wrap.appendChild(receipt);
   }
   return wrap;
+}
+
+// An AGENT cell (#248, Canvas move #5): a research question + a budget/time/step CAP the user sets,
+// launched as a background agent on AgentCore. It always wears cell chrome (never a chat bubble):
+// the cap inputs and the actual-spend-vs-cap receipt must stay visible. The cap is enforced
+// server-side by the pre-call cascade — these inputs are the authored envelope, not the guarantee.
+// A cap-bounded result (the agent hit its cap) is a normal, honest outcome, badged as partial.
+function renderAgentCell(cell: NotebookCell, cb: NotebookCallbacks, showNames: boolean): HTMLElement {
+  const wrap = el("div", "notebook-cell notebook-cell-agent" + (cell.stale ? " stale" : ""));
+  wrap.dataset.cellId = cell.id;
+  wrap.dataset.kind = "agent";
+  wrap.appendChild(renderCellHeader(cell, showNames));
+
+  // The research question (editable, like a prompt cell).
+  const promptId = `nb-agent-${cell.id}`;
+  const label = el("label", "sr-only");
+  label.setAttribute("for", promptId);
+  label.textContent = "Research question";
+  const editor = el("textarea", "notebook-cell-prompt notebook-cell-agent-q") as HTMLTextAreaElement;
+  editor.id = promptId;
+  editor.rows = Math.max(2, cell.prompt.split("\n").length);
+  editor.value = cell.prompt;
+  editor.placeholder = "Research question — the agent plans within your cap…";
+  editor.addEventListener("input", () => cb.onEdit?.(cell.id, editor.value));
+  wrap.append(label, editor);
+
+  // Cap inputs: cost ($), time (min), steps. Each empty = uncapped on that axis. Editing any of
+  // them updates the cell's cap (and stales an answered cell — the cap is an input to the result).
+  const cap: AgentCap = cell.cap ?? {};
+  const capRow = el("div", "notebook-agent-caps");
+  const num = (
+    key: keyof AgentCap,
+    labelText: string,
+    displayValue: number | undefined,
+    step: string,
+    title: string,
+    scale = 1, // stored = displayed * scale (minutes → seconds uses 60)
+  ): void => {
+    const field = el("label", "notebook-agent-cap");
+    const span = el("span", "notebook-agent-cap-label");
+    span.textContent = labelText;
+    const inp = el("input", "notebook-agent-cap-input") as HTMLInputElement;
+    inp.type = "number";
+    inp.min = "0";
+    inp.step = step;
+    inp.value = displayValue === undefined ? "" : String(displayValue);
+    inp.title = title;
+    inp.setAttribute("aria-label", title);
+    inp.disabled = cell.state === "running";
+    inp.placeholder = "no limit"; // an empty axis is uncapped — say so, don't leave it a mystery
+    inp.addEventListener("change", () => {
+      const next: AgentCap = { ...(cell.cap ?? {}) };
+      const raw = inp.value.trim();
+      // Empty OR non-positive → uncapped on this axis. `0` can't mean "spend nothing" (that would
+      // never run), so we normalise it to empty AND reflect that back in the field, so the user
+      // sees the axis became "no limit" rather than silently believing they set a zero ceiling.
+      const n = raw === "" ? NaN : Number(raw);
+      if (Number.isFinite(n) && n > 0) next[key] = n * scale;
+      else {
+        delete next[key];
+        inp.value = "";
+      }
+      cb.onSetCap?.(cell.id, next);
+    });
+    field.append(span, inp);
+    capRow.appendChild(field);
+  };
+  num("costUsd", "Max $", cap.costUsd, "0.01", "Total dollars this agent may spend (empty = no limit)");
+  num("seconds", "Max minutes", cap.seconds ? cap.seconds / 60 : undefined, "0.5", "Wall-clock minutes (empty = no limit)", 60);
+  num("maxSteps", "Max steps", cap.maxSteps, "1", "Tool/model calls the agent may make (empty = no limit)");
+  wrap.appendChild(capRow);
+
+  // Run control. A stale cell with a prior answer says "↻ Re-run"; otherwise "Run agent". Disabled
+  // while running or if no cap axis is set (server refuses an ungoverned launch — mirror it here so
+  // the button doesn't offer a launch that will just bounce).
+  const bar = el("div", "notebook-cell-bar");
+  const hasCap = !!(cap.costUsd || cap.seconds || cap.maxSteps);
+  if (cell.state === "running") {
+    // A billed background run must be cancellable — offer a real Cancel, not a dead "Running…".
+    const cancel = el("button", "btn ghost btn-sm notebook-agent-cancel") as HTMLButtonElement;
+    cancel.type = "button";
+    cancel.textContent = "Cancel";
+    cancel.title = "Stop this run (keeps any partial answer; the agent won't exceed its cap)";
+    cancel.addEventListener("click", () => cb.onCancelAgent?.(cell.id));
+    bar.appendChild(cancel);
+  } else {
+    const run = el("button", "btn notebook-cell-run") as HTMLButtonElement;
+    run.type = "button";
+    const isRefresh = !!(cell.stale && cell.answer);
+    run.textContent = isRefresh ? "Re-run agent" : "Run agent";
+    run.title = hasCap
+      ? "Launch the capped research agent (billed — spends real money up to your cap)"
+      : "Set at least one cap (max $, time, or steps) before launching";
+    if (isRefresh) run.classList.add("notebook-cell-refresh");
+    run.disabled = !hasCap;
+    run.addEventListener("click", () => cb.onRunAgent?.(cell.id, editor.value, cell.cap ?? {}));
+    bar.appendChild(run);
+  }
+  // Visible cost framing (not just a tooltip): state plainly that this spends real money up to the
+  // cap, and — when Run is disabled for want of a cap — WHY, in text a keyboard/SR user can reach.
+  const note = el("span", "notebook-agent-note");
+  if (!hasCap) {
+    note.textContent = "Set at least one cap (max $, minutes, or steps) to launch.";
+    note.classList.add("notebook-agent-note-warn");
+  } else {
+    const capBits: string[] = [];
+    if (cap.costUsd) capBits.push(`$${cap.costUsd.toFixed(2)}`);
+    if (cap.seconds) capBits.push(`${(cap.seconds / 60).toFixed(cap.seconds % 60 ? 1 : 0)} min`);
+    if (cap.maxSteps) capBits.push(`${cap.maxSteps} steps`);
+    // A never-run cell breaks the auto-run expectation Ask/Code set — give an explicit "your move"
+    // so the user knows nothing happens until they Run (and what it'll cost). A settled/re-run
+    // cell just states the envelope.
+    const upTo = `up to ${capBits.join(" / ")} — billed`;
+    note.textContent =
+      cell.answer || cell.state === "running"
+        ? `Runs in the background, spending ${upTo}.`
+        : `Review the budget, then Run — spends ${upTo} in the background.`;
+  }
+  bar.appendChild(note);
+  wrap.appendChild(bar);
+
+  // Output: a running indicator, the (possibly partial) answer, or an error.
+  const body = el("div", "notebook-answer-body");
+  if (cell.state === "running") {
+    const head = el("div", "bubble-head");
+    const aBadge = el("div", "bubble-badge");
+    aBadge.textContent = "Researching";
+    head.appendChild(aBadge);
+    // Live status (elapsed vs. the time cap, or a step note) — not a black-box spinner.
+    if (cell.liveProgress) {
+      const live = el("span", "notebook-agent-live");
+      live.textContent = cell.liveProgress;
+      head.appendChild(live);
+    }
+    body.append(head, thinkingIndicator());
+    // Stream partial answer text as it arrives, so a multi-minute run shows real progress.
+    if (cell.answer && cell.answer.trim()) {
+      const partial = el("div", "rendered notebook-agent-streaming");
+      renderInto(partial, cell.answer, `${cell.id}-`);
+      body.appendChild(partial);
+    }
+  } else if (cell.state === "error") {
+    const err = el("div", "error-msg");
+    err.setAttribute("role", "alert");
+    err.textContent = `Error: ${cell.error ?? "run failed"}`;
+    body.appendChild(err);
+  } else if (cell.answer && cell.answer.trim()) {
+    // A cap-bounded partial answer is flagged so the boundary is honest (success, not error).
+    if (cell.agentReceipt?.capBounded) {
+      const badge = el("div", "notebook-agent-partial");
+      badge.textContent = `Partial — best answer within the cap (${humanizeStopReason(cell.agentReceipt.stopReason)})`;
+      badge.title = "The agent returned its best answer within the cap; raise the cap and re-run for more.";
+      body.appendChild(badge);
+    }
+    // Render the answer into its OWN element (renderInto replaces the target's children, so it must
+    // not clobber the partial badge appended above).
+    const answerBox = el("div", "rendered");
+    renderInto(answerBox, cell.answer, `${cell.id}-`, {
+      onRunCode: cb.onRunFromAnswer ? (code) => cb.onRunFromAnswer?.(cell.id, code) : undefined,
+    });
+    body.appendChild(answerBox);
+  }
+  wrap.appendChild(body);
+
+  // The agent receipt: actual spend / time / steps against the cap (real money — like a billed
+  // prompt cell, distinct from a code cell's free line). Shown once the run settles.
+  if (cell.state === "idle" && cell.agentReceipt) {
+    wrap.appendChild(renderAgentReceipt(cell.agentReceipt, cell.cap));
+    if (cell.answer) wrap.appendChild(copyAnswerBtn(cell.answer));
+  }
+  return wrap;
+}
+
+// A short dollar amount for user-facing display: 4 dp (research spends are small but not
+// machine-precision), trailing-zero-trimmed so "$0.50" not "$0.5000".
+function fmtUsd(n: number): string {
+  return `$${Number(n.toFixed(4))}`;
+}
+
+// The agent-cell receipt line: spend/time/steps vs. the authored cap. A richer shape than
+// renderReceipt (which only knows tokens+cost) — an agent run is measured on three axes. Time is
+// shown on the SAME unit as its cap (minutes) so "used vs. budget" is legible at a glance.
+function renderAgentReceipt(r: NonNullable<NotebookCell["agentReceipt"]>, cap?: AgentCap): HTMLElement {
+  const box = el("div", "notebook-agent-receipt");
+  const parts: string[] = [cap?.costUsd ? `${fmtUsd(r.spentUsd)} / ${fmtUsd(cap.costUsd)}` : fmtUsd(r.spentUsd)];
+  const usedMin = r.elapsedSeconds / 60;
+  const minStr = (m: number) => (m >= 0.1 ? `${m.toFixed(1)} min` : `${r.elapsedSeconds.toFixed(0)}s`);
+  parts.push(cap?.seconds ? `${usedMin.toFixed(1)} / ${(cap.seconds / 60).toFixed(1)} min` : minStr(usedMin));
+  parts.push(cap?.maxSteps ? `${r.stepsTaken} / ${cap.maxSteps} steps` : `${r.stepsTaken} steps`);
+  box.textContent = parts.join(" · ");
+  box.title = r.capBounded
+    ? `Stopped at the cap: ${humanizeStopReason(r.stopReason)}`
+    : "Answered within the cap (spend/time/steps used).";
+  return box;
+}
+
+// Map a backend stop-reason string to human phrasing (the wire value can be terse, e.g. a raw
+// cascade reason). Falls back to the raw string so a new/unknown reason still surfaces something.
+function humanizeStopReason(reason: string): string {
+  const r = reason.toLowerCase();
+  if (r.includes("time")) return "reached the time limit";
+  if (r.includes("step")) return "reached the step limit";
+  if (r.includes("budget") || r.includes("cost") || r.includes("cap")) return "reached the $ cap";
+  return reason;
 }
 
 function renderCodeOutput(out: NonNullable<NotebookCell["output"]>): HTMLElement {

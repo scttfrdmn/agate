@@ -38,6 +38,10 @@ export interface AgentInvocation {
   router?: Record<string, unknown>;
   generator?: Record<string, unknown>;
   code?: string;
+  // A budget/time/step cap routes this invocation to the agent-cell runtime (#248): the backend
+  // (`agent/server.py`) treats a non-null `cap` as a capped background research run. snake_case to
+  // match the server's `_cap_from_payload`. Any axis may be null/absent (uncapped on that axis).
+  cap?: { cost_usd?: number | null; seconds?: number | null; max_steps?: number | null };
 }
 
 
@@ -75,8 +79,9 @@ export class AgentCoreTransport implements Transport {
 
   // The agent-path entry point: invoke the Runtime and emit the decoded RunEvent
   // stream. `sessionId` ties a multi-turn run to one microVM session (≤ the
-  // session idle timeout); omit for a fresh session.
-  async run(invocation: AgentInvocation, emit: Emit, sessionId?: string): Promise<void> {
+  // session idle timeout); omit for a fresh session. `signal` aborts the client-side
+  // wait (a user Cancel) — the server run still self-bounds by its cap.
+  async run(invocation: AgentInvocation, emit: Emit, sessionId?: string, signal?: AbortSignal): Promise<void> {
     const client = await this.client();
     const payload = new TextEncoder().encode(JSON.stringify(invocation));
     const res = await client.send(
@@ -88,6 +93,7 @@ export class AgentCoreTransport implements Transport {
         accept: "application/x-ndjson",
         payload,
       }),
+      { abortSignal: signal },
     );
     // The response blob is a streaming payload in the browser SDK; collect it.
     const blob = res.response ? await res.response.transformToString() : "";

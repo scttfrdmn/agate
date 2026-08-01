@@ -15,14 +15,16 @@
 // Diff-stability: the volatile per-cell `id` is intentionally NOT serialized (fresh ids on load),
 // so a `git diff` reflects real content changes, not id churn.
 
-import type { CellKind, CodeOutput, Notebook, NotebookCell } from "./notebook";
+import type { AgentCap, AgentReceipt, CellKind, CodeOutput, Notebook, NotebookCell } from "./notebook";
 import { newCellId } from "./notebook";
 import type { AnswerMeta } from "./ui";
 import type { RetrievedChunk } from "../rag/context";
 
-// Schema 2 (#246): adds persisted `stale` + `answeredPrompt`. v1 files still load (a v1 cell had no
-// stale/answeredPrompt → treated as fresh, answeredPrompt defaults to its prompt).
-export const NOTEBOOK_SCHEMA = 2;
+// Schema 3 (#248): adds persisted agent-cell `cap` + `agentReceipt` (and the "agent" kind). v1/v2
+// files still load — an older cell simply has no cap/receipt. Schema 2 (#246) added persisted
+// `stale` + `answeredPrompt`; v1 files still load (no stale/answeredPrompt → fresh, answeredPrompt
+// defaults to its prompt).
+export const NOTEBOOK_SCHEMA = 3;
 
 export interface StoredNotebook {
   schema: number;
@@ -46,6 +48,9 @@ interface StoredCell {
   stale?: boolean;
   // Per-cell model pin (#247): re-runs on the same model after reopen.
   modelId?: string;
+  // Agent cells (#248): the authored cap + the frozen receipt of the last run.
+  cap?: AgentCap;
+  agentReceipt?: AgentReceipt;
 }
 
 /** Serialise a notebook to a JSON-safe object. `name`/`savedAt` are supplied by the caller
@@ -66,6 +71,8 @@ export function serializeNotebook(nb: Notebook, name: string, savedAt: string): 
       if (c.output) s.output = c.output; // includes any captured figure PNGs
       if (c.stale) s.stale = true;
       if (c.modelId) s.modelId = c.modelId;
+      if (c.cap) s.cap = c.cap;
+      if (c.agentReceipt) s.agentReceipt = c.agentReceipt;
       return s;
     }),
   };
@@ -83,7 +90,9 @@ export function deserializeNotebook(raw: unknown): { notebook: Notebook; name: s
   if (typeof raw.schema === "number" && raw.schema > NOTEBOOK_SCHEMA) return null; // newer than we know
   const cells: NotebookCell[] = raw.cells.map((c) => {
     const o = isRecord(c) ? c : {};
-    const kind: CellKind = o.kind === "code" ? "code" : "prompt";
+    // Recognise every known kind explicitly; anything else defaults to "prompt" (so an unknown
+    // future kind degrades to an editable text cell rather than a broken one).
+    const kind: CellKind = o.kind === "code" || o.kind === "agent" ? o.kind : "prompt";
     const cell: NotebookCell = {
       id: newCellId(),
       kind,
@@ -101,6 +110,8 @@ export function deserializeNotebook(raw: unknown): { notebook: Notebook; name: s
     if (isRecord(o.meta)) cell.meta = o.meta as unknown as AnswerMeta;
     if (isRecord(o.output)) cell.output = o.output as unknown as CodeOutput;
     if (typeof o.modelId === "string" && o.modelId) cell.modelId = o.modelId;
+    if (isRecord(o.cap)) cell.cap = o.cap as unknown as AgentCap;
+    if (isRecord(o.agentReceipt)) cell.agentReceipt = o.agentReceipt as unknown as AgentReceipt;
     // Reopen stale-badged — a flag, never a trigger (never auto-re-runs). We RECONCILE rather than
     // trust the persisted bit alone: a cell with a frozen value (answer or code output) is stale if
     // it was saved stale OR its prompt no longer matches the prompt that produced the answer. That
@@ -108,7 +119,8 @@ export function deserializeNotebook(raw: unknown): { notebook: Notebook; name: s
     // prompt≠answeredPrompt — without it a mismatched Q&A would reopen as an authoritative chat
     // turn (showsAsCell and isEditedSinceRun would disagree). Keys on answer OR output so a stale
     // code cell (which has output, not answer) also survives.
-    const hasFrozenValue = cell.answer !== undefined || cell.output !== undefined;
+    const hasFrozenValue =
+      cell.answer !== undefined || cell.output !== undefined || cell.agentReceipt !== undefined;
     const editedSinceRun = cell.answer !== undefined && cell.answeredPrompt !== cell.prompt;
     if (hasFrozenValue && (o.stale === true || editedSinceRun)) cell.stale = true;
     return cell;

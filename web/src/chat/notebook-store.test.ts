@@ -162,6 +162,73 @@ describe("deserializeNotebook", () => {
     expect(out.name).toBe("Untitled notebook");
   });
 
+  it("round-trips an agent cell's cap + receipt, preserving the kind (#248)", () => {
+    const agentNb: Notebook = {
+      cells: [
+        {
+          id: "a1",
+          name: "c1",
+          kind: "agent",
+          prompt: "scan the literature on reaction kinetics",
+          answer: "Found 3 relevant reviews…",
+          answeredPrompt: "scan the literature on reaction kinetics",
+          cap: { costUsd: 2, seconds: 300, maxSteps: 8 },
+          agentReceipt: {
+            capBounded: true,
+            stopReason: "budget cap reached at cell cap",
+            spentUsd: 1.87,
+            elapsedSeconds: 142.5,
+            stepsTaken: 6,
+          },
+          state: "idle",
+        },
+      ],
+    };
+    const s = serializeNotebook(agentNb, "N", "t");
+    expect(s.schema).toBe(NOTEBOOK_SCHEMA); // 3
+    expect(s.cells[0].kind).toBe("agent");
+    expect(s.cells[0].cap).toEqual({ costUsd: 2, seconds: 300, maxSteps: 8 });
+    const out = deserializeNotebook(JSON.parse(JSON.stringify(s)))!;
+    const cell = out.notebook.cells[0];
+    expect(cell.kind).toBe("agent"); // guards the deserialize kind-coercion (not silently → prompt)
+    expect(cell.cap).toEqual({ costUsd: 2, seconds: 300, maxSteps: 8 });
+    expect(cell.agentReceipt?.spentUsd).toBe(1.87);
+    expect(cell.agentReceipt?.capBounded).toBe(true);
+  });
+
+  it("reconciles stale for an agent cell keyed on its receipt (edited question after a run)", () => {
+    const stored = {
+      schema: 3,
+      name: "N",
+      savedAt: "t",
+      cells: [
+        {
+          name: "c1",
+          kind: "agent",
+          prompt: "edited question",
+          answer: "partial",
+          answeredPrompt: "original question",
+          cap: { costUsd: 1 },
+          agentReceipt: { capBounded: false, stopReason: "done", spentUsd: 0.3, elapsedSeconds: 20, stepsTaken: 2 },
+        },
+      ],
+    };
+    const out = deserializeNotebook(stored)!;
+    expect(out.notebook.cells[0].stale).toBe(true); // prompt≠answeredPrompt → stale
+  });
+
+  it("reads a v2 file as-is (agent fields simply absent — back-compat)", () => {
+    const v2 = {
+      schema: 2,
+      name: "old",
+      savedAt: "t",
+      cells: [{ name: "c1", kind: "prompt", prompt: "q", answer: "a", answeredPrompt: "q" }],
+    };
+    const out = deserializeNotebook(v2)!;
+    expect(out.notebook.cells[0].kind).toBe("prompt");
+    expect(out.notebook.cells[0].cap).toBeUndefined();
+  });
+
   it("returns null for non-notebook payloads and newer schemas", () => {
     expect(deserializeNotebook(null)).toBeNull();
     expect(deserializeNotebook({ nope: true })).toBeNull();

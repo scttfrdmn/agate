@@ -158,6 +158,42 @@ def classify_difficulty(raw: str) -> Difficulty:
     return DEFAULT_DIFFICULTY
 
 
+# Cheap, pure signals that a request needs real model capability — used by callers that DON'T run
+# the difficulty classifier (e.g. the chokepoint), so "auto" doesn't strand a compute/code/plot
+# request on the weakest model (#263). Keyword-based, deliberately conservative: it only ever RAISES
+# the floor to at least MODERATE, never claims HARD.
+_CAPABLE_CUES: tuple[str, ...] = (
+    "plot",
+    "graph",
+    "chart",
+    "code",
+    "python",
+    "compute",
+    "calculate",
+    "simulate",
+    "derive",
+    "solve",
+    "prove",
+    "implement",
+    "write a program",
+    "write python",
+    "algorithm",
+    "equation",
+)
+
+
+def needs_capable_model(text: str, *, has_images: bool = False) -> bool:
+    """A no-LLM signal that a request should route to a capable model, for callers without a
+    difficulty classifier (the chokepoint's `auto` path, #263). True when the request asks to
+    compute/plot/code/derive, or carries an image to reason over. Pure, conservative (keyword-
+    based). The caller uses this to pick the `best` policy for such a request so it isn't stranded
+    on the cheapest model; ordinary questions keep the thrifty default."""
+    if has_images:
+        return True
+    lowered = text.lower()
+    return any(cue in lowered for cue in _CAPABLE_CUES)
+
+
 @dataclass(frozen=True, slots=True)
 class ModelChoice:
     """The routed model + the human-readable why. `degraded` is True when budget forced

@@ -7,9 +7,21 @@ from agate.router import (
     DEFAULT_MODE,
     ROUTER_SYSTEM,
     classify_mode,
+    needs_capable_model,
     resolve_mode,
     run_router,
 )
+
+
+def test_needs_capable_model():
+    # #263: compute/code/plot/derive requests (or an image turn) → route to a capable model.
+    assert needs_capable_model("Plot Gibbs free energy vs temperature")
+    assert needs_capable_model("write python to compute the pH")
+    assert needs_capable_model("derive the equilibrium constant")
+    assert needs_capable_model("summarize this", has_images=True)
+    # Ordinary lookups stay thrifty.
+    assert not needs_capable_model("What is enthalpy?")
+    assert not needs_capable_model("define entropy")
 
 # --- classify_mode ----------------------------------------------------------
 

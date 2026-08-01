@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Auto routing picks a capable model for compute/plot/code/vision requests (#263).** The Tier-1
+  chokepoint runs no difficulty classifier, so `auto` used to route every request — including "plot
+  this" or "write Python" — to the *cheapest* model, which then failed at the task (you had to pin
+  Claude by hand). Now a pure, no-LLM signal (`needs_capable_model`) detects compute/plot/code/
+  derive requests and figure-bearing turns and routes them with the **`best` policy** (the most
+  capable model the budget affords) — the top Claude for a frontier session, gpt-oss-120b for a
+  student — while ordinary questions keep the thrifty (cheapest) default. Budget still clamps; never
+  exceeds entitlement. To make "best/thrifty" meaningful, `TIER_MODELS` (both the Python entitlement
+  table and its TS twin) is now ordered **weakest→strongest within each tier**; a side effect is
+  that the plain-question default for the open-weight tier is now the small Gemma (cheapest) rather
+  than gpt-oss-20b.
+
 ### Added
 - **quarry ↔ agate integration contract, agate side (#265).** Four additive items so an external
   decomposition/verification orchestrator can drive agate over the network:

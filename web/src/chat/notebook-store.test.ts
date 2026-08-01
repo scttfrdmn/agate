@@ -116,6 +116,16 @@ describe("deserializeNotebook", () => {
     expect(out.notebook.cells[0].stale).toBe(true);
   });
 
+  it("round-trips a per-cell model pin (#247)", () => {
+    const pinned: Notebook = {
+      cells: [{ id: "p1", name: "c1", kind: "prompt", prompt: "hard step", modelId: "us.anthropic.claude-opus-4-1-20250805-v1:0", state: "idle" }],
+    };
+    const s = serializeNotebook(pinned, "N", "t");
+    expect(s.cells[0].modelId).toBe("us.anthropic.claude-opus-4-1-20250805-v1:0");
+    const out = deserializeNotebook(JSON.parse(JSON.stringify(s)))!;
+    expect(out.notebook.cells[0].modelId).toBe("us.anthropic.claude-opus-4-1-20250805-v1:0");
+  });
+
   it("round-trips a stale CODE cell (stale keyed on output, not answer)", () => {
     const staleCode: Notebook = {
       cells: [

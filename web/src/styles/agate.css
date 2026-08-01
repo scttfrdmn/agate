@@ -1324,6 +1324,29 @@ details.sources[open] > .sources-title::before {
   padding: 0.3rem 0.9rem;
   font-size: 0.8rem;
 }
+/* A stale cell's Run is a "Refresh" — same accent, signals it re-runs the billed inference. */
+.notebook-cell-refresh::before {
+  content: "↻ ";
+}
+/* Per-cell model picker (#247): quiet, left-aligned; auto margin pushes Run to the right. */
+.notebook-cell-model {
+  margin-right: auto;
+  font-size: 0.72rem;
+  padding: 0.25rem 0.4rem;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-width: 14rem;
+}
+/* Cost trail (#247, move #3): the Canvas's own running total across the chain — quiet, muted, sits
+   under the toolbar. Distinct from the sidebar session meter. */
+.notebook-cost-trail {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: 0.25rem 0.25rem 0.4rem;
+}
 .notebook-answer-body {
   line-height: 1.7;
 }

@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Canvas Phase 6 — chained-reasoning polish (#247, folds in #237).** Three refinements to the
+  reactive chain: (1) **per-cell model choice** — a prompt cell can pin its own entitled model (a
+  quiet picker in the cell chrome; default = follow the composer's Model), so a chain can run cheap
+  synthesis and one hard step on a frontier model; the pin persists with the Canvas. (2) A visible
+  **cost trail** — the Canvas's own running total across its billed cells (code cells are free),
+  distinct from the session meter, answering "where did money go in *this* document?" (3) Clearer
+  **stale/re-run** affordance — a stale answered cell's Run reads **↻ Refresh**, and the cost trail
+  notes how many cells are stale.
 - **Canvas Phase 5 — freeze/stale under version control (#246).** A saved Canvas is now a faithful,
   diff-friendly reproducible artifact. A prompt cell's **frozen answer travels with the cell** and
   its **`stale` flag + the `answeredPrompt` it was produced from are persisted** — so a committed

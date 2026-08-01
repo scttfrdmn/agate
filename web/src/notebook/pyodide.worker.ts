@@ -90,11 +90,18 @@ __agate_error = None
 __agate_images = []
 __agate_old = (sys.stdout, sys.stderr)
 sys.stdout, sys.stderr = __agate_out, __agate_err
-# Force a non-interactive backend if matplotlib is present (the worker has no DOM/canvas).
+# Force a non-interactive backend if matplotlib is present (the worker has no DOM/canvas), and
+# neutralise plt.show(): we capture open figures as PNGs after the cell runs, so a user/model
+# calling plt.show() should be a silent no-op — NOT emit the noisy "FigureCanvasAgg is
+# non-interactive, and thus cannot be shown" UserWarning to stderr (it reads like an error).
 if "matplotlib" in sys.modules or "matplotlib" in __agate_src:
     try:
         import matplotlib
         matplotlib.use("Agg")
+        import warnings as __warnings
+        __warnings.filterwarnings("ignore", message="FigureCanvasAgg is non-interactive")
+        import matplotlib.pyplot as __agate_plt_early
+        __agate_plt_early.show = lambda *a, **k: None  # figures are captured below, not "shown"
     except Exception:
         pass
 try:

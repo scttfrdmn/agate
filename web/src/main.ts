@@ -1054,8 +1054,18 @@ async function runAsk(
       modelReason: result.modelRoute?.reason,
     });
     meter.record(result.cost, result.budget);
+    // Record the turn UNCONDITIONALLY (even an empty answer): ChatSession.send always pushed an
+    // assistant message to history, so turnMeta must get one entry per turn too or the notebook
+    // projection's per-cell receipts (#245) desync — a later cell would show an earlier turn's
+    // cost. recordTurn normalizes missing meta. Follow-ups/memory still require real answer text.
+    chats.recordTurn(q, result.text, {
+      usage: result.usage,
+      cost: result.cost,
+      budget: result.budget,
+      modelId: ranModel,
+      modelReason: result.modelRoute?.reason,
+    });
     if (result.text.trim()) {
-      chats.recordTurn(q, result.text);
       // Follow-ups need a concrete model id, not "auto" — use the one that ran.
       onAnswered?.(q, result.text, ranModel ?? config.defaultModelId);
     }

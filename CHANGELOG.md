@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Canvas Phase 4 — per-cell receipts (#245).** Every prompt cell now carries its own standing
+  receipt (tokens in/out + "this question" cost), and code cells show `$0.00 (local)` — so the
+  cell view answers "what did *this* thought cost?" at a glance, complementing the running session
+  meter. The gap this closes: a chat projected into cells used to lose its per-turn cost (only
+  re-run cells got a receipt), because `ChatMessage` is just `{role, content}`. The ChatManager now
+  captures each turn's usage/cost/model as it completes and threads it into the cell projection, so
+  historical turns show their receipt too. Honors the one-receipt-per-turn rule (no second cost line
+  stacked on a prompt turn; the `$0.00 (local)` line is for code cells, which otherwise have none).
+
 ### Changed
 - **Auto routing picks a capable model for compute/plot/code/vision requests (#263).** The Tier-1
   chokepoint runs no difficulty classifier, so `auto` used to route every request — including "plot

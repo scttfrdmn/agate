@@ -89,13 +89,18 @@ export function newCell(prompt = "", kind: CellKind = "prompt", name?: string): 
  * `system` messages (RAG grounding / memory seeds) are skipped — they aren't turns. A
  * trailing unpaired `user` message becomes an answerless cell. Pure.
  *
- * Note: `ChatMessage` carries only {role, content} — no per-turn usage/cost/model — so
- * projected cells have `answer` but no `meta`/`sources`; the receipt appears once the cell
- * is re-run (a documented phase-1 limitation).
+ * `ChatMessage` carries only {role, content}, so per-turn usage/cost/model comes in via the
+ * optional `turnMeta` list (#245): one entry per ANSWERED turn, in transcript order, captured by
+ * the ChatManager as each turn finishes (kept 1:1 with the assistant messages in `history`). When
+ * present, each answered cell gets its own receipt (tokens in/out + cost) — the standing per-cell
+ * cost line move #3a wants — not just re-run cells. Without it, cells still have `answer` and the
+ * receipt appears once the cell is re-run. (A notebook OPENED from disk doesn't use this path — it
+ * deserializes cells with their `meta` intact, so its receipts show immediately.)
  */
-export function cellsFromHistory(history: ChatMessage[]): NotebookCell[] {
+export function cellsFromHistory(history: ChatMessage[], turnMeta?: AnswerMeta[]): NotebookCell[] {
   const cells: NotebookCell[] = [];
   let pending: string | null = null; // an unpaired user prompt awaiting its answer
+  let answered = 0; // count of answered turns so far → index into turnMeta (transcript order)
   for (const msg of history) {
     if (msg.role === "system") continue;
     if (msg.role === "user") {
@@ -105,12 +110,15 @@ export function cellsFromHistory(history: ChatMessage[]): NotebookCell[] {
       }
       pending = msg.content;
     } else if (msg.role === "assistant") {
+      const meta = turnMeta?.[answered];
+      answered += 1;
       cells.push({
         id: newCellId(),
         kind: "prompt",
         prompt: pending ?? "",
         answer: msg.content,
         answeredPrompt: pending ?? "", // the answer corresponds to this prompt as loaded
+        ...(meta ? { meta } : {}),
         state: "idle",
       });
       pending = null;

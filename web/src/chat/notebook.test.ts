@@ -22,6 +22,56 @@ describe("cellsFromHistory", () => {
     expect(cells.every((c) => c.kind === "prompt")).toBe(true);
     // Each gets a stable {{cN}} reference name in transcript order (#200 slice 3).
     expect(cells.map((c) => c.name)).toEqual(["c1", "c2"]);
+    // Without turnMeta, projected cells have no receipt (meta undefined) — the loaded-notebook case.
+    expect(cells.every((c) => c.meta === undefined)).toBe(true);
+  });
+
+  it("attaches per-turn receipt meta to each answered cell when given (#245)", () => {
+    const history: ChatMessage[] = [
+      { role: "user", content: "q1" },
+      { role: "assistant", content: "a1" },
+      { role: "user", content: "q2" },
+      { role: "assistant", content: "a2" },
+    ];
+    const turnMeta = [
+      { usage: { inputTokens: 10, outputTokens: 5 }, cost: 0.001, modelId: "m1" },
+      { usage: { inputTokens: 20, outputTokens: 8 }, cost: 0.002, modelId: "m2" },
+    ];
+    const cells = cellsFromHistory(history, turnMeta);
+    expect(cells[0].meta?.cost).toBe(0.001);
+    expect(cells[0].meta?.usage?.inputTokens).toBe(10);
+    expect(cells[1].meta?.modelId).toBe("m2");
+  });
+
+  it("stays aligned when a turn had an empty answer (turnMeta is 1:1 with assistant messages)", () => {
+    // Regression (#245 review): ChatSession pushes an assistant message even for an empty answer,
+    // so turnMeta must have an entry per assistant message. An empty middle turn must not shift
+    // later cells' receipts. Here turn 2's answer was empty but still recorded (meta {}).
+    const history: ChatMessage[] = [
+      { role: "user", content: "q1" },
+      { role: "assistant", content: "a1" },
+      { role: "user", content: "q2" },
+      { role: "assistant", content: "" }, // empty answer (e.g. guardrail-filtered)
+      { role: "user", content: "q3" },
+      { role: "assistant", content: "a3" },
+    ];
+    const turnMeta = [{ cost: 0.001 }, {}, { cost: 0.003 }]; // one per assistant message
+    const cells = cellsFromHistory(history, turnMeta);
+    expect(cells[0].meta?.cost).toBe(0.001);
+    expect(cells[1].meta?.cost).toBeUndefined(); // the empty turn's {} — no misattributed cost
+    expect(cells[2].meta?.cost).toBe(0.003); // turn 3 keeps its own cost, not shifted
+  });
+
+  it("indexes turnMeta by answered-turn order, skipping an unanswered trailing prompt", () => {
+    const history: ChatMessage[] = [
+      { role: "user", content: "q1" },
+      { role: "assistant", content: "a1" },
+      { role: "user", content: "q2-unanswered" },
+    ];
+    const cells = cellsFromHistory(history, [{ cost: 0.005 }]);
+    expect(cells[0].meta?.cost).toBe(0.005); // the one answered turn
+    expect(cells[1].answer).toBeUndefined(); // trailing unanswered prompt
+    expect(cells[1].meta).toBeUndefined();
   });
 
   it("skips leading system messages (grounding / memory seeds aren't turns)", () => {

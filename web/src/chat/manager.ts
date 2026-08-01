@@ -6,7 +6,7 @@
 
 import type { ChatMessage, Transport } from "../transport";
 import { ChatSession, type ContextProvider } from "./session";
-import { ChatTranscript } from "./ui";
+import { ChatTranscript, type AnswerMeta } from "./ui";
 import type { ScrollAnchor } from "./scroll";
 import { type Notebook, cellsFromHistory } from "./notebook";
 import { type ContextPolicy, bodyLength, selectContext } from "./context";
@@ -33,6 +33,10 @@ export interface ChatRecord {
   transcript: ChatTranscript;
   el: HTMLElement; // the per-chat transcript container (shown/hidden on switch)
   history: ChatMessage[]; // accumulated turns (for rebuilding the ChatSession)
+  // Per-turn receipt meta (tokens/cost/model), one entry per completed turn in order — so the
+  // notebook projection can show a per-cell receipt (#245). Parallel to the assistant turns in
+  // `history`; ChatMessage itself stays {role, content}.
+  turnMeta: AnswerMeta[];
   session: ChatSession;
   modelId: string;
   // Running context estimate: tokens of conversation history sent on the NEXT turn.
@@ -111,6 +115,7 @@ export class ChatManager {
       transcript,
       el,
       history,
+      turnMeta: [],
       modelId,
       session: new ChatSession(this.deps.transport, modelId, undefined, undefined,
         this.deps.contextProvider, history, contextPolicy),
@@ -143,7 +148,7 @@ export class ChatManager {
   /** Lazily project the active chat's history into a Notebook (built once, then reused so
    *  per-cell edits/answers survive a view toggle). */
   notebookFor(chat: ChatRecord = this.active): Notebook {
-    if (!chat.notebook) chat.notebook = { cells: cellsFromHistory(chat.history) };
+    if (!chat.notebook) chat.notebook = { cells: cellsFromHistory(chat.history, chat.turnMeta) };
     return chat.notebook;
   }
 
@@ -245,12 +250,19 @@ export class ChatManager {
   }
 
   /** Record a completed turn into the active chat: history + context estimate + title. */
-  recordTurn(question: string, _answer: string): void {
+  recordTurn(question: string, _answer: string, meta?: AnswerMeta): void {
     const chat = this.active;
     // ChatSession already pushed the user+assistant messages into `history` (shared
     // array reference), so just recompute the derived figures.
     chat.turns += 1;
     chat.contextTokens = this.sentContextTokens;
+    // Record this turn's receipt meta (tokens/cost/model) so the notebook projection can show a
+    // per-cell receipt (#245). One entry per turn, in order; `{}` keeps the index aligned if a
+    // turn ever finishes without meta. The notebook is projected lazily on first view, by which
+    // point turnMeta is fully populated — so we do NOT re-project an existing notebook here (that
+    // would discard in-cell edits/expands). Live turns typed in the cell view append their own
+    // cells with meta via the run path, not recordTurn.
+    chat.turnMeta.push(meta ?? {});
     if (chat.turns === 1) {
       chat.title = question.length > 40 ? question.slice(0, 40).trimEnd() + "…" : question;
     }

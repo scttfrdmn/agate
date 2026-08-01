@@ -27,6 +27,10 @@ export interface NotebookCallbacks {
   // "Run this" (#243): a Run button on a python block in an answer spawns a code cell seeded with
   // that code, inserted directly below the answering cell (`afterCellId`), then runs it.
   onRunFromAnswer?: (afterCellId: string, code: string) => void;
+  // Per-cell model pin (#247/#237): the cell chose model `modelId` (""/undefined = follow the
+  // composer's Model). The entitled options for the picker are supplied via `modelOptions`.
+  onSetModel?: (cellId: string, modelId: string | undefined) => void;
+  modelOptions?: ReadonlyArray<{ value: string; label: string }>;
   // Save / open the whole Canvas to the corpus store (#200 slice 4). Omitted when the corpus
   // endpoint isn't configured; only shown once the document has content (progressive disclosure).
   onSave?: () => void;
@@ -96,6 +100,22 @@ export function renderNotebook(
       bar.appendChild(open);
     }
     target.appendChild(bar);
+  }
+  // Cost trail (#247, move #3): the Canvas's own running total across the chain — the sum of each
+  // answered cell's receipt — distinct from the session meter. Shows where money went in THIS
+  // document. Only meaningful once something billed has run (≥1 prompt cell with a cost).
+  const billed = nb.cells.filter((c) => c.kind === "prompt" && typeof c.meta?.cost === "number");
+  if (billed.length) {
+    const total = billed.reduce((sum, c) => sum + (c.meta?.cost ?? 0), 0);
+    const staleCount = nb.cells.filter((c) => c.stale).length;
+    const trail = el("div", "notebook-cost-trail");
+    const billedLabel = `${billed.length} billed cell${billed.length === 1 ? "" : "s"}`;
+    trail.textContent = `Canvas cost: $${total.toFixed(6)} · ${billedLabel}`;
+    if (staleCount) trail.textContent += ` · ${staleCount} stale (re-run to refresh)`;
+    trail.title =
+      "Total cost of the AI cells in this Canvas (code cells are free), reflecting each cell's most " +
+      "recent run. Distinct from the session meter, which is cumulative spend.";
+    target.appendChild(trail);
   }
   // The reference hint only makes sense once names are shown.
   if (showNames) {
@@ -241,9 +261,35 @@ function renderPromptCell(cell: NotebookCell, cb: NotebookCallbacks, showNames: 
     collapse.addEventListener("click", () => cb.onToggleExpand?.(cell.id, false));
     bar.appendChild(collapse);
   }
+  // Per-cell model pin (#247): a quiet picker so a chain can run one hard step on a stronger model.
+  // Default option "" = follow the composer's Model. Left-aligned (auto margin pushes Run right).
+  if (cb.onSetModel && cb.modelOptions && cb.modelOptions.length) {
+    const modelSel = el("select", "notebook-cell-model") as HTMLSelectElement;
+    modelSel.setAttribute("aria-label", "Model for this cell");
+    modelSel.title = "Model for this cell (default: follow the composer's Model)";
+    const follow = document.createElement("option");
+    follow.value = "";
+    follow.textContent = "Model: default";
+    modelSel.appendChild(follow);
+    for (const o of cb.modelOptions) {
+      const opt = document.createElement("option");
+      opt.value = o.value;
+      opt.textContent = o.label;
+      modelSel.appendChild(opt);
+    }
+    modelSel.value = cell.modelId ?? "";
+    modelSel.addEventListener("change", () => cb.onSetModel?.(cell.id, modelSel.value || undefined));
+    bar.appendChild(modelSel);
+  }
   const run = el("button", "btn notebook-cell-run") as HTMLButtonElement;
   run.type = "button";
-  run.textContent = cell.state === "running" ? "Running…" : "Run";
+  // A stale cell with a prior answer says "↻ Re-run" (re-runs the BILLED inference to clear the
+  // stale badge); an unrun/fresh cell says "Run". The tooltip keeps "billed" salient so the cost
+  // is never a surprise (#247 review — "Refresh" read as free).
+  const isRefresh = !!(cell.stale && cell.answer);
+  run.textContent = cell.state === "running" ? "Running…" : isRefresh ? "Re-run" : "Run";
+  run.title = isRefresh ? "Re-run this cell (billed) — clears the stale badge" : "Run this cell (billed)";
+  if (isRefresh) run.classList.add("notebook-cell-refresh");
   run.disabled = cell.state === "running";
   run.addEventListener("click", () => cb.onRun?.(cell.id, editor.value));
   bar.appendChild(run);

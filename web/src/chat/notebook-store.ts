@@ -44,6 +44,8 @@ interface StoredCell {
   output?: CodeOutput;
   // A cell that was stale when saved reopens stale-badged (freeze/stale under version control).
   stale?: boolean;
+  // Per-cell model pin (#247): re-runs on the same model after reopen.
+  modelId?: string;
 }
 
 /** Serialise a notebook to a JSON-safe object. `name`/`savedAt` are supplied by the caller
@@ -63,6 +65,7 @@ export function serializeNotebook(nb: Notebook, name: string, savedAt: string): 
       if (c.meta) s.meta = c.meta;
       if (c.output) s.output = c.output; // includes any captured figure PNGs
       if (c.stale) s.stale = true;
+      if (c.modelId) s.modelId = c.modelId;
       return s;
     }),
   };
@@ -97,6 +100,7 @@ export function deserializeNotebook(raw: unknown): { notebook: Notebook; name: s
     if (Array.isArray(o.sources)) cell.sources = o.sources as unknown as RetrievedChunk[];
     if (isRecord(o.meta)) cell.meta = o.meta as unknown as AnswerMeta;
     if (isRecord(o.output)) cell.output = o.output as unknown as CodeOutput;
+    if (typeof o.modelId === "string" && o.modelId) cell.modelId = o.modelId;
     // Reopen stale-badged — a flag, never a trigger (never auto-re-runs). We RECONCILE rather than
     // trust the persisted bit alone: a cell with a frozen value (answer or code output) is stale if
     // it was saved stale OR its prompt no longer matches the prompt that produced the answer. That

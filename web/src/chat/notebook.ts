@@ -34,6 +34,10 @@ export interface NotebookCell {
   // (the freeze/stale discipline). PERSISTED (schema 2, #246): a loaded cell may be stale, so its
   // answeredPrompt can differ from its current prompt; the store reconciles the stale flag from it.
   answeredPrompt?: string;
+  // Per-cell model pin (#247/#237): a prompt cell may choose its own entitled model, so a chain can
+  // route cheap synthesis and one hard step to a frontier model. Undefined = follow the composer's
+  // Model (Auto by default). Persisted so a reopened Canvas re-runs each cell on the same model.
+  modelId?: string;
   sources?: RetrievedChunk[]; // per-cell citations (populated on a run)
   meta?: AnswerMeta; // model / usage / cost (populated on a run)
   output?: CodeOutput; // code cells: captured run output (undefined until run)

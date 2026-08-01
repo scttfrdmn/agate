@@ -200,6 +200,54 @@ describe("renderNotebook", () => {
     expect(err?.textContent).toContain("boom");
   });
 
+  it("shows a per-cell model picker that fires onSetModel (#247)", () => {
+    // An unrun cell shows cell chrome; the picker offers the entitled models + a default option.
+    const nb: Notebook = { cells: [{ id: "a", kind: "prompt", prompt: "draft", state: "idle", modelId: "m2" }] };
+    const target = host();
+    const picks: Array<[string, string | undefined]> = [];
+    renderNotebook(nb, target, {
+      onSetModel: (id, m) => picks.push([id, m]),
+      modelOptions: [
+        { value: "m1", label: "Model 1" },
+        { value: "m2", label: "Model 2" },
+      ],
+    });
+    const sel = target.querySelector<HTMLSelectElement>(".notebook-cell-model")!;
+    expect(sel).not.toBeNull();
+    expect(sel.value).toBe("m2"); // reflects the cell's pin
+    // Selecting the default (empty) clears the pin.
+    sel.value = "";
+    sel.dispatchEvent(new Event("change"));
+    expect(picks).toEqual([["a", undefined]]);
+  });
+
+  it("shows a Canvas cost trail summing the billed cells (#247)", () => {
+    const nb: Notebook = {
+      cells: [
+        { id: "a", kind: "prompt", prompt: "q1", answer: "a1", state: "idle", meta: { cost: 0.001 } },
+        { id: "b", kind: "prompt", prompt: "q2", answer: "a2", state: "idle", meta: { cost: 0.002 } },
+        { id: "c", kind: "code", prompt: "x=1", state: "idle", output: { stdout: "", stderr: "" } },
+      ],
+    };
+    const target = host();
+    renderNotebook(nb, target);
+    const trail = target.querySelector(".notebook-cost-trail");
+    expect(trail?.textContent).toContain("$0.003000"); // 0.001 + 0.002, code is free
+    expect(trail?.textContent).toContain("2 billed cells");
+  });
+
+  it("labels a stale answered cell's Run as ↻ Re-run with a billed tooltip (#247)", () => {
+    const nb: Notebook = {
+      cells: [{ id: "a", kind: "prompt", prompt: "edited", answer: "old", answeredPrompt: "orig", stale: true, state: "idle" }],
+    };
+    const target = host();
+    renderNotebook(nb, target);
+    const run = target.querySelector<HTMLButtonElement>(".notebook-cell-run")!;
+    expect(run.textContent).toBe("Re-run");
+    expect(run.title).toContain("billed");
+    expect(run.classList.contains("notebook-cell-refresh")).toBe(true);
+  });
+
   it("has no persistent +Prompt/+Code add-bar (the composer is the append path, #242)", () => {
     const nb: Notebook = { cells: [{ id: "a", kind: "prompt", prompt: "q?", state: "idle" }] };
     const target = host();

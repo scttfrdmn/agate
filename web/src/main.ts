@@ -49,7 +49,9 @@ import {
   type Tier,
   type UiMode,
   contextWindow as contextWindowFor,
+  entitledModels,
   modelOptions,
+  resolveModelPin,
   uiToRoute,
 } from "./router";
 
@@ -645,6 +647,21 @@ function main(): void {
       },
       // "Run this" (#243): a python block in a cell's answer spawns a code cell below that cell.
       onRunFromAnswer: (afterCellId, code) => void runCodeFromAnswer(() => afterCellId, code),
+      // Per-cell model pin (#247/#237): set/clear a cell's own model. Options are the session's
+      // ENTITLED models (minus "Auto" — the cell's "default" option already means follow-composer).
+      onSetModel: (cellId, modelId) => {
+        const cell = nb.cells.find((c: NotebookCell) => c.id === cellId);
+        if (!cell) return;
+        // Changing the model of an ANSWERED cell makes it stale: the model is an input to the
+        // frozen answer (meta.modelId records which model produced it), so a different model would
+        // yield a different answer — flag it (↻ Refresh) rather than silently disagree (#247).
+        if (cell.answer && modelId !== cell.modelId) cell.stale = true;
+        cell.modelId = modelId;
+        paintNotebook();
+      },
+      modelOptions: creds.scope?.tier
+        ? modelOptions(creds.scope.tier).filter((o) => o.value !== AUTO)
+        : undefined,
       // Save/Open only when the corpus endpoint is configured (persistence available).
       onSave: screens.corpusClient() ? () => void saveNotebook() : undefined,
       onOpen: screens.corpusClient() ? () => void openNotebook() : undefined,
@@ -731,6 +748,13 @@ function main(): void {
       setNotebookStatus("That file isn't a readable notebook.");
       return;
     }
+    // Drop any per-cell model pin the current session isn't entitled to (a Canvas saved by a
+    // higher-tier user), so the picker and the data model agree and Run can't send an unentitled
+    // id (#247 review). The cell falls back to the composer's Model.
+    const entitledNow = creds.scope?.tier ? entitledModels(creds.scope.tier) : [];
+    for (const c of parsed.notebook.cells) {
+      if (c.modelId && !entitledNow.includes(c.modelId)) c.modelId = undefined;
+    }
     // Load into a fresh chat so it doesn't clobber the current conversation.
     const target = chats.newChat();
     target.notebook = parsed.notebook;
@@ -765,18 +789,24 @@ function main(): void {
     // loop, #244), so a prompt can reason over a plot on a multimodal model.
     const { resolved, images } = resolveSourceWithImages(cell, nb.cells);
     if (!resolved.trim()) return false;
+    // A cell's own model pin wins (#247) — but CLAMP it to the session's entitled set (fail-closed,
+    // same guard as the composer): a pin persisted by a higher-tier user must never send an
+    // unentitled model. Falls back to the composer's Model (Auto by default) if the pin isn't
+    // entitled or isn't set.
+    const entitled = creds.scope?.tier ? entitledModels(creds.scope.tier) : [];
+    const model = resolveModelPin(cell.modelId, entitled) ?? resolvePin();
     cell.state = "running";
     cell.error = undefined;
     paintNotebook();
     try {
-      const result = await runCell(askTransport, resolvePin(), resolved, groundingProvider, undefined, images);
+      const result = await runCell(askTransport, model, resolved, groundingProvider, undefined, images);
       cell.answer = result.text;
       cell.sources = lastSources.slice();
       cell.meta = {
         usage: result.usage,
         cost: result.cost,
         budget: result.budget,
-        modelId: result.model ?? (resolvePin() === AUTO ? undefined : resolvePin()),
+        modelId: result.model ?? (model === AUTO ? undefined : model),
         modelReason: result.modelRoute?.reason,
       };
       cell.state = "idle";

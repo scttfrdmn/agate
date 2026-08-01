@@ -74,6 +74,27 @@ TIER_MODELS: dict[Tier, tuple[str, ...]] = {
 }
 
 
+# Models excluded from AUTO selection but still PINNABLE (#247 follow-up). The tiniest open-weight
+# models are entitled and can be chosen deliberately, but they deflect on ordinary questions, so
+# Auto never picks them as a default — a deflecting answer is a false economy (the user re-asks and
+# pays twice). This is a quality FLOOR on auto-routing, not an entitlement change.
+AUTO_EXCLUDED_MODELS: frozenset[str] = frozenset(
+    {
+        "google.gemma-3-4b-it",
+        "google.gemma-3-12b-it",
+    }
+)
+
+
+def auto_candidates(tier: Tier) -> list[str]:
+    """Entitled models Auto may SELECT — `models_for_tier` minus the toy models that deflect
+    (AUTO_EXCLUDED_MODELS). Falls back to the full entitled set if exclusion would leave nothing
+    (fail-safe: never return empty). The excluded models remain pinnable via models_for_tier."""
+    full = models_for_tier(tier)
+    usable = [m for m in full if m not in AUTO_EXCLUDED_MODELS]
+    return usable or full
+
+
 def derive_tier(affiliation: Affiliation | str | None, *, grant: bool = False) -> Tier:
     """Derive the model tier from affiliation (+ optional grant flag).
 

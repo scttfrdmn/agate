@@ -163,7 +163,7 @@ def test_invalid_override_falls_through_to_routing_call():
 
 # --- model axis (#122): entitlement-and-budget-aware auto mode --------------
 
-from agate.entitlements import models_for_tier  # noqa: E402
+from agate.entitlements import auto_candidates, models_for_tier  # noqa: E402
 from agate.router import (  # noqa: E402
     DIFFICULTY_SYSTEM,
     ModelChoice,
@@ -198,9 +198,15 @@ def test_select_model_never_exceeds_entitled_tier():
             assert c.model_id in oss  # never a mid/frontier id
 
 
-def test_thrifty_simple_is_cheapest():
+def test_thrifty_simple_is_cheapest_usable():
+    # Cheapest AUTO-SELECTABLE model — the toy models that deflect are excluded from auto (#247),
+    # so the floor is the cheapest usable model, not the absolute-cheapest entitled one.
     c = select_model(tier="frontier", difficulty="SIMPLE", policy="thrifty")
-    assert c.model_id == models_for_tier("frontier")[0]  # cheapest entitled
+    assert c.model_id == auto_candidates("frontier")[0]
+    # And it is NOT one of the excluded toy models.
+    from agate.entitlements import AUTO_EXCLUDED_MODELS
+
+    assert c.model_id not in AUTO_EXCLUDED_MODELS
 
 
 def test_best_picks_most_capable_affordable():
@@ -239,7 +245,7 @@ def test_zero_budget_degrades_to_cheapest_never_raises():
         input_tokens=1000,
         max_tokens=1000,
     )
-    assert c.model_id == models_for_tier("frontier")[0]  # cheapest entitled
+    assert c.model_id == auto_candidates("frontier")[0]  # cheapest auto-selectable
     assert c.degraded is True
 
 
@@ -288,7 +294,7 @@ def test_run_model_router_classifies_then_selects_and_emits():
     )
     assert isinstance(choice, ModelChoice)
     assert backend.calls == 1
-    assert choice.model_id == models_for_tier("frontier")[0]  # SIMPLE thrifty -> cheapest
+    assert choice.model_id == auto_candidates("frontier")[0]  # SIMPLE thrifty -> cheapest usable
     assert "difficulty" in meter.labels
     assert any(e["type"] == "model_route" and e["model"] == choice.model_id for e in events)
 

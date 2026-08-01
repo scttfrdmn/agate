@@ -43,9 +43,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   capable model the budget affords) — the top Claude for a frontier session, gpt-oss-120b for a
   student — while ordinary questions keep the thrifty (cheapest) default. Budget still clamps; never
   exceeds entitlement. To make "best/thrifty" meaningful, `TIER_MODELS` (both the Python entitlement
-  table and its TS twin) is now ordered **weakest→strongest within each tier**; a side effect is
-  that the plain-question default for the open-weight tier is now the small Gemma (cheapest) rather
-  than gpt-oss-20b.
+  table and its TS twin) is now ordered **weakest→strongest within each tier**.
+- **Auto has a quality floor — it never defaults to a model too weak to answer (#247 follow-up).**
+  After the reorder above, the cheapest entitled model is a tiny sub-7B model (Gemma 3 4B) that
+  *deflects* on ordinary questions ("I'm ready to answer…") — a false economy (the user re-asks and
+  pays twice). Auto now excludes those toy models from selection (`AUTO_EXCLUDED_MODELS` /
+  `auto_candidates`): a plain question routes to the cheapest *usable* model (gpt-oss-20b), while the
+  toy models stay **pinnable** for anyone who deliberately wants them. Entitlement is unchanged;
+  this is a floor on auto-routing only.
 
 ### Added
 - **quarry ↔ agate integration contract, agate side (#265).** Four additive items so an external

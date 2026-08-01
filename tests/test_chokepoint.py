@@ -144,10 +144,11 @@ def test_auto_routes_to_an_entitled_model(wired):
     wired.spend, wired.budget = 0.0, 100.0
     out = cp.process(_req(model="auto"), period="2026-06")  # "hello" — an ordinary (thrifty) ask
     assert out["text"] == "answer"
-    # thrifty default → the weakest oss model (index 0, ascending-capability order, #263).
-    assert wired.last_model == "google.gemma-3-4b-it"
-    assert out["model"] == "google.gemma-3-4b-it"
-    assert out["model_route"]["model"] == "google.gemma-3-4b-it"
+    # thrifty default → the cheapest AUTO-SELECTABLE oss model. The toy Gemma models are excluded
+    # from auto (they deflect), so the floor is gpt-oss-20b, not gemma-3-4b (#247 quality floor).
+    assert wired.last_model == "openai.gpt-oss-20b-1:0"
+    assert out["model"] == "openai.gpt-oss-20b-1:0"
+    assert out["model_route"]["model"] == "openai.gpt-oss-20b-1:0"
     assert "reason" in out["model_route"]
 
 
@@ -156,7 +157,7 @@ def test_auto_with_no_model_field_also_routes(wired):
     req = _req()
     del req["model"]  # omitted entirely → treated as auto
     cp.process(req, period="2026-06")
-    assert wired.last_model == "google.gemma-3-4b-it"
+    assert wired.last_model == "openai.gpt-oss-20b-1:0"  # cheapest auto-selectable (not a toy)
 
 
 def test_auto_picks_a_capable_model_for_a_compute_request(wired):
@@ -166,15 +167,16 @@ def test_auto_picks_a_capable_model_for_a_compute_request(wired):
     req = _req(token=_token(affiliation="researcher"), model="auto")
     req["messages"] = [{"role": "user", "content": "Plot Gibbs free energy vs temperature"}]
     cp.process(req, period="2026-06")
-    from agate.entitlements import models_for_tier, supports_vision
+    from agate.entitlements import auto_candidates, models_for_tier, supports_vision
 
     assert wired.last_model == models_for_tier("frontier")[-1]  # most capable frontier model
     assert supports_vision(wired.last_model)
-    # An ordinary question on the same session stays thrifty (cheapest), not the top model.
+    # An ordinary question on the same session stays thrifty — the cheapest AUTO-SELECTABLE model
+    # (a toy Gemma is excluded from auto; #247 quality floor), not the top model.
     req2 = _req(token=_token(affiliation="researcher"), model="auto")
     req2["messages"] = [{"role": "user", "content": "What is enthalpy?"}]
     cp.process(req2, period="2026-06")
-    assert wired.last_model == models_for_tier("frontier")[0]  # weakest/cheapest
+    assert wired.last_model == auto_candidates("frontier")[0]
 
 
 def test_auto_never_exceeds_tier_for_faculty(wired):

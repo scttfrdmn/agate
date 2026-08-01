@@ -33,7 +33,7 @@ import boto3
 from agate.entitlements import models_for_tier, supports_vision, tier_for_model
 from agate.jwt_verify import TokenError, config_from_env, verify_token
 from agate.rag import ancestors
-from agate.router import select_model
+from agate.router import needs_capable_model, select_model
 from agate.tags import ClaimsError, claims_to_tags
 from cost import estimate_call_cost, evaluate_cascade
 from cost.pricing import default_pricebook
@@ -324,8 +324,19 @@ def process(req: dict, *, period: str | None = None) -> dict:
     has_images = any(isinstance(m.get("images"), list) and m["images"] for m in messages)
     model_route: dict | None = None
     if is_auto(requested_model):
+        # The chokepoint runs no difficulty classifier, so a compute/code/plot request (or a turn
+        # carrying a figure) would otherwise route to the CHEAPEST model and fail (#263) — the
+        # tier lists aren't strictly capability-ordered, so bumping "difficulty" is unreliable.
+        # Instead, for such a request pick the `best` policy (most capable AFFORDABLE model): the
+        # top Claude for a frontier session, gpt-oss-120b for a student. Budget still clamps it, and
+        # this never exceeds entitlement. An ordinary question keeps the thrifty (cheapest) default.
+        last_user = next(
+            (str(m.get("content", "")) for m in reversed(messages) if m.get("role") == "user"), ""
+        )
+        policy = "best" if needs_capable_model(last_user, has_images=has_images) else "thrifty"
         choice = select_model(
             tier=tags.tier,
+            policy=policy,
             remaining_budget_usd=_remaining_budget(nodes),
             input_tokens=input_tokens,
             max_tokens=max_tokens,

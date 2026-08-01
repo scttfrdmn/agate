@@ -47,14 +47,14 @@ describe("UI_MODES", () => {
 });
 
 describe("model axis (#122) — entitlement-aware", () => {
-  // Lockstep with agate.entitlements.models_for_tier (cumulative, cheapest-first).
+  // Lockstep with agate.entitlements.models_for_tier (cumulative, ascending-capability).
   // If this breaks, the SPA picker has drifted from the Python entitlement table.
-  it("entitledModels is cumulative and cheapest-first", () => {
+  it("entitledModels is cumulative and ascending-capability", () => {
     expect(entitledModels("oss")).toEqual([
+      "google.gemma-3-4b-it",
+      "google.gemma-3-12b-it",
       "openai.gpt-oss-20b-1:0",
       "openai.gpt-oss-120b-1:0",
-      "google.gemma-3-12b-it",
-      "google.gemma-3-4b-it",
     ]);
     // mid includes all of oss, then the mid models
     expect(entitledModels("mid").slice(0, 4)).toEqual(entitledModels("oss"));

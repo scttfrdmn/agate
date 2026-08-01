@@ -51,15 +51,15 @@ export const UI_MODES: ReadonlyArray<{ value: UiMode; label: string }> = [
 export type Tier = "oss" | "mid" | "frontier";
 export const AUTO = "auto";
 
-// Tier -> entitled model ids, cheapest-first. MUST stay in lockstep with
-// agate.entitlements.TIER_MODELS / models_for_tier (cumulative: a tier includes all
-// lower tiers). A parity test guards this against drift.
+// Tier -> entitled model ids, ordered by ASCENDING CAPABILITY within the tier (index 0 = weakest/
+// thrifty default, last = "best"; #263). MUST stay in lockstep with agate.entitlements.TIER_MODELS
+// / models_for_tier (cumulative: a tier includes all lower tiers). A parity test guards drift.
 const TIER_MODELS: Record<Tier, readonly string[]> = {
   oss: [
+    "google.gemma-3-4b-it",
+    "google.gemma-3-12b-it",
     "openai.gpt-oss-20b-1:0",
     "openai.gpt-oss-120b-1:0",
-    "google.gemma-3-12b-it",
-    "google.gemma-3-4b-it",
   ],
   mid: [
     "us.anthropic.claude-3-5-haiku-20241022-v1:0",

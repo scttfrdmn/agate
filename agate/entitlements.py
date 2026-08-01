@@ -52,18 +52,21 @@ TIER_RANK: dict[Tier, int] = {"oss": 0, "mid": 1, "frontier": 2}
 # ValidationException (surfaced live during the Phase 1 deploy).
 TIER_MODELS: dict[Tier, tuple[str, ...]] = {
     # Rung-0 open-weight line (design §2.5): gpt-oss, Gemma — on-demand FMs.
+    # ORDERED BY ASCENDING CAPABILITY within the tier: the router treats index 0 as the weakest/
+    # thrifty default and index -1 as the "best" model (`select_model`, #263). gpt-oss-120b is the
+    # strongest open-weight coder, so it's last; the small Gemma is first.
     "oss": (
+        "google.gemma-3-4b-it",
+        "google.gemma-3-12b-it",
         "openai.gpt-oss-20b-1:0",
         "openai.gpt-oss-120b-1:0",
-        "google.gemma-3-12b-it",
-        "google.gemma-3-4b-it",
     ),
     # Mid: solid general models below the frontier price point (inference profiles).
     "mid": (
         "us.anthropic.claude-3-5-haiku-20241022-v1:0",
         "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     ),
-    # Frontier: the most capable (inference profiles).
+    # Frontier: the most capable (inference profiles), weakest→strongest.
     "frontier": (
         "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         "us.anthropic.claude-opus-4-1-20250805-v1:0",

@@ -36,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (4) `embedding` added to the TS `ReceiptRow.kind` union (and the artifact twin) to match Python.
 
 ### Fixed
+- **Consistent "Thinking…" + model visibility in the cell view (Phase-1 polish).** An in-progress
+  prompt cell now shows the same "Answer" header + Thinking indicator as a chat turn (they looked
+  different, which read like a mode change), via a shared indicator helper. An answered cell in the
+  cell view now shows the **model tag** (e.g. "⚡ Claude Opus 4.1") like the transcript does — so
+  under Auto you can see which model actually ran. The **▶ Run** action on emitted code is now a
+  filled accent button (larger than the quiet Copy) so it's not easy to miss.
 - **The ▶ Run button stays reachable on long code blocks.** On a tall emitted code block the
   Run/Copy action row scrolled off the top before you could reach it; it now sticks to the top of
   the block as you scroll. Also gave the composer a little padding so its focus ring isn't clipped

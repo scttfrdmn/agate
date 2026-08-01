@@ -65,6 +65,26 @@ describe("renderNotebook", () => {
     expect(target.querySelectorAll(".msg-receipt")).toHaveLength(1);
   });
 
+  it("shows the model tag on a cell-view chat turn (parity with the transcript, under Auto)", () => {
+    const nb: Notebook = {
+      cells: [
+        {
+          id: "a",
+          kind: "prompt",
+          prompt: "q?",
+          answer: "hi",
+          state: "idle",
+          meta: { modelId: "us.anthropic.claude-opus-4-1-20250805-v1:0", modelReason: "vision" },
+        },
+      ],
+    };
+    const target = host();
+    renderNotebook(nb, target);
+    const tag = target.querySelector(".notebook-cell-chat .model-tag");
+    expect(tag?.textContent).toContain("Claude Opus");
+    expect(tag?.classList.contains("routed")).toBe(true); // modelReason present → auto-routed style
+  });
+
   it("Edit grows a chat turn into an editable cell; the answered cell offers Edit + Re-run", () => {
     const nb: Notebook = {
       cells: [{ id: "a", kind: "prompt", prompt: "q?", answer: "an answer", state: "idle" }],

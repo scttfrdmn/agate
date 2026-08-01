@@ -205,6 +205,22 @@ register_capability(
     )
 )
 
+# web-search (#248): governed SEARCH, the prerequisite for capped research agent cells — you can't
+# scan the literature with fetch-a-known-URL alone. Same shape as web-fetch: Cedar decides whether
+# the principal may call it at all, and the EFFECT is bounded server-side by the same default-deny
+# layers — an institution-approved search ENDPOINT allowlist + the SSRF guard on that endpoint's
+# resolved IPs + the budget cascade (a search is a priced action). Off unless explicitly granted.
+# Result URLs it returns are not fetched here; a later web-fetch re-validates each through its own
+# guard — no new egress path is opened.
+register_capability(
+    Capability(
+        name="web-search",
+        title="Search an allowlisted, institution-approved search endpoint (read-only; "
+        "SSRF-guarded, budget-metered). Off unless explicitly granted.",
+        grant=CapabilityGrant(actions=_GATEWAY_INVOKE, resource_kind="gateway-tool"),
+    )
+)
+
 
 # --- spec field types -------------------------------------------------------
 

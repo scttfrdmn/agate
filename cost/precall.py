@@ -59,6 +59,11 @@ def _node_decision(est: float, spend: float, budget: float | None) -> tuple[bool
         return False, "invalid amount"
     if budget is None:
         return True, "no budget configured"
+    # A non-finite budget (NaN/inf) must NOT disable the cap: `x > nan` is always False, so an
+    # unvalidated caller-supplied budget (e.g. an agent-cell cost cap, #248) would otherwise fail
+    # OPEN. Reject it — a malformed cap enforces nothing is worse than enforcing everything.
+    if not math.isfinite(budget):
+        return False, "invalid budget"
     if budget <= 0:
         return False, "no allocation"
     if spend < 0:

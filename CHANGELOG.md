@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The top bar shows who is signed in.** A "Signed in as \<name\>" label sits beside Log out,
+  derived from the id_token (preferred_username / cognito:username / email). Complements the
+  sidebar scope chips (tier/tenant/role) with the identity itself.
+
 ### Fixed
+- **Chokepoint no longer times out on slow/large answers.** The Tier-1 choke point buffers a full
+  (non-streamed) Converse completion; a capable-but-slow model (Claude Opus) on a long answer could
+  exceed the 30s Lambda timeout, returning a plain-text "Internal Server Error". Raised the timeout
+  to 120s (a true streaming path is the longer-term fix).
+- **Non-JSON server errors surface cleanly.** The Tier-1 transport parsed the response as JSON
+  unconditionally, so an infra-level failure (timeout / 502 / 500 with a plain-text body) threw a
+  cryptic "Unexpected token 'I'… is not valid JSON". It now reads the body defensively and reports
+  a clear "Server error (\<status\>): …" message, with a hint to try a faster model on a timeout.
 - **Grounded answers can now apply the material, not just recite it.** The RAG grounding prompt told
   the model it was "a grounded document assistant, not a general chatbot" and to answer "using only
   this context" — so a computational request like "plot Gibbs free energy vs temperature" (grounded

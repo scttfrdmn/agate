@@ -18,7 +18,7 @@ import "katex/dist/katex.min.css";
 import "./styles/agate.css";
 
 import { CredentialManager } from "./auth/credentials";
-import { currentToken, isLoggedIn, login, logout, type LoginConfig } from "./auth/login";
+import { currentToken, identityFromToken, isLoggedIn, login, logout, type LoginConfig } from "./auth/login";
 import { mountChrome } from "./chrome/nav";
 import { config } from "./config";
 import { MemoryClient } from "./memory/client";
@@ -79,7 +79,12 @@ function main(): void {
   if (!app) return;
   renderShell(app);
 
-  // The auth (login/logout) control lives in the shared top bar.
+  // The auth (login/logout) control lives in the shared top bar, with a "Signed in as <name>"
+  // label beside it so it's always clear WHO the session belongs to (the scope chips in the
+  // sidebar show tier/tenant/role; this shows the identity).
+  const whoami = document.createElement("span");
+  whoami.className = "whoami";
+  whoami.hidden = true;
   const authBtn = document.createElement("button");
   authBtn.type = "button";
   authBtn.className = "btn ghost";
@@ -125,7 +130,7 @@ function main(): void {
   const { topbar } = mountChrome({
     brand: "agate",
     tag: "GenAI gateway",
-    actions: [authBtn],
+    actions: [whoami, authBtn],
     items: navItems,
   });
   app.insertBefore(topbar, app.firstChild);
@@ -155,6 +160,13 @@ function main(): void {
     authBtn.onclick = () => (loggedIn ? logout(loginConfig) : login(loginConfig));
   } else {
     authBtn.style.display = "none";
+  }
+  // Show who's signed in (from the id_token) beside the auth button.
+  const who = loggedIn ? identityFromToken(idpToken()) : "";
+  if (who) {
+    whoami.textContent = `Signed in as ${who}`;
+    whoami.title = who;
+    whoami.hidden = false;
   }
   if (!loggedIn) {
     scopeEl.textContent = loginConfig

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   authorizeUrl,
+  identityFromToken,
   isTokenExpired,
   logoutUrl,
   tokenFromFragment,
@@ -11,6 +12,12 @@ import {
 function jwtWithExp(exp: number | undefined): string {
   const b64 = (o: object) => btoa(JSON.stringify(o)).replace(/=+$/, "");
   return `${b64({ alg: "none" })}.${b64(exp === undefined ? { sub: "u" } : { sub: "u", exp })}.sig`;
+}
+
+// Build a minimal unsigned JWT with arbitrary payload claims.
+function jwtWith(claims: object): string {
+  const b64 = (o: object) => btoa(JSON.stringify(o)).replace(/=+$/, "");
+  return `${b64({ alg: "none" })}.${b64(claims)}.sig`;
 }
 
 const cfg: LoginConfig = {
@@ -96,5 +103,21 @@ describe("logoutUrl", () => {
     expect(u.pathname).toBe("/logout");
     expect(u.searchParams.get("client_id")).toBe("abc123");
     expect(u.searchParams.get("logout_uri")).toBe("https://d2a1.cloudfront.net/");
+  });
+});
+
+describe("identityFromToken", () => {
+  it("prefers preferred_username, then cognito:username, then email", () => {
+    expect(identityFromToken(jwtWith({ preferred_username: "alice", email: "a@x.edu" }))).toBe("alice");
+    expect(identityFromToken(jwtWith({ "cognito:username": "demo-researcher" }))).toBe("demo-researcher");
+    expect(identityFromToken(jwtWith({ email: "bob@x.edu" }))).toBe("bob@x.edu");
+  });
+  it("falls back to the email local part, then sub", () => {
+    // no username/email claim → sub
+    expect(identityFromToken(jwtWith({ sub: "uuid-123" }))).toBe("uuid-123");
+  });
+  it("returns empty string for an unreadable token", () => {
+    expect(identityFromToken("not-a-jwt")).toBe("");
+    expect(identityFromToken("")).toBe("");
   });
 });

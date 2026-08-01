@@ -184,6 +184,18 @@ body {
 .topbar .spacer {
   flex: 1;
 }
+/* "Signed in as <name>" beside the Log out button — quiet, truncates on narrow widths. */
+.whoami {
+  color: var(--muted);
+  font-size: 0.8rem;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.whoami[hidden] {
+  display: none;
+}
 .nav-toggle {
   display: inline-flex;
   align-items: center;

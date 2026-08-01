@@ -65,7 +65,11 @@ class ChokepointStack(Stack):
             runtime=lambda_.Runtime.PYTHON_3_13,
             handler="chokepoint.handler.handler",
             code=pip_bundled_code("agate", "chokepoint", "cost", "meter"),
-            timeout=cdk.Duration.seconds(30),
+            # The chokepoint buffers a full (non-streamed) Converse completion, so a slow, capable
+            # model (Claude Opus) on a long answer can exceed a 30s limit and time out — the client
+            # then sees a plain-text "Internal Server Error". 120s covers a frontier-model answer;
+            # a true streaming path (Function URL response streaming) is the longer-term fix.
+            timeout=cdk.Duration.seconds(120),
             memory_size=256,
             environment={
                 "AGATE_SPEND_TABLE": spend_table,

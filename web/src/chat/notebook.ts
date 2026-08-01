@@ -31,7 +31,8 @@ export interface NotebookCell {
   answer?: string; // the assistant answer, rendered as Markdown (prompt cells; undefined until run)
   // The prompt text as it was WHEN `answer` was produced. Lets the surface tell "edited since last
   // run" from "unchanged" so an edited prompt never re-presents a stale answer as authoritative
-  // (the freeze/stale discipline). Not persisted — a loaded cell's prompt already matches its answer.
+  // (the freeze/stale discipline). PERSISTED (schema 2, #246): a loaded cell may be stale, so its
+  // answeredPrompt can differ from its current prompt; the store reconciles the stale flag from it.
   answeredPrompt?: string;
   sources?: RetrievedChunk[]; // per-cell citations (populated on a run)
   meta?: AnswerMeta; // model / usage / cost (populated on a run)

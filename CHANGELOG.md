@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The ▶ Run button stays reachable on long code blocks.** On a tall emitted code block the
+  Run/Copy action row scrolled off the top before you could reach it; it now sticks to the top of
+  the block as you scroll. Also gave the composer a little padding so its focus ring isn't clipped
+  by the scroll edge in the empty/landing state.
+
 - **Plots no longer emit a scary "FigureCanvasAgg is non-interactive" warning.** A code cell that
   called `plt.show()` printed a matplotlib UserWarning to stderr that read like an error, even
   though the figure rendered fine (the worker captures open figures as PNGs after the cell runs).

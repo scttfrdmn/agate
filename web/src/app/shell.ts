@@ -42,6 +42,9 @@ export function renderShell(app: HTMLElement): void {
                 <option value="pattern:lit-review">Pattern · Literature synthesis</option>
                 <option value="pattern:red-team">Pattern · Steel-man / red-team</option>
               </optgroup>
+              <optgroup label="Background agent">
+                <option value="agent">Agent · Capped research</option>
+              </optgroup>
             </select>
           </label>
         </div>

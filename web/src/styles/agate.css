@@ -1461,6 +1461,79 @@ details.sources[open] > .sources-title::before {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+/* Agent cell (#248, Canvas move #5): a budget/time/step-capped background research run. A distinct
+   left border (amber = "spends real money in the background") and a row of cap inputs. */
+.notebook-cell-agent {
+  border-left: 3px solid var(--amber, #d8a657);
+}
+.notebook-agent-caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0.4rem 0;
+}
+.notebook-agent-cap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.notebook-agent-cap-label {
+  font-weight: 600;
+}
+.notebook-agent-cap-input {
+  width: 6rem;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+.notebook-agent-note {
+  margin-right: auto;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-style: italic;
+}
+/* When Run is disabled for want of a cap, the note carries the (visible, non-tooltip) reason. */
+.notebook-agent-note-warn {
+  color: var(--amber, #d8a657);
+  font-style: normal;
+}
+/* Live status while researching: elapsed vs. the time cap (or a step note) — not a black box. */
+.notebook-agent-live {
+  margin-left: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+/* Partial answer text streaming in during a run reads slightly dimmed (not yet the final answer). */
+.notebook-agent-streaming {
+  opacity: 0.85;
+}
+.notebook-agent-cancel {
+  margin-right: auto;
+}
+/* A cap-bounded result is honest, not an error: a quiet amber note above the partial answer. */
+.notebook-agent-partial {
+  margin-bottom: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(216, 166, 87, 0.12);
+  color: var(--amber, #d8a657);
+  font-size: 0.78rem;
+}
+/* The three-axis receipt: spend/time/steps vs. the cap. Billed (real money), so styled like a
+   billed line, not the free code-cell line. */
+.notebook-agent-receipt {
+  margin-top: 0.4rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 /* Chat costume (#242): an answered prompt cell rendered as a read-only chat turn. It carries NO
    cell border/background — it should look exactly like the chat transcript, not a boxed cell. */
 .notebook-cell-chat {

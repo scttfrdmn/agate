@@ -9,10 +9,32 @@ import type { AnswerMeta } from "./ui";
 import type { RetrievedChunk } from "../rag/context";
 import type { ChatMessage } from "../transport";
 
-// A cell is either a "prompt" cell (an AI turn — billed, routed through the transport) or a
-// "code" cell (local Python, run in a client-side pyodide worker, #200). The two kinds share
-// one model so a notebook can interleave them.
-export type CellKind = "prompt" | "code";
+// A cell is a "prompt" cell (an AI turn — billed, routed through the transport), a "code" cell
+// (local Python, run in a client-side pyodide worker, #200), or an "agent" cell (a budget/time/
+// step-capped background research agent that runs on AgentCore, #248, Canvas move #5). All three
+// kinds share one model so a notebook can interleave them.
+export type CellKind = "prompt" | "code" | "agent";
+
+// A user-set cap on an agent cell (Canvas move #5). Any axis may be undefined (uncapped on that
+// axis); at least one must be set or a real scope budget must exist, else the launch is refused
+// server-side (`agate.agentcell.is_enforceable`). Mirrors the backend `AgentCellCap` — serialised
+// to snake_case (`cost_usd`/`seconds`/`max_steps`) in the invocation payload.
+export interface AgentCap {
+  costUsd?: number; // total dollars the cell may spend across all its steps
+  seconds?: number; // wall-clock envelope (soft cap — declines to START a step past it)
+  maxSteps?: number; // coarse belt-and-braces bound on tool/model invocations
+}
+
+// The frozen receipt of an agent cell's actual run vs. its cap — mirrors the backend
+// `research_loop.ResearchResult.receipt` (snake_case on the wire). `capBounded` true means the run
+// stopped at a cap and returned a best-effort PARTIAL answer (success, not error, per the design).
+export interface AgentReceipt {
+  capBounded: boolean;
+  stopReason: string;
+  spentUsd: number;
+  elapsedSeconds: number;
+  stepsTaken: number;
+}
 
 // Captured output of a code cell run (client-side WASM; stdout / last-expr repr / traceback).
 export interface CodeOutput {
@@ -41,6 +63,14 @@ export interface NotebookCell {
   sources?: RetrievedChunk[]; // per-cell citations (populated on a run)
   meta?: AnswerMeta; // model / usage / cost (populated on a run)
   output?: CodeOutput; // code cells: captured run output (undefined until run)
+  // Agent cells (#248): the user-set cap + the frozen receipt of the last run. `cap` is authored
+  // before launch and PERSISTED (editing it stales the cell); `agentReceipt` is the actual
+  // spend/time/steps vs. the cap, PERSISTED so a reopened Canvas shows the honest boundary.
+  cap?: AgentCap;
+  agentReceipt?: AgentReceipt;
+  // Transient live status for a RUNNING agent cell (elapsed time / step notes) — a black-box
+  // multi-minute spinner is unacceptable for a billed background run. Not persisted (run state).
+  liveProgress?: string;
   state: "idle" | "running" | "error";
   // A cell whose upstream reference changed since its last run. Code cells auto-re-run to clear
   // it (free); prompt (AI) cells stay stale until an explicit, billed re-run (#200 slice 3).
@@ -83,9 +113,16 @@ export function isEditedSinceRun(cell: NotebookCell): boolean {
 
 /** A fresh, empty (idle, answerless) cell of the given kind — used by "+ Cell". The optional
  *  `name` is the {{cN}} reference handle (assigned by the caller, which knows the notebook).
- *  Pure. */
-export function newCell(prompt = "", kind: CellKind = "prompt", name?: string): NotebookCell {
-  return { id: newCellId(), name, kind, prompt, state: "idle" };
+ *  `cap` seeds an agent cell's budget/time/step envelope (ignored for other kinds). Pure. */
+export function newCell(
+  prompt = "",
+  kind: CellKind = "prompt",
+  name?: string,
+  cap?: AgentCap,
+): NotebookCell {
+  const cell: NotebookCell = { id: newCellId(), name, kind, prompt, state: "idle" };
+  if (kind === "agent" && cap) cell.cap = cap;
+  return cell;
 }
 
 /**

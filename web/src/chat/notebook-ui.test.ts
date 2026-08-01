@@ -405,3 +405,131 @@ describe("renderNotebook", () => {
     expect(edits).toEqual([["a", "x2"]]);
   });
 });
+
+describe("renderNotebook — agent cells (#248)", () => {
+  it("renders the question, three cap inputs, and a Run agent button", () => {
+    const nb: Notebook = {
+      cells: [{ id: "a", kind: "agent", prompt: "scan the literature", cap: { costUsd: 2, seconds: 300, maxSteps: 8 }, state: "idle" }],
+    };
+    const target = host();
+    renderNotebook(nb, target);
+    const cell = target.querySelector('.notebook-cell-agent[data-cell-id="a"]')!;
+    expect(cell).not.toBeNull();
+    expect(cell.querySelector<HTMLTextAreaElement>(".notebook-cell-agent-q")!.value).toBe("scan the literature");
+    const caps = cell.querySelectorAll<HTMLInputElement>(".notebook-agent-cap-input");
+    expect(caps).toHaveLength(3);
+    // $ + steps show verbatim; time is shown in minutes (300s → 5).
+    expect([caps[0].value, caps[1].value, caps[2].value]).toEqual(["2", "5", "8"]);
+    const run = cell.querySelector<HTMLButtonElement>(".notebook-cell-run")!;
+    expect(run.textContent).toBe("Run agent");
+    expect(run.disabled).toBe(false);
+  });
+
+  it("Run agent fires onRunAgent with the cell id, prompt, and cap", () => {
+    const nb: Notebook = {
+      cells: [{ id: "a", kind: "agent", prompt: "q", cap: { costUsd: 1 }, state: "idle" }],
+    };
+    const target = host();
+    const calls: Array<[string, string, unknown]> = [];
+    renderNotebook(nb, target, { onRunAgent: (id, p, cap) => calls.push([id, p, cap]) });
+    target.querySelector<HTMLButtonElement>(".notebook-cell-run")!.click();
+    expect(calls).toEqual([["a", "q", { costUsd: 1 }]]);
+  });
+
+  it("disables Run when no cap axis is set + shows the reason as visible text (not just a tooltip)", () => {
+    const nb: Notebook = { cells: [{ id: "a", kind: "agent", prompt: "q", state: "idle" }] };
+    const target = host();
+    renderNotebook(nb, target);
+    expect(target.querySelector<HTMLButtonElement>(".notebook-cell-run")!.disabled).toBe(true);
+    // The "why" is on screen (a11y: disabled buttons don't surface their title to keyboard/SR).
+    expect(target.querySelector(".notebook-agent-note")?.textContent).toContain("Set at least one cap");
+  });
+
+  it("shows the cap + 'billed' in a visible note when a cap is set (honest cost framing)", () => {
+    const nb: Notebook = {
+      cells: [{ id: "a", kind: "agent", prompt: "q", cap: { costUsd: 2, seconds: 300 }, state: "idle" }],
+    };
+    const target = host();
+    renderNotebook(nb, target);
+    const note = target.querySelector(".notebook-agent-note")!.textContent!;
+    expect(note).toContain("$2.00");
+    expect(note).toContain("billed");
+  });
+
+  it("offers Cancel (not a dead Run) while running, firing onCancelAgent", () => {
+    const nb: Notebook = {
+      cells: [{ id: "a", kind: "agent", prompt: "q", cap: { costUsd: 1 }, liveProgress: "researching · 0.5 / 5.0 min", state: "running" }],
+    };
+    const target = host();
+    const cancels: string[] = [];
+    renderNotebook(nb, target, { onCancelAgent: (id) => cancels.push(id) });
+    expect(target.querySelector(".notebook-cell-run")).toBeNull(); // no Run button while running
+    expect(target.querySelector(".notebook-agent-live")?.textContent).toContain("0.5 / 5.0 min");
+    target.querySelector<HTMLButtonElement>(".notebook-agent-cancel")!.click();
+    expect(cancels).toEqual(["a"]);
+  });
+
+  it("normalises a zero/blank cap axis to 'no limit' (the empty-means-uncapped footgun, #248 UX)", () => {
+    const nb: Notebook = {
+      cells: [{ id: "a", kind: "agent", prompt: "q", cap: { costUsd: 2 }, state: "idle" }],
+    };
+    const target = host();
+    const caps: unknown[] = [];
+    renderNotebook(nb, target, { onSetCap: (_id, cap) => caps.push(cap) });
+    const costInput = target.querySelectorAll<HTMLInputElement>(".notebook-agent-cap-input")[0];
+    costInput.value = "0"; // "spend nothing" can't mean a zero ceiling — becomes uncapped
+    costInput.dispatchEvent(new Event("change"));
+    expect(caps).toEqual([{}]); // costUsd removed
+    expect(costInput.value).toBe(""); // reflected back so the user sees it became "no limit"
+  });
+
+  it("editing a cap fires onSetCap with the parsed cap (minutes → seconds)", () => {
+    const nb: Notebook = {
+      cells: [{ id: "a", kind: "agent", prompt: "q", cap: { costUsd: 1 }, state: "idle" }],
+    };
+    const target = host();
+    const caps: unknown[] = [];
+    renderNotebook(nb, target, { onSetCap: (_id, cap) => caps.push(cap) });
+    const timeInput = target.querySelectorAll<HTMLInputElement>(".notebook-agent-cap-input")[1];
+    timeInput.value = "10"; // 10 minutes
+    timeInput.dispatchEvent(new Event("change"));
+    expect(caps).toEqual([{ costUsd: 1, seconds: 600 }]);
+  });
+
+  it("shows a cap-bounded partial badge + a three-axis receipt after a bounded run", () => {
+    const nb: Notebook = {
+      cells: [
+        {
+          id: "a",
+          kind: "agent",
+          prompt: "q",
+          answer: "partial findings",
+          cap: { costUsd: 2, seconds: 300, maxSteps: 8 },
+          agentReceipt: { capBounded: true, stopReason: "budget cap reached at cell cap", spentUsd: 1.87, elapsedSeconds: 142.5, stepsTaken: 6 },
+          state: "idle",
+        },
+      ],
+    };
+    const target = host();
+    renderNotebook(nb, target);
+    expect(target.querySelector(".notebook-agent-partial")?.textContent).toContain("Partial");
+    const receipt = target.querySelector(".notebook-agent-receipt")!.textContent!;
+    expect(receipt).toContain("$1.87 / $2"); // spend / cap, trailing-zero-trimmed
+    expect(receipt).toContain("6 / 8 steps"); // steps used / cap
+    expect(receipt).toContain("2.4 / 5.0 min"); // elapsed / cap, same unit
+  });
+
+  it("counts an agent cell's spend in the Canvas cost trail", () => {
+    const nb: Notebook = {
+      cells: [
+        { id: "p", name: "c1", kind: "prompt", prompt: "q", answer: "a", meta: { cost: 0.001 }, state: "idle" },
+        { id: "g", name: "c2", kind: "agent", prompt: "r", answer: "b", cap: { costUsd: 2 }, agentReceipt: { capBounded: false, stopReason: "done", spentUsd: 0.5, elapsedSeconds: 30, stepsTaken: 3 }, state: "idle" },
+      ],
+    };
+    const target = host();
+    renderNotebook(nb, target);
+    const trail = target.querySelector(".notebook-cost-trail")!.textContent!;
+    expect(trail).toContain("$0.501000"); // 0.001 prompt + 0.5 agent
+    expect(trail).toContain("2 billed cells");
+  });
+});

@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Canvas Phase 7, agent-cell UI — capped background research in the Canvas (#248).** The surface
+  for the agent-cell runtime: a third Canvas cell kind (`agent`) alongside prompt and code. Pick
+  **Agent · Capped research** in the composer, type a research question, and a cell appears with a
+  **cost / time / step cap** you tune (defaults $0.50 / 5 min / 12 steps) before launching — it is
+  **not** auto-run, because it spends real money in the background. Launching streams a
+  "Researching" state, then the answer; if the agent hit its cap it's badged **Partial — stopped at
+  the cap** (a best-effort answer is success, not failure, per the design), and a three-axis
+  **receipt** shows actual spend/time/steps vs. the cap. The cap is enforced server-side by the
+  pre-call cascade (the UI only carries the authored envelope); Run is disabled until at least one
+  cap axis is set, mirroring the server's refusal of an ungoverned launch. Editing the question or
+  a cap **stales** an answered cell for an explicit, billed re-run (never a silent re-launch), and
+  an agent cell's spend counts in the Canvas cost trail. The cap + frozen receipt **persist** with
+  the Canvas (store schema bumped to **3**; v1/v2 files still load). Agent cells reach the
+  AgentCore agent path (`runAgentCell` threads the cap into the invocation; the terminal
+  `agent-cell` receipt event is parsed onto the three axes).
 - **Canvas Phase 7, agent-cell runtime — the self-budgeting research loop (#248).** The runtime
   that consumes the enforceable core (below): a budget/time-capped agent cell now actually *runs*
   on AgentCore. `agate/research_loop.py` is a **pure, fakes-tested reasoning loop** — given a

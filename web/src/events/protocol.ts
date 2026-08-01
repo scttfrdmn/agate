@@ -134,6 +134,20 @@ export interface ReceiptEvent {
   total: number;
 }
 
+// The terminal receipt of a budget/time-capped agent-cell run (#248, Canvas move #5). A DISTINCT
+// receipt shape from `ReceiptEvent` (which itemises rows/total) — discriminated by `kind`. Mirrors
+// the backend `agate.research_loop.ResearchResult.receipt`. `answer_cap_bounded` true means the run
+// stopped at a cap and returned a best-effort PARTIAL answer (success, not error).
+export interface AgentCellReceiptEvent {
+  type: "receipt";
+  kind: "agent-cell";
+  answer_cap_bounded: boolean;
+  stop_reason: string;
+  spent_usd: number;
+  elapsed_seconds: number;
+  steps_taken: number;
+}
+
 // Guardrail intervention surfaced to the user.
 export interface GuardrailEvent {
   type: "guardrail";
@@ -159,6 +173,7 @@ export type RunEvent =
   | ChartEvent
   | CostEvent
   | ReceiptEvent
+  | AgentCellReceiptEvent
   | GuardrailEvent
   | PolicyDeniedEvent;
 

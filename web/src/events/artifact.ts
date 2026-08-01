@@ -99,8 +99,15 @@ export function serializeRun(events: RunEvent[], opts: SerializeOptions): RunArt
         artifact.cost_total = ev.total;
         break;
       case "receipt":
-        artifact.receipt = ev.rows;
-        artifact.cost_total = ev.total;
+        // Two receipt shapes share the "receipt" type, discriminated by `kind`: the itemised
+        // run receipt (rows/total) vs. the agent-cell receipt (#248, spend/time/steps). The
+        // artifact records the itemised one; an agent-cell receipt carries its spend in spent_usd.
+        if ("kind" in ev) {
+          artifact.cost_total = ev.spent_usd;
+        } else {
+          artifact.receipt = ev.rows;
+          artifact.cost_total = ev.total;
+        }
         break;
       default:
         break; // unknown events ignored (forward-compatible)

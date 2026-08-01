@@ -102,6 +102,29 @@ describe("runStateFrom (Ask, single stream)", () => {
   });
 });
 
+describe("runStateFrom (artifact provenance, #265)", () => {
+  it("captures an artifact event's optional trust summary", () => {
+    const events: RunEvent[] = [
+      { type: "answer", text: "hi" },
+      {
+        type: "artifact",
+        run_id: "r1",
+        url: "s3://run/r1",
+        provenance: { record_hash: "h", verified: 4, unverified: 1, stability: 0.9, adversarial_findings: 0 },
+      },
+    ];
+    const state = runStateFrom(events);
+    expect(state.artifactUrl).toBe("s3://run/r1");
+    expect(state.provenance?.verified).toBe(4);
+    expect(state.provenance?.stability).toBeCloseTo(0.9);
+  });
+  it("leaves provenance undefined when the artifact event omits it (back-compat)", () => {
+    const state = runStateFrom([{ type: "artifact", run_id: "r", url: "s3://x" }]);
+    expect(state.artifactUrl).toBe("s3://x");
+    expect(state.provenance).toBeUndefined();
+  });
+});
+
 describe("runStateFrom (Analyze)", () => {
   it("builds an editable cell and attaches the chart to the latest cell", () => {
     const events: RunEvent[] = [

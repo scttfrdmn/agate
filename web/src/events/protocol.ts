@@ -81,11 +81,22 @@ export interface CitationEvent {
   thumb?: string;
 }
 
-// The serialised reproducible run record (§10.2.8).
+// The serialised reproducible run record (§10.2.8). `provenance` is an OPTIONAL, additive
+// trust summary (agate#265) — a decomposition/verification orchestrator (quarry) fills it so the
+// SPA can badge how much to TRUST an answer beside how much it COST. Omitted by producers that
+// don't verify; existing consumers ignore it.
+export interface RunProvenance {
+  record_hash: string; // content-hash RunID of the producer's full run record (the citable artifact)
+  verified: number; // nodes/claims checked and passed
+  unverified: number; // nodes/claims no verifier assessed
+  stability: number; // stable-claim fraction, 0..1
+  adversarial_findings: number; // claims an adversary refuted
+}
 export interface ArtifactEvent {
   type: "artifact";
   run_id: string;
   url: string;
+  provenance?: RunProvenance;
 }
 
 // Generated Python for the Analyze cell (rendered as an editable notebook cell).
@@ -113,7 +124,8 @@ export interface CostEvent {
 // Itemised receipt closing a run.
 export interface ReceiptRow {
   label: string;
-  kind: "llm" | "compute" | "retrieval";
+  // Mirrors Python cost.meter.CostKind (agate#265 C2 — `embedding` was missing here).
+  kind: "llm" | "embedding" | "compute" | "retrieval";
   cost: number;
 }
 export interface ReceiptEvent {

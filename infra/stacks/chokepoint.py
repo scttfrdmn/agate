@@ -43,6 +43,10 @@ class ChokepointStack(Stack):
         spend_table = self.node.try_get_context("spend_table") or f"{HANDLE}-spend"
         budget_table = self.node.try_get_context("budget_table") or f"{HANDLE}-budget"
         auth_role_arn = self.node.try_get_context("auth_role_arn") or PLACEHOLDER
+        # Optional server-to-server invoker principal (agate#265): an ARN (e.g. quarry's backend
+        # role/user) that may ASSUME the vended invoker role to SigV4-call the Function URL. The
+        # browser path uses Cognito-vended creds; a Go backend needs its own assumable role. Opt-in.
+        invoker_principal_arn = self.node.try_get_context("invoker_principal_arn") or PLACEHOLDER
 
         fn = lambda_.Function(
             self,
@@ -148,6 +152,40 @@ class ChokepointStack(Stack):
                 action="lambda:InvokeFunction",
                 invoked_via_function_url=True,
             )
+
+        # Server-to-server invoker role (agate#265). A backend (quarry) can't use the browser's
+        # Cognito-vended creds, so vend a dedicated role it ASSUMES, permitting exactly the two
+        # actions a signed Function-URL POST needs — and nothing else (no Bedrock, no tables; the
+        # handler still assumes the USER's scoped role for the actual model call, so this role
+        # never widens data/model access). Pinned role name so the caller can reference it without a
+        # cross-stack import. Opt-in: only created when an invoker principal is supplied.
+        if invoker_principal_arn != PLACEHOLDER:
+            invoker = iam.Role(
+                self,
+                "ChokepointInvokerRole",
+                role_name=f"{HANDLE}-chokepoint-invoker",
+                assumed_by=iam.ArnPrincipal(invoker_principal_arn),
+                description="Assumable role for a server-to-server caller to SigV4-invoke the "
+                "chokepoint Function URL (agate#265). No Bedrock/table access.",
+            )
+            invoker.add_to_policy(
+                iam.PolicyStatement(
+                    effect=iam.Effect.ALLOW,
+                    actions=["lambda:InvokeFunctionUrl", "lambda:InvokeFunction"],
+                    resources=[fn.function_arn],
+                    # Bound the InvokeFunction grant to Function-URL calls (mirrors the auth-role
+                    # resource permission), so this role can't invoke the Lambda any other way.
+                    conditions={"StringEquals": {"lambda:FunctionUrlAuthType": "AWS_IAM"}},
+                )
+            )
+            # Resource-side permission so the assumed role's signed URL call is accepted at edge.
+            fn.add_permission(
+                "InvokeUrlFromInvokerRole",
+                principal=iam.ArnPrincipal(invoker.role_arn),
+                action="lambda:InvokeFunctionUrl",
+                function_url_auth_type=lambda_.FunctionUrlAuthType.AWS_IAM,
+            )
+            cdk.CfnOutput(self, "ChokepointInvokerRoleArn", value=invoker.role_arn)
 
         cdk.CfnOutput(self, "ChokepointUrl", value=url.url)
         cdk.CfnOutput(self, "ChokepointFunction", value=fn.function_name)

@@ -53,8 +53,23 @@ class ReceiptRow(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     label: str
-    kind: Literal["llm", "compute", "retrieval"]
+    # Mirrors cost.meter.CostKind (agate#265 C2 — `embedding` was missing on this twin too).
+    kind: Literal["llm", "embedding", "compute", "retrieval"]
     cost: float
+
+
+class RunProvenance(BaseModel):
+    """Optional trust summary for a run (agate#265). A decomposition/verification orchestrator
+    (quarry) fills this so a consumer can show how much to TRUST an answer beside its COST. Additive
+    — omitted by producers that don't verify. Mirrors the TS `RunProvenance`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    record_hash: str  # content-hash RunID of the producer's full run record
+    verified: int = 0  # nodes/claims checked and passed
+    unverified: int = 0  # nodes/claims no verifier assessed
+    stability: float = 0.0  # stable-claim fraction, 0..1
+    adversarial_findings: int = 0  # claims an adversary refuted
 
 
 class RunArtifact(BaseModel):
@@ -78,6 +93,8 @@ class RunArtifact(BaseModel):
     cost_total: float = 0.0
     # Optional chargeback tag (grant or course code) for the receipt export.
     cost_tag: str | None = None
+    # Optional trust summary (agate#265) — set from an `artifact` event's `provenance` field.
+    provenance: RunProvenance | None = None
 
 
 def build_artifact(
@@ -143,6 +160,10 @@ def build_artifact(
         elif etype == "receipt":
             artifact.receipt = [ReceiptRow.model_validate(r) for r in ev.get("rows", [])]
             artifact.cost_total = ev.get("total", artifact.cost_total)
+        elif etype == "artifact" and isinstance(ev.get("provenance"), dict):
+            # Trust summary carried on the artifact event (agate#265) — additive; absent for
+            # producers that don't verify.
+            artifact.provenance = RunProvenance.model_validate(ev["provenance"])
 
     artifact.models = models_seen
     return artifact

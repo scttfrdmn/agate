@@ -54,15 +54,15 @@ class ChokepointError(Exception):
 
 # Conservative per-image input-token charge (#244). We have no image tokenizer server-side, so we
 # over-count in the fail-closed direction: a vision model tokenizes an image up to ~1600 tokens
-# (Claude's per-image ceiling). Charged per image in the request so the pre-call gate can't be
-# under-run by attaching figures (the chokepoint's exact-spend guarantee — its whole reason to exist).
+# (Claude's per-image ceiling). Charged per image so the pre-call gate can't be under-run by
+# attaching figures (the chokepoint's exact-spend guarantee — its whole reason to exist).
 IMAGE_TOKEN_CHARGE = 1600
 
 
 def estimate_input_tokens(messages: list[dict]) -> int:
     """Conservative server-side input token estimate (char/4 + a per-image charge, round up). Never
     trusts a client-supplied count — a small lie would shrink the pre-call gate. Counts the raw
-    `images` list length BEFORE PNG validation, so it over-counts rather than under (fail-closed)."""
+    `images` list length BEFORE PNG validation, so it over-counts rather than under."""
     chars = sum(len(str(m.get("content", ""))) for m in messages)
     images = sum(len(m["images"]) for m in messages if isinstance(m.get("images"), list))
     return int(math.ceil(chars / 4)) + 1 + images * IMAGE_TOKEN_CHARGE
@@ -157,7 +157,7 @@ def _image_blocks(images: object) -> list[dict]:
         if not isinstance(img, str) or not img.startswith(prefix):
             continue
         try:
-            raw = _b64.b64decode(img[len(prefix):], validate=True)
+            raw = _b64.b64decode(img[len(prefix) :], validate=True)
         except Exception:  # noqa: BLE001 — a bad data-URI is skipped, not fatal
             continue
         if not raw.startswith(_PNG_MAGIC) or len(raw) > _MAX_IMAGE_BYTES:
@@ -327,10 +327,16 @@ def process(req: dict, *, period: str | None = None) -> dict:
         # If the turn carries figures (#244) but auto picked a text-only model, upgrade to a
         # vision-capable entitled model so the plot is actually seen (not silently dropped).
         if has_images and not supports_vision(model_id):
-            vision = next((m for m in reversed(models_for_tier(tags.tier)) if supports_vision(m)), None)
+            vision = next(
+                (m for m in reversed(models_for_tier(tags.tier)) if supports_vision(m)), None
+            )
             if vision:
                 model_id = vision
-                model_route = {"model": model_id, "reason": "vision required for referenced figure", "degraded": False}
+                model_route = {
+                    "model": model_id,
+                    "reason": "vision required for referenced figure",
+                    "degraded": False,
+                }
     else:
         model_id = requested_model
 

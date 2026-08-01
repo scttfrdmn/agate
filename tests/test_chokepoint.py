@@ -198,7 +198,9 @@ def test_text_only_model_strips_image_and_placeholder(wired):
     # both the image block AND the "[figure from cN]" text placeholder are stripped.
     wired.spend, wired.budget = 0.0, 100.0
     req = _req(model="openai.gpt-oss-120b-1:0")  # explicit text-only model
-    req["messages"] = [{"role": "user", "content": "explain [figure from c1]\nT_eq = 500", "images": [_PNG]}]
+    req["messages"] = [
+        {"role": "user", "content": "explain [figure from c1]\nT_eq = 500", "images": [_PNG]}
+    ]
     cp.process(req, period="2026-06")
     content = wired.last_messages[0]["content"]
     assert all(not b.get("image") for b in content)  # no image block
@@ -305,7 +307,9 @@ def test_estimate_input_tokens_charges_for_images():
     # #244 H1: each attached figure adds a conservative token charge so the pre-call gate can't be
     # under-run by attaching images (the chokepoint's exact-spend guarantee).
     base = cp.estimate_input_tokens([{"role": "user", "content": "x" * 40}])
-    with_img = cp.estimate_input_tokens([{"role": "user", "content": "x" * 40, "images": [_PNG, _PNG]}])
+    with_img = cp.estimate_input_tokens(
+        [{"role": "user", "content": "x" * 40, "images": [_PNG, _PNG]}]
+    )
     assert with_img == base + 2 * cp.IMAGE_TOKEN_CHARGE
 
 
@@ -353,7 +357,13 @@ def test_to_converse_messages_attaches_png_figure_as_image_block():
 def test_to_converse_messages_skips_non_png_image():
     # A non-PNG / malformed data-URI is never forwarded as an arbitrary blob.
     out = cp.to_converse_messages(
-        [{"role": "user", "content": "x", "images": ["javascript:alert(1)", "data:text/html;base64,zzzz"]}]
+        [
+            {
+                "role": "user",
+                "content": "x",
+                "images": ["javascript:alert(1)", "data:text/html;base64,zz"],
+            }
+        ]
     )
     assert out[0]["content"] == [{"text": "x"}]
 

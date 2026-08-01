@@ -153,6 +153,17 @@ describe("ChatManager", () => {
     expect(m.notebookFor()).toBe(nb1);
   });
 
+  it("carries a recorded turn's receipt meta into the projected cell (#245)", () => {
+    const m = new ChatManager(hosts());
+    // Simulate a completed Ask turn: history holds the pair, recordTurn captures its meta.
+    m.current.history.push({ role: "user", content: "q?" }, { role: "assistant", content: "a." });
+    m.recordTurn("q?", "a.", { usage: { inputTokens: 12, outputTokens: 4 }, cost: 0.0009, modelId: "m" });
+    const nb = m.notebookFor();
+    expect(nb.cells).toHaveLength(1);
+    expect(nb.cells[0].meta?.cost).toBe(0.0009);
+    expect(nb.cells[0].meta?.usage?.outputTokens).toBe(4);
+  });
+
   it("setView toggles the active chat's chat vs notebook pane", () => {
     const d = hosts();
     const m = new ChatManager(d);

@@ -916,17 +916,22 @@ button {
   color: var(--text);
   border-color: var(--accent);
 }
-/* Run is the primary "reach for it" action on emitted code — accent-tinted, not muted. */
+/* Run is the primary "reach for it" action on emitted code — accent-tinted, not muted, and a
+   touch larger than Copy so it reads as the primary action (was too easy to miss at 0.7rem). */
 .code-run {
-  color: var(--accent);
+  color: #fff;
+  background: var(--accent);
   border-color: var(--accent);
   font-weight: 600;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.6rem;
 }
 .code-run:hover {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  background: color-mix(in srgb, var(--accent) 85%, #000);
 }
 .code-run:disabled {
   color: var(--muted);
+  background: transparent;
   border-color: var(--border);
   font-weight: 400;
   cursor: default;

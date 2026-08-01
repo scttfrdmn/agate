@@ -13,6 +13,7 @@ import type { CellKind, Notebook, NotebookCell } from "./notebook";
 import { referencedNames } from "./dag";
 import { copyAnswerBtn, renderReceipt, renderSources } from "./ui";
 import { renderInto } from "../render/markdown";
+import { modelLabel } from "../router";
 
 export interface NotebookCallbacks {
   onRun?: (cellId: string, prompt: string) => void;
@@ -36,6 +37,18 @@ function el(tag: string, cls: string): HTMLElement {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
   return e;
+}
+
+// The "Thinking …" indicator — identical markup to the chat transcript's (chat/ui.ts), so a
+// running turn looks the same in both renderers (Phase-1 unity; reported inconsistency).
+function thinkingIndicator(): HTMLElement {
+  const thinking = el("div", "thinking");
+  const label = el("span", "thinking-label");
+  label.textContent = "Thinking";
+  const dots = el("span", "thinking-dot");
+  dots.innerHTML = "<span></span><span></span><span></span>";
+  thinking.append(label, dots);
+  return thinking;
 }
 
 // Whether a prompt cell should render in its editable *cell* costume rather than the read-only
@@ -155,6 +168,17 @@ function renderChatTurn(cell: NotebookCell, cb: NotebookCallbacks): HTMLElement 
   const aBadge = el("div", "bubble-badge");
   aBadge.textContent = "Answer";
   head.appendChild(aBadge);
+  // Show which model produced this answer (parity with the chat transcript) — matters under Auto,
+  // where the routed model isn't otherwise visible. `routed` styling + rationale tooltip when known.
+  if (cell.meta?.modelId) {
+    const modelTag = el("div", "model-tag");
+    modelTag.textContent = modelLabel(cell.meta.modelId);
+    if (cell.meta.modelReason) {
+      modelTag.title = `Auto-routed: ${cell.meta.modelReason}`;
+      modelTag.classList.add("routed");
+    }
+    head.appendChild(modelTag);
+  }
   asst.appendChild(head);
   const body = el("div", "answer-body");
   renderInto(body, cell.answer ?? "", `${cell.id}-`, {
@@ -228,13 +252,13 @@ function renderPromptCell(cell: NotebookCell, cb: NotebookCallbacks, showNames: 
   // Output: thinking indicator, rendered Markdown answer, or an error.
   const body = el("div", "notebook-answer-body");
   if (cell.state === "running") {
-    const thinking = el("div", "thinking");
-    const t = el("span", "thinking-label");
-    t.textContent = "Thinking";
-    const dots = el("span", "thinking-dot");
-    dots.innerHTML = "<span></span><span></span><span></span>";
-    thinking.append(t, dots);
-    body.appendChild(thinking);
+    // Same "Answer" bubble header + Thinking indicator as a chat turn, so an in-progress prompt
+    // cell reads identically whether it's wearing the chat or the cell costume (Phase-1 unity).
+    const head = el("div", "bubble-head");
+    const aBadge = el("div", "bubble-badge");
+    aBadge.textContent = "Answer";
+    head.appendChild(aBadge);
+    body.append(head, thinkingIndicator());
   } else if (cell.state === "error") {
     const err = el("div", "error-msg");
     err.setAttribute("role", "alert");

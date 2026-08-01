@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Canvas Phase 7, enforceable core — web-search capability + agent-cell cap enforcement (#248).**
+  The security spine of the budget/time-capped agent-cell design (Canvas move #5), built pure and
+  fully unit-tested ahead of the async runtime + UI (which need live AgentCore). Two pieces:
+  (1) a **`web-search` capability** — the prerequisite for capped research agents (you can't scan
+  the literature with fetch-a-known-URL). It mirrors `web-fetch` exactly: a Cedar-gated agentspec
+  capability (off unless granted) + `agate/websearch.py`, a pure guard that reuses the web-fetch
+  SSRF/allowlist checks on an institution-approved search endpoint and gates each search on the
+  budget cascade (a search is a priced action; result URLs are re-validated by web-fetch, so no new
+  egress path opens). (2) **`agate/agentcell.py`** — the cell cap enforced as a node in the SAME
+  `evaluate_priced_cascade`, so a cell's $/time/step cap is enforced pre-call, not by the agent
+  behaving: `evaluate_step` stops the loop at the cap regardless of agent intent, a scope/tenant
+  budget below the cell cap still binds, the time cap is a soft "don't start a new step" bound, and
+  remaining budget/time are exposed as planning inputs. The async AgentCore runtime + agent-cell UI
+  (PRs 3–4 in #248) follow once these land. Nothing runs yet — this is the enforcement contract.
 - **Canvas Phase 6 — chained-reasoning polish (#247, folds in #237).** Three refinements to the
   reactive chain: (1) **per-cell model choice** — a prompt cell can pin its own entitled model (a
   quiet picker in the cell chrome; default = follow the composer's Model), so a chain can run cheap

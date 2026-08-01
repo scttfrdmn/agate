@@ -155,3 +155,13 @@ def test_node_decision_rejects_non_finite_spend():
 
     r = evaluate_priced_cascade(price_usd=1.0, nodes=[("n", float("nan"), 10.0)])
     assert r.decision == "reject"
+
+
+def test_node_decision_rejects_non_finite_budget():
+    # A non-finite BUDGET (e.g. an unvalidated caller-supplied agent-cell cost cap, #248) must NOT
+    # disable the cap: `x > nan` is always False, so without this guard the node fails OPEN.
+    from cost import evaluate_priced_cascade
+
+    for bad in (float("nan"), float("inf")):
+        r = evaluate_priced_cascade(price_usd=1.0, nodes=[("cap", 0.0, bad)])
+        assert r.decision == "reject", f"non-finite budget {bad} must fail closed"

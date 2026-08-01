@@ -252,6 +252,17 @@ def test_hpc_submit_is_a_write_monitor_is_read():
     assert get_capability("hpc-monitor").grant.write is False
 
 
+def test_governed_web_egress_caps_are_read_only_gateway_tools():
+    # web-fetch (#192) and web-search (#248) are the governed external-reach capabilities: both
+    # gateway tools, both read-only, both off unless explicitly granted (Cedar decides).
+    names = {c["name"] for c in capability_catalog()}
+    assert {"web-fetch", "web-search"} <= names
+    for name in ("web-fetch", "web-search"):
+        cap = get_capability(name)
+        assert cap.grant.resource_kind == "gateway-tool"
+        assert cap.grant.write is False
+
+
 def test_spec_can_declare_hpc_tools():
     spec = parse_spec(_base(role="researcher", tools=["hpc-submit", "hpc-monitor"]))
     assert spec.tools == ("hpc-submit", "hpc-monitor")

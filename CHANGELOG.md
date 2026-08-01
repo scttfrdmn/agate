@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Canvas Phase 7, agent-cell runtime — the self-budgeting research loop (#248).** The runtime
+  that consumes the enforceable core (below): a budget/time-capped agent cell now actually *runs*
+  on AgentCore. `agate/research_loop.py` is a **pure, fakes-tested reasoning loop** — given a
+  question and an `AgentCellCap`, it plans and executes a bounded sequence of governed searches +
+  fetches, then reports the best answer within the envelope. Enforcement and self-governance are
+  kept separate exactly as the design demands: the planner is *told* its remaining budget/time (a
+  planning input), but every priced step passes `evaluate_step` (the cell cap as a cascade node)
+  **before** it fires — a confused or adversarial planner still cannot overspend; the loop stops
+  and returns an honest partial (partial results are success, not error). The reasoning-model turn
+  is itself gated as a priced action before each call (so the model's own spend — not just the
+  tool actions — counts against the cap), and the evidence re-sent each turn is bounded so per-turn
+  cost can't grow unbounded. Two invariants are made
+  **structural**, not documentary: it refuses to launch an ungoverned cell (`is_enforceable`), and
+  a URL is fetchable **only** if a prior governed search surfaced it — so web-search opens no egress
+  path web-fetch didn't already permit (the review follow-up, now enforced). The planner's quoted
+  price is advisory only; the loop gates on the **trusted** tool prices. Wired end to end: the
+  **web-search MCP Lambda** (`infra/functions/websearch/`, the effect half of the capability PR1
+  declared — same SSRF/allowlist/budget guards as web-fetch, returns result URLs it never fetches),
+  a container-side runner (`agent/agent_cell.py`) + governed-tool bridge (`agent/research_client.py`,
+  the memory-hook pattern: forwards the verified token to the tool Lambdas, holds no egress creds),
+  a `cap`-carrying payload branch in `agent/server.py`, and the CDK wiring (web-search gateway
+  target + the two tool ARNs passed to the Runtime). The agent-cell **UI** (PR4) is the remaining
+  piece.
 - **Canvas Phase 7, enforceable core — web-search capability + agent-cell cap enforcement (#248).**
   The security spine of the budget/time-capped agent-cell design (Canvas move #5), built pure and
   fully unit-tested ahead of the async runtime + UI (which need live AgentCore). Two pieces:

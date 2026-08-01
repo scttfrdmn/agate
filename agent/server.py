@@ -26,6 +26,7 @@ from agate.tags import ClaimsError, claims_to_tags
 from cost import CostMeter
 
 from agent import memory_client
+from agent.agent_cell import run_agent_cell
 from agent.backends import (
     BedrockBackend,
     CodeInterpreterRunner,
@@ -128,6 +129,25 @@ def run_invocation(payload: dict, *, session_id: str = "") -> list[dict]:
     emit = events.append
 
     idp_token = payload.get("idp_token", "")
+
+    # Agent-cell launch (#248, Canvas move #5): a payload carrying a `cap` is a budget/time-capped
+    # background research run, not a plain dispatch. It runs the self-budgeting research loop under
+    # the SAME pre-call cascade every other action uses — enforced pre-call, not by the agent
+    # behaving. Kept as its own path so the enforcement contract stays legible and testable.
+    if payload.get("cap") is not None:
+        backend = BedrockBackend(REGION, request_metadata=_spend_metadata(payload))
+        tier = _verified_tier(payload)
+        entitled = models_for_tier(tier)
+        # No `scope_reader` is passed: the container holds no tenant-tagged credential, so it does
+        # NOT read the family spend/budget tables itself (that would need a broad DDB grant on the
+        # shared execution role). Per-cell FAMILY scope enforcement lives where it already is — in
+        # the web-search / web-fetch tool Lambdas' own `gate_search`/`gate_fetch` cascades, which
+        # run under the tenant-fenced credential per call. In the loop, the CELL CAP is the binding
+        # node; with no scope floor, `is_enforceable` then requires the cell cap itself to be set
+        # (fail closed — an all-None cap with no scope is refused), which is stricter, not weaker.
+        run_agent_cell(payload, backend=backend, tier=tier, entitled=entitled, emit=emit)
+        return events
+
     # Recall BEFORE dispatch: fold remembered context into the evidence the reasoning
     # modes (DEBATE/Ask) already consume. Best-effort; [] when disabled or on failure.
     if memory_client.enabled() and idp_token:

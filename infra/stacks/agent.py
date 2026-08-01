@@ -515,6 +515,101 @@ class AgentStack(Stack):
         webfetch_target.add_dependency(gateway)
         webfetch_target.node.add_dependency(webfetch_invoke_grant)
 
+        # --- web-search MCP target (#248) ---------------------------------
+        # The governed SEARCH tool — the prerequisite for capped research agent cells (move #5).
+        # Same shape + fences as web-fetch: off unless a spec lists `web-search` AND the institution
+        # configures a SEARCH allowlist (`-c websearch_allowlist=...`) + endpoint template
+        # (`-c websearch_endpoint=...`). Empty allowlist denies every search. The Lambda has no VPC;
+        # the agate.websearch guard (reusing the web-fetch SSRF checks) is the boundary. It returns
+        # RESULT URLS ONLY — it never fetches them; a later web-fetch re-validates each, so this
+        # opens no new egress path.
+        websearch_allowlist = self.node.try_get_context("websearch_allowlist") or ""
+        websearch_endpoint = self.node.try_get_context("websearch_endpoint") or ""
+        websearch_fn = lambda_.Function(
+            self,
+            "WebSearchTool",
+            function_name=f"{HANDLE}-websearch",
+            runtime=lambda_.Runtime.PYTHON_3_13,
+            handler="infra.functions.websearch.handler.handler",
+            code=pip_bundled_code("agate", "infra", "cost", "meter"),
+            timeout=cdk.Duration.seconds(30),
+            memory_size=256,
+            environment={
+                "AGATE_WEBSEARCH_ALLOWLIST": websearch_allowlist,
+                "AGATE_WEBSEARCH_ENDPOINT": websearch_endpoint,
+                "AGATE_SPEND_TABLE": spend_table,
+                "AGATE_BUDGET_TABLE": budget_table,
+                "AGATE_REGION": region,
+                "AGATE_OIDC_ISSUER": oidc_discovery_url or "",
+                "AGATE_OIDC_AUDIENCE": allowed_audience or "",
+            },
+            description="agate web-search MCP server - governed allowlisted search (#248)",
+        )
+        websearch_fn.add_to_role_policy(
+            iam.PolicyStatement(
+                sid="ReadSpendAndBudget",
+                effect=iam.Effect.ALLOW,
+                actions=["dynamodb:GetItem", "dynamodb:Query"],
+                resources=[
+                    f"arn:aws:dynamodb:{region}:{account}:table/{spend_table}",
+                    f"arn:aws:dynamodb:{region}:{account}:table/{budget_table}",
+                ],
+            )
+        )
+        websearch_target = agentcore.CfnGatewayTarget(
+            self,
+            "WebSearchTarget",
+            gateway_identifier=gateway.attr_gateway_identifier,
+            name=f"{HANDLE}-websearch",
+            target_configuration=agentcore.CfnGatewayTarget.TargetConfigurationProperty(
+                mcp=agentcore.CfnGatewayTarget.McpTargetConfigurationProperty(
+                    lambda_=agentcore.CfnGatewayTarget.McpLambdaTargetConfigurationProperty(
+                        lambda_arn=websearch_fn.function_arn,
+                        tool_schema=agentcore.CfnGatewayTarget.ToolSchemaProperty(
+                            inline_payload=[
+                                _tool(
+                                    "web-search",
+                                    "Search an allowlisted endpoint; returns result URLs "
+                                    "(read-only, never fetched here)",
+                                    {"query": _str_schema},
+                                ),
+                            ]
+                        ),
+                    )
+                )
+            ),
+            credential_provider_configurations=[
+                agentcore.CfnGatewayTarget.CredentialProviderConfigurationProperty(
+                    credential_provider_type="GATEWAY_IAM_ROLE",
+                )
+            ],
+            description="agate web-search MCP target (#248)",
+        )
+        websearch_invoke_grant = websearch_fn.grant_invoke(execution_role)
+        websearch_fn.add_permission(
+            "AllowGatewayInvoke",
+            principal=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
+            action="lambda:InvokeFunction",
+        )
+        websearch_target.add_dependency(gateway)
+        websearch_target.node.add_dependency(websearch_invoke_grant)
+
+        # The agent container invokes the web-search / web-fetch tool Lambdas directly (the
+        # research bridge, #248) forwarding the verified token — so it holds no egress creds of its
+        # own. Grant the container's execution role invoke on both tools and pass their ARNs into
+        # the Runtime env. (The runtime + its `runtime_env` are created above, before these tool
+        # functions exist, so the ARNs are injected here via the L1 property override — the standard
+        # CDK escape hatch — rather than the dict literal. With no ARN the bridge is inert: search
+        # returns [] and fetch fails closed, so an agent cell can never reach an ungoverned path.)
+        websearch_fn.grant_invoke(execution_role)
+        webfetch_fn.grant_invoke(execution_role)
+        runtime.add_property_override(
+            "EnvironmentVariables.AGATE_WEBSEARCH_TOOL_ARN", websearch_fn.function_arn
+        )
+        runtime.add_property_override(
+            "EnvironmentVariables.AGATE_WEBFETCH_TOOL_ARN", webfetch_fn.function_arn
+        )
+
         # --- Connector targets (#133 data plane, user-delegated OAuth) ----
         # The user-oauth connectors (Drive/Box/Teams/Discord) reach their content APIs AS the
         # verified user via the OAuth provider above — the source's own ACL composes with

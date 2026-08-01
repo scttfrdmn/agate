@@ -28,11 +28,12 @@ def template():
 
 def test_gateway_target_oauth_and_lambda_synthesize(template):
     t, _ = template
-    # One gateway; two core MCP targets (Slurm + web-fetch #192); the Runtime — all present.
+    # One gateway; three core MCP targets (Slurm + web-fetch #192 + web-search #248); the
+    # Runtime — all present.
     assert len(t.find_resources("AWS::BedrockAgentCore::Gateway")) == 1
-    assert len(t.find_resources("AWS::BedrockAgentCore::GatewayTarget")) == 2
+    assert len(t.find_resources("AWS::BedrockAgentCore::GatewayTarget")) == 3
     assert len(t.find_resources("AWS::BedrockAgentCore::Runtime")) == 1
-    assert len(t.find_resources("AWS::Lambda::Function")) >= 2  # slurm + webfetch tools
+    assert len(t.find_resources("AWS::Lambda::Function")) >= 3  # slurm + webfetch + websearch
 
 
 def test_webfetch_tool_wired_with_allowlist(template):
@@ -46,6 +47,31 @@ def test_webfetch_tool_wired_with_allowlist(template):
         if f["Properties"].get("Handler") == "infra.functions.webfetch.handler.handler"
     )
     assert "AGATE_WEBFETCH_ALLOWLIST" in webfetch["Properties"]["Environment"]["Variables"]
+
+
+def test_websearch_tool_wired_with_allowlist_and_endpoint(template):
+    # The web-search tool Lambda (#248) carries the SEARCH allowlist + endpoint env; both default
+    # empty (deny-all / inert until an institution configures them).
+    t, _ = template
+    fns = t.find_resources("AWS::Lambda::Function")
+    websearch = next(
+        f
+        for f in fns.values()
+        if f["Properties"].get("Handler") == "infra.functions.websearch.handler.handler"
+    )
+    env = websearch["Properties"]["Environment"]["Variables"]
+    assert "AGATE_WEBSEARCH_ALLOWLIST" in env
+    assert "AGATE_WEBSEARCH_ENDPOINT" in env
+
+
+def test_container_gets_the_governed_tool_arns(template):
+    # The research bridge (#248) invokes the web-search / web-fetch Lambdas from the container, so
+    # the Runtime env must carry both tool ARNs (else the bridge is inert / fails closed).
+    t, _ = template
+    runtime = next(iter(t.find_resources("AWS::BedrockAgentCore::Runtime").values()))
+    env = runtime["Properties"]["EnvironmentVariables"]
+    assert "AGATE_WEBSEARCH_TOOL_ARN" in env
+    assert "AGATE_WEBFETCH_TOOL_ARN" in env
 
 
 # --- memory hook (#130b, opt-in) --------------------------------------------
@@ -183,10 +209,11 @@ def test_workload_identity_synthesizes_tenant_named(template):
 
 
 def test_no_connector_targets_or_oauth_without_deploy_config(template):
-    # Default (no oauth/connector context): the two core targets (Slurm + web-fetch), no OAuth
-    # provider — absent config produces no CONNECTOR target (NO CLOCKS; a target is per-request).
+    # Default (no oauth/connector context): the three core targets (Slurm + web-fetch +
+    # web-search), no OAuth provider — absent config produces no CONNECTOR target (NO CLOCKS; a
+    # target is per-request).
     t, _ = template
-    assert len(t.find_resources("AWS::BedrockAgentCore::GatewayTarget")) == 2  # slurm + webfetch
+    assert len(t.find_resources("AWS::BedrockAgentCore::GatewayTarget")) == 3  # slurm+fetch+search
     assert len(t.find_resources("AWS::BedrockAgentCore::OAuth2CredentialProvider")) == 0
 
 
@@ -213,4 +240,5 @@ def test_connector_targets_wired_to_oauth_when_configured():
         "agate-connector-gdrive",
         "agate-slurm",
         "agate-webfetch",
+        "agate-websearch",
     ]

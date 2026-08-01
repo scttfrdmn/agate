@@ -128,7 +128,22 @@ export class OpenAITransport implements Transport {
       headers: signed.headers as Record<string, string>,
       body,
     });
-    const payload = (await resp.json()) as Record<string, unknown>;
+    // The body is usually JSON, but an infra-level failure (Lambda timeout, 502/500 from the
+    // Function URL) returns a PLAIN-TEXT body like "Internal Server Error" — parsing that as JSON
+    // throws a cryptic "Unexpected token" error. Read text first and parse defensively, so a
+    // non-JSON error surfaces as a clean, actionable message instead.
+    const raw = await resp.text();
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      const detail = raw.trim().slice(0, 200) || `HTTP ${resp.status}`;
+      const hint =
+        resp.status === 504 || resp.status === 502 || /timeout|time.?out|internal server/i.test(raw)
+          ? " — the request took too long (a large answer from a slow model can exceed the server limit). Try a faster model or a shorter request."
+          : "";
+      throw new Error(`Server error (${resp.status}): ${detail}${hint}`);
+    }
     for (const chunk of responseToChunks(resp.status, payload)) {
       yield chunk;
     }

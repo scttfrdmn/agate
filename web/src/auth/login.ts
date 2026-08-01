@@ -47,6 +47,29 @@ export function isTokenExpired(token: string, nowMs: number = Date.now()): boole
   }
 }
 
+/** A human-readable sign-in label from the id_token — the first present of the usual identity
+ *  claims (preferred_username, cognito:username, email, then the local part of email, then sub).
+ *  No signature check (display only; the server is the authority). Returns "" if unreadable. Pure. */
+export function identityFromToken(token: string): string {
+  const parts = token.split(".");
+  if (parts.length < 2) return "";
+  try {
+    const json = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
+    const c = JSON.parse(json) as Record<string, unknown>;
+    const s = (k: string): string => (typeof c[k] === "string" ? (c[k] as string) : "");
+    const email = s("email");
+    return (
+      s("preferred_username") ||
+      s("cognito:username") ||
+      email ||
+      (email.includes("@") ? email.split("@")[0] : "") ||
+      s("sub")
+    );
+  } catch {
+    return "";
+  }
+}
+
 /** Normalize the Hosted-UI base to an absolute https origin (no trailing slash).
  *  VITE_COGNITO_DOMAIN is often set bare (`x.auth.region.amazoncognito.com`); without
  *  a scheme `location.assign()` treats the login URL as RELATIVE and appends it to the

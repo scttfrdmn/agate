@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Canvas Phase 5 — freeze/stale under version control (#246).** A saved Canvas is now a faithful,
+  diff-friendly reproducible artifact. A prompt cell's **frozen answer travels with the cell** and
+  its **`stale` flag + the `answeredPrompt` it was produced from are persisted** — so a committed
+  Canvas reopens with its stale cells still badged (choose to refresh), never silently re-inferred
+  and never silently re-matched. This extends the existing never-auto-run stale discipline to
+  persistence (the doc's freeze/stale state machine): `stale` is a flag, not a trigger. The store
+  schema is bumped to **2** (v1 files still load: no stale → fresh, answeredPrompt → its prompt).
+  The volatile per-cell `id` is no longer serialized (fresh ids on load), so a `git diff` reflects
+  real content changes, not id churn.
 - **Canvas Phase 4 — per-cell receipts (#245).** Every prompt cell now carries its own standing
   receipt (tokens in/out + "this question" cost), and code cells show `$0.00 (local)` — so the
   cell view answers "what did *this* thought cost?" at a glance, complementing the running session

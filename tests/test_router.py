@@ -23,6 +23,7 @@ def test_needs_capable_model():
     assert not needs_capable_model("What is enthalpy?")
     assert not needs_capable_model("define entropy")
 
+
 # --- classify_mode ----------------------------------------------------------
 
 

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Plots no longer emit a scary "FigureCanvasAgg is non-interactive" warning.** A code cell that
+  called `plt.show()` printed a matplotlib UserWarning to stderr that read like an error, even
+  though the figure rendered fine (the worker captures open figures as PNGs after the cell runs).
+  The pyodide worker now makes `plt.show()` a silent no-op and filters that warning, so a
+  model-written plot comes back clean.
+
 ### Added
 - **The top bar shows who is signed in.** A "Signed in as \<name\>" label sits beside Log out,
   derived from the id_token (preferred_username / cognito:username / email). Complements the

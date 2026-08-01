@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Canvas Phase 3 — result→prompt loop, incl. plot images (#244).** A prompt cell can now
+  reference a prior code cell's output with `{{cN}}` and reason over it — closing the
+  AI→code→result→AI loop. Text output (a value / stdout) already inlined; this adds the
+  **multimodal leg**: when the referenced code cell produced a matplotlib **figure**, the `{{cN}}`
+  token becomes a `[figure from cN]` placeholder AND the PNG is attached to the turn as a Converse
+  image block, so a vision model actually *sees* the plot. Threaded end-to-end — `ChatMessage.images`,
+  the browser-direct Bedrock transport, and the Tier-1 chokepoint all emit image content blocks.
+  Hardening (from UX/security review): the chokepoint's pre-call budget gate now **charges a
+  conservative per-image token cost** so attaching figures can't under-run the exact-spend guarantee;
+  **auto-routing upgrades to a vision-capable model** when a turn carries a figure, and a text-only
+  model has the image *and* its `[figure from cN]` placeholder stripped (never told about a plot it
+  can't see — no hallucinated descriptions); images are **PNG-magic-byte + size validated** (a saved
+  notebook is untrusted) and **capped per request**; a cell referenced twice attaches its figure once.
+  So `c3: "given {{c2}}, at what temperature does ΔG cross zero?"` can reason about the computed curve.
+
 - **The top bar shows who is signed in.** A "Signed in as \<name\>" label sits beside Log out,
   derived from the id_token (preferred_username / cognito:username / email). Complements the
   sidebar scope chips (tier/tenant/role) with the identity itself.

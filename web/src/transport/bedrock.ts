@@ -29,9 +29,39 @@ export function toConverseMessages(messages: ChatMessage[]): {
       continue;
     }
     const content: ContentBlock[] = [{ text: m.content }];
+    // Attach any inline PNG figures (#244) as Converse image blocks so a vision model can see
+    // them. A malformed / non-PNG data-URI is skipped (never sent as an arbitrary blob).
+    for (const dataUri of m.images ?? []) {
+      const bytes = pngDataUriToBytes(dataUri);
+      if (bytes) content.push({ image: { format: "png", source: { bytes } } });
+    }
     out.push({ role: m.role, content });
   }
   return { system, messages: out };
+}
+
+// PNG magic bytes + a decoded-size ceiling (~3.75 MB, Bedrock's per-image limit). A saved notebook
+// is an untrusted source of these strings (open reloads cell.output), so validate the DECODED bytes
+// (magic + size), not just the data-URI prefix.
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const MAX_IMAGE_BYTES = 3_750_000;
+
+// Decode a `data:image/png;base64,...` URI to bytes for a Converse image block. Returns null for
+// anything that isn't a real base64 PNG within the size limit (so we never forward an unexpected
+// blob). Pure.
+export function pngDataUriToBytes(dataUri: string): Uint8Array | null {
+  const prefix = "data:image/png;base64,";
+  if (typeof dataUri !== "string" || !dataUri.startsWith(prefix)) return null;
+  try {
+    const bin = atob(dataUri.slice(prefix.length));
+    if (bin.length > MAX_IMAGE_BYTES) return null;
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    if (bytes.length < PNG_MAGIC.length || PNG_MAGIC.some((b, i) => bytes[i] !== b)) return null;
+    return bytes;
+  } catch {
+    return null;
+  }
 }
 
 

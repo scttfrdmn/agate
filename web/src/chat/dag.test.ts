@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { NotebookCell } from "./notebook";
-import { buildDeps, dependentsOf, nextCellName, referencedNames, refsIn, resolveSource } from "./dag";
+import {
+  buildDeps,
+  dependentsOf,
+  nextCellName,
+  outputImages,
+  referencedNames,
+  refsIn,
+  resolveSource,
+  resolveSourceWithImages,
+} from "./dag";
 
 function cell(part: Partial<NotebookCell> & { id: string; name: string }): NotebookCell {
   return { kind: "prompt", prompt: "", state: "idle", ...part };
@@ -50,6 +59,57 @@ describe("resolveSource", () => {
   it("leaves unknown and self references untouched", () => {
     const cells = [cell({ id: "2", name: "c2", prompt: "{{c9}} and {{c2}}" })];
     expect(resolveSource(cells[0], cells).resolved).toBe("{{c9}} and {{c2}}");
+  });
+});
+
+describe("outputImages", () => {
+  it("returns a code cell's captured figures, empty for prompt cells", () => {
+    const png = "data:image/png;base64,AAAA";
+    const code = cell({ id: "1", name: "c1", kind: "code", output: { stdout: "", stderr: "", images: [png] } });
+    expect(outputImages(code)).toEqual([png]);
+    expect(outputImages(cell({ id: "2", name: "c2", answer: "hi" }))).toEqual([]);
+  });
+});
+
+describe("resolveSourceWithImages", () => {
+  const png = "data:image/png;base64,PLOT";
+  it("collects a referenced code cell's figures and leaves a [figure from cN] placeholder", () => {
+    const cells = [
+      cell({ id: "1", name: "c1", kind: "code", output: { stdout: "", stderr: "", images: [png] } }),
+      cell({ id: "2", name: "c2", prompt: "Interpret {{c1}}" }),
+    ];
+    const { resolved, images, deps } = resolveSourceWithImages(cells[1], cells);
+    expect(images).toEqual([png]);
+    expect(deps).toEqual(["c1"]);
+    expect(resolved).toContain("[figure from c1]");
+  });
+  it("includes text output alongside the figure placeholder when present", () => {
+    const cells = [
+      cell({ id: "1", name: "c1", kind: "code", output: { stdout: "T_eq = 500 K\n", stderr: "", images: [png] } }),
+      cell({ id: "2", name: "c2", prompt: "Given {{c1}}, explain" }),
+    ];
+    const { resolved } = resolveSourceWithImages(cells[1], cells);
+    expect(resolved).toContain("[figure from c1]");
+    expect(resolved).toContain("T_eq = 500 K");
+  });
+  it("falls back to plain text output when the referenced code cell has no figure", () => {
+    const cells = [
+      cell({ id: "1", name: "c1", kind: "code", output: { stdout: "", stderr: "", result: "42" } }),
+      cell({ id: "2", name: "c2", prompt: "value is {{c1}}" }),
+    ];
+    const { resolved, images } = resolveSourceWithImages(cells[1], cells);
+    expect(resolved).toBe("value is 42");
+    expect(images).toEqual([]);
+  });
+
+  it("does NOT attach the same figure twice when a cell is referenced twice (#244 M1)", () => {
+    const cells = [
+      cell({ id: "1", name: "c1", kind: "code", output: { stdout: "", stderr: "", images: [png] } }),
+      cell({ id: "2", name: "c2", prompt: "compare {{c1}} early vs {{c1}} late" }),
+    ];
+    const { images, deps } = resolveSourceWithImages(cells[1], cells);
+    expect(images).toEqual([png]); // once, not twice
+    expect(deps).toEqual(["c1"]);
   });
 });
 

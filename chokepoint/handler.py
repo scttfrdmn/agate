@@ -30,7 +30,7 @@ from decimal import Decimal
 from typing import Any
 
 import boto3
-from agate.entitlements import tier_for_model
+from agate.entitlements import models_for_tier, supports_vision, tier_for_model
 from agate.jwt_verify import TokenError, config_from_env, verify_token
 from agate.rag import ancestors
 from agate.router import select_model
@@ -52,11 +52,20 @@ class ChokepointError(Exception):
     """Reject the request (4xx). Never falls through to an unmetered call."""
 
 
+# Conservative per-image input-token charge (#244). We have no image tokenizer server-side, so we
+# over-count in the fail-closed direction: a vision model tokenizes an image up to ~1600 tokens
+# (Claude's per-image ceiling). Charged per image in the request so the pre-call gate can't be
+# under-run by attaching figures (the chokepoint's exact-spend guarantee — its whole reason to exist).
+IMAGE_TOKEN_CHARGE = 1600
+
+
 def estimate_input_tokens(messages: list[dict]) -> int:
-    """Conservative server-side input token estimate (char/4, round up). Never
-    trusts a client-supplied count — a small lie would shrink the pre-call gate."""
+    """Conservative server-side input token estimate (char/4 + a per-image charge, round up). Never
+    trusts a client-supplied count — a small lie would shrink the pre-call gate. Counts the raw
+    `images` list length BEFORE PNG validation, so it over-counts rather than under (fail-closed)."""
     chars = sum(len(str(m.get("content", ""))) for m in messages)
-    return int(math.ceil(chars / 4)) + 1
+    images = sum(len(m["images"]) for m in messages if isinstance(m.get("images"), list))
+    return int(math.ceil(chars / 4)) + 1 + images * IMAGE_TOKEN_CHARGE
 
 
 def is_auto(model: str | None) -> bool:
@@ -99,11 +108,62 @@ def to_converse_messages(messages: list[dict]) -> list[dict]:
         if not folded and system_text and m.get("role") == "user":
             content = f"{system_text}\n\n{content}"
             folded = True
-        out.append({"role": m["role"], "content": [{"text": content}]})
+        blocks: list[dict] = [{"text": content}]
+        # Inline figures (Canvas result→prompt loop, #244): a prompt referencing a code cell's
+        # plot passes PNG data-URIs; forward them as Converse image blocks so a vision model can
+        # see them. A non-PNG / malformed value is skipped (never sent as an arbitrary blob).
+        for block in _image_blocks(m.get("images")):
+            blocks.append(block)
+        out.append({"role": m["role"], "content": blocks})
     # No user turn to fold into (system-only request) — send the system text as a user turn.
     if system_text and not folded:
         out.insert(0, {"role": "user", "content": [{"text": system_text}]})
     return out
+
+
+# PNG magic bytes + a decoded-size ceiling (~3.75 MB, Bedrock's per-image limit) and a per-request
+# image cap. A saved notebook is an untrusted source of these strings (open reloads cell.output),
+# so validate the decoded bytes, not just the data-URI prefix — fail closed (skip), never forward.
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+_MAX_IMAGE_BYTES = 3_750_000
+_MAX_IMAGES = 16
+
+
+def _strip_images(messages: list[dict]) -> list[dict]:
+    """Drop `images` and any "[figure from cN]" placeholder lines from the messages — used when the
+    resolved model is text-only, so it's never told about a figure it can't see. Pure."""
+    import re as _re
+
+    out: list[dict] = []
+    for m in messages:
+        content = _re.sub(r"\[figure from [^\]]+\]\n?", "", str(m.get("content", "")))
+        out.append({"role": m.get("role"), "content": content})
+    return out
+
+
+def _image_blocks(images: object) -> list[dict]:
+    """Converse image content blocks from a list of `data:image/png;base64,...` URIs. Skips any
+    value that isn't a real base64 PNG within the size limit (defence in depth — a saved notebook
+    is untrusted; never forward an arbitrary blob). Caps the count per request."""
+    if not isinstance(images, list):
+        return []
+    import base64 as _b64
+
+    prefix = "data:image/png;base64,"
+    blocks: list[dict] = []
+    for img in images:
+        if len(blocks) >= _MAX_IMAGES:
+            break
+        if not isinstance(img, str) or not img.startswith(prefix):
+            continue
+        try:
+            raw = _b64.b64decode(img[len(prefix):], validate=True)
+        except Exception:  # noqa: BLE001 — a bad data-URI is skipped, not fatal
+            continue
+        if not raw.startswith(_PNG_MAGIC) or len(raw) > _MAX_IMAGE_BYTES:
+            continue  # not actually a PNG, or too large
+        blocks.append({"image": {"format": "png", "source": {"bytes": raw}}})
+    return blocks
 
 
 def lookup_budget(tenant: str, user: str, period: str) -> float | None:
@@ -252,6 +312,7 @@ def process(req: dict, *, period: str | None = None) -> dict:
     # SERVER picks the model — bounded by the VERIFIED tier and the remaining budget,
     # never a client-supplied tier. A concrete model id is used as-is (the picker only
     # ever offers entitled models; the cascade + IAM are the real gate regardless).
+    has_images = any(isinstance(m.get("images"), list) and m["images"] for m in messages)
     model_route: dict | None = None
     if is_auto(requested_model):
         choice = select_model(
@@ -263,6 +324,13 @@ def process(req: dict, *, period: str | None = None) -> dict:
         )
         model_id = choice.model_id
         model_route = {"model": model_id, "reason": choice.reason, "degraded": choice.degraded}
+        # If the turn carries figures (#244) but auto picked a text-only model, upgrade to a
+        # vision-capable entitled model so the plot is actually seen (not silently dropped).
+        if has_images and not supports_vision(model_id):
+            vision = next((m for m in reversed(models_for_tier(tags.tier)) if supports_vision(m)), None)
+            if vision:
+                model_id = vision
+                model_route = {"model": model_id, "reason": "vision required for referenced figure", "degraded": False}
     else:
         model_id = requested_model
 
@@ -280,11 +348,18 @@ def process(req: dict, *, period: str | None = None) -> dict:
             f"pre-call budget check failed at {gate.breaching_node}: {gate.reason}"
         )
 
+    # If the resolved model is text-only but the turn carries figures, strip the images AND their
+    # "[figure from cN]" placeholders — never tell a blind model about a figure it can't see (that
+    # invites a hallucinated description). A vision model keeps both.
+    send_messages = messages
+    if has_images and not supports_vision(model_id):
+        send_messages = _strip_images(messages)
+
     # Allowed: invoke Converse with the role narrowed by the VERIFIED tags.
     br = assume_user_role(tags, user)
     resp = br.converse(
         modelId=model_id,
-        messages=to_converse_messages(messages),
+        messages=to_converse_messages(send_messages),
         inferenceConfig={"maxTokens": max_tokens},
     )
     text = "".join(b.get("text", "") for b in resp["output"]["message"]["content"])

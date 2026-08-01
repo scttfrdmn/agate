@@ -5,7 +5,7 @@
 // folds into the same SessionMeter as a chat turn (wired by the caller).
 
 import type { ContextProvider } from "./session";
-import type { BudgetStatus, ConverseChunk, Transport } from "../transport";
+import type { BudgetStatus, ChatMessage, ConverseChunk, Transport } from "../transport";
 
 export interface CellRunResult {
   text: string;
@@ -28,6 +28,7 @@ export async function runCell(
   prompt: string,
   contextProvider?: ContextProvider,
   onDelta?: (delta: string) => void,
+  images?: string[],
 ): Promise<CellRunResult> {
   const grounding = contextProvider ? await contextProvider(prompt) : [];
   let text = "";
@@ -36,9 +37,13 @@ export async function runCell(
   let budget: BudgetStatus | undefined;
   let model: string | undefined;
   let modelRoute: CellRunResult["modelRoute"];
+  // Attach any referenced figures (Canvas result→prompt loop, #244) to the user turn so a
+  // multimodal model can see them; text-only transports drop them.
+  const userMsg: ChatMessage =
+    images && images.length ? { role: "user", content: prompt, images } : { role: "user", content: prompt };
   for await (const chunk of transport.converse({
     modelId,
-    messages: [...grounding, { role: "user", content: prompt }],
+    messages: [...grounding, userMsg],
   })) {
     const c: ConverseChunk = chunk;
     if (c.delta) {

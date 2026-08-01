@@ -32,7 +32,7 @@ import { suggestFollowups } from "./chat/followups";
 import { type NotebookCell, isEditedSinceRun, newCell } from "./chat/notebook";
 import { renderNotebook } from "./chat/notebook-ui";
 import { runCell } from "./chat/notebook-run";
-import { dependentsOf, nextCellName, resolveSource } from "./chat/dag";
+import { dependentsOf, nextCellName, resolveSource, resolveSourceWithImages } from "./chat/dag";
 import { deserializeNotebook, serializeNotebook } from "./chat/notebook-store";
 import { CodeKernel } from "./notebook/kernel";
 import { renderError, renderMemorySeed, renderScopeChips } from "./app/dom";
@@ -761,13 +761,15 @@ function main(): void {
   // Run ONE prompt cell (no cascade). Resolves {{cN}} references against the notebook first
   // (#200 slice 3) so an AI cell can build on another cell's output. Returns true on success.
   const runPromptCore = async (cell: NotebookCell, nb: { cells: NotebookCell[] }): Promise<boolean> => {
-    const { resolved } = resolveSource(cell, nb.cells);
+    // Resolve {{cN}} refs to text AND collect any referenced code cell's figures (result→prompt
+    // loop, #244), so a prompt can reason over a plot on a multimodal model.
+    const { resolved, images } = resolveSourceWithImages(cell, nb.cells);
     if (!resolved.trim()) return false;
     cell.state = "running";
     cell.error = undefined;
     paintNotebook();
     try {
-      const result = await runCell(askTransport, resolvePin(), resolved, groundingProvider);
+      const result = await runCell(askTransport, resolvePin(), resolved, groundingProvider, undefined, images);
       cell.answer = result.text;
       cell.sources = lastSources.slice();
       cell.meta = {

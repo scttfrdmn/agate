@@ -28,7 +28,13 @@ export function buildRequestBody(
   scope: ReturnType<OpenAIConfig["scope"]>,
   idpToken: string,
 ): Record<string, unknown> {
-  const messages = req.messages.map((m: ChatMessage) => ({ role: m.role, content: m.content }));
+  // Include any inline figures per message (#244); the chokepoint forwards them as Converse image
+  // blocks. Omitted when a message has none, so a text-only turn's body is unchanged.
+  const messages = req.messages.map((m: ChatMessage) =>
+    m.images && m.images.length
+      ? { role: m.role, content: m.content, images: m.images }
+      : { role: m.role, content: m.content },
+  );
   return {
     idp_token: idpToken,
     model: req.modelId,

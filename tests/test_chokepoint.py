@@ -17,15 +17,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from chokepoint import handler as cp  # noqa: E402
 
+# 1x1 transparent PNG (valid magic bytes) — shared across the image tests.
+_PNG = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+)
+
 
 class _FakeBedrock:
     def __init__(self):
         self.calls = 0
         self.last_model = None  # the modelId the choke point invoked Converse with
+        self.last_messages = None  # the Converse `messages` it was called with
 
     def converse(self, modelId, messages, inferenceConfig):  # noqa: N803
         self.calls += 1
         self.last_model = modelId
+        self.last_messages = messages
         return {
             "output": {"message": {"content": [{"text": "answer"}]}},
             "usage": {"inputTokens": 12, "outputTokens": 8},
@@ -51,6 +59,10 @@ class _Wired:
     @property
     def last_model(self) -> str | None:
         return self._br.last_model
+
+    @property
+    def last_messages(self):
+        return self._br.last_messages
 
 
 @pytest.fixture
@@ -166,6 +178,37 @@ def test_explicit_model_is_not_rerouted(wired):
     assert "model_route" not in out
 
 
+def test_auto_upgrades_to_vision_model_when_turn_has_a_figure(wired):
+    # #244 H2: a figure-bearing turn under "auto" must route to a vision-capable entitled model,
+    # not the cheapest text-only one. faculty → mid tier includes Claude (vision).
+    wired.spend, wired.budget = 0.0, 100.0
+    req = _req(token=_token(affiliation="faculty"), model="auto")
+    req["messages"] = [{"role": "user", "content": "interpret [figure from c1]", "images": [_PNG]}]
+    out = cp.process(req, period="2026-06")
+    from agate.entitlements import supports_vision
+
+    assert supports_vision(wired.last_model)
+    assert "vision" in out["model_route"]["reason"]
+    # The image reached Converse as an image block.
+    assert any(b.get("image") for b in wired.last_messages[0]["content"])
+
+
+def test_text_only_model_strips_image_and_placeholder(wired):
+    # #244 H2: a text-only model (student → oss) must NOT be told about a figure it can't see —
+    # both the image block AND the "[figure from cN]" text placeholder are stripped.
+    wired.spend, wired.budget = 0.0, 100.0
+    req = _req(model="openai.gpt-oss-120b-1:0")  # explicit text-only model
+    req["messages"] = [
+        {"role": "user", "content": "explain [figure from c1]\nT_eq = 500", "images": [_PNG]}
+    ]
+    cp.process(req, period="2026-06")
+    content = wired.last_messages[0]["content"]
+    assert all(not b.get("image") for b in content)  # no image block
+    text = " ".join(b.get("text", "") for b in content)
+    assert "[figure from c1]" not in text  # placeholder gone
+    assert "T_eq = 500" in text  # real text output kept
+
+
 def test_response_reports_spend_and_budget_for_the_ui(wired):
     # The UI shows "where you stand": spend_after = prior spend + this call's cost,
     # plus the period budget (None when no cap is configured).
@@ -260,6 +303,16 @@ def test_estimate_input_tokens_is_server_side():
     assert cp.estimate_input_tokens([]) == 1
 
 
+def test_estimate_input_tokens_charges_for_images():
+    # #244 H1: each attached figure adds a conservative token charge so the pre-call gate can't be
+    # under-run by attaching images (the chokepoint's exact-spend guarantee).
+    base = cp.estimate_input_tokens([{"role": "user", "content": "x" * 40}])
+    with_img = cp.estimate_input_tokens(
+        [{"role": "user", "content": "x" * 40, "images": [_PNG, _PNG]}]
+    )
+    assert with_img == base + 2 * cp.IMAGE_TOKEN_CHARGE
+
+
 def test_to_converse_messages_folds_system_into_first_user_turn():
     # Bedrock Converse has no system role, and the oss tier rejects system messages;
     # the SPA's RAG path prepends grounding as a system message. Fold it into the
@@ -287,6 +340,49 @@ def test_to_converse_messages_no_system_is_passthrough():
 def test_to_converse_messages_system_only_becomes_user_turn():
     out = cp.to_converse_messages([{"role": "system", "content": "ctx"}])
     assert out == [{"role": "user", "content": [{"text": "ctx"}]}]
+
+
+def test_to_converse_messages_attaches_png_figure_as_image_block():
+    # Canvas result→prompt loop (#244): a user turn's `images` become Converse image blocks
+    # after the text, with raw PNG bytes.
+    out = cp.to_converse_messages([{"role": "user", "content": "interpret", "images": [_PNG]}])
+    assert out[0]["role"] == "user"
+    assert out[0]["content"][0] == {"text": "interpret"}
+    img = out[0]["content"][1]
+    assert img["image"]["format"] == "png"
+    assert isinstance(img["image"]["source"]["bytes"], (bytes, bytearray))
+    assert len(img["image"]["source"]["bytes"]) > 0
+
+
+def test_to_converse_messages_skips_non_png_image():
+    # A non-PNG / malformed data-URI is never forwarded as an arbitrary blob.
+    out = cp.to_converse_messages(
+        [
+            {
+                "role": "user",
+                "content": "x",
+                "images": ["javascript:alert(1)", "data:text/html;base64,zz"],
+            }
+        ]
+    )
+    assert out[0]["content"] == [{"text": "x"}]
+
+
+def test_image_blocks_rejects_png_prefix_with_non_png_bytes():
+    # #244 M2: a data-URI with the png prefix but arbitrary (non-PNG-magic) bytes is skipped —
+    # a saved notebook is untrusted, so we validate the DECODED bytes, not just the prefix.
+    import base64 as _b64
+
+    fake = "data:image/png;base64," + _b64.b64encode(b"not a real png").decode()
+    assert cp._image_blocks([fake]) == []
+    # And a real PNG still passes.
+    assert len(cp._image_blocks([_PNG])) == 1
+
+
+def test_image_blocks_caps_count():
+    # #244 M3: never forward more than the per-request image cap.
+    out = cp._image_blocks([_PNG] * (cp._MAX_IMAGES + 5))
+    assert len(out) == cp._MAX_IMAGES
 
 
 def test_handler_with_system_message_never_sends_system_role(wired):

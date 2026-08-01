@@ -8,6 +8,11 @@
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
+  // Optional inline images (PNG data-URIs) attached to this turn — the multimodal leg of the
+  // Canvas result→prompt loop (#244): a prompt cell referencing a code cell's plot passes that
+  // figure here so a multimodal model can actually SEE it. Transports targeting a text-only
+  // model drop these; ones that support vision emit image content blocks.
+  images?: string[];
 }
 
 export interface ConverseRequest {

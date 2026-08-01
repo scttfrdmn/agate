@@ -9,8 +9,18 @@ from agate.entitlements import (
     foundation_model_arn,
     model_arns_for_tier,
     models_for_tier,
+    supports_vision,
     tier_for_model,
 )
+
+
+def test_supports_vision():
+    # Claude ids (all entitled Claude are multimodal) → vision; oss/gemma → text-only; unknown → no.
+    assert supports_vision("us.anthropic.claude-opus-4-1-20250805-v1:0")
+    assert supports_vision("us.anthropic.claude-haiku-4-5-20251001-v1:0")
+    assert not supports_vision("openai.gpt-oss-20b-1:0")
+    assert not supports_vision("google.gemma-3-12b-it")
+    assert not supports_vision("some.unlisted-model")  # fail closed
 
 
 def test_tiers_are_cumulative():

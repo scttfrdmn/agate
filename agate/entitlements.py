@@ -108,6 +108,16 @@ def tier_for_model(model_id: str) -> Tier | None:
     return None
 
 
+def supports_vision(model_id: str) -> bool:
+    """Whether a model can accept image input (the Canvas result→prompt image leg, #244).
+
+    Anthropic Claude 3+/4/5 are vision-capable; the open-weight rung (gpt-oss, Gemma text
+    variants) is text-only. Conservative substring match on the id — an unknown id is treated as
+    NOT vision-capable (fail closed: don't attach an image a model may reject). Pure."""
+    mid = model_id.lower()
+    return "claude" in mid  # entitled Claude ids are all multimodal; oss/gemma are text-only
+
+
 _PROFILE_PREFIXES = ("us", "eu", "apac")
 
 

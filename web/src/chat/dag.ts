@@ -62,6 +62,48 @@ export function resolveSource(
   return { resolved, deps };
 }
 
+// Max figures attached to a single prompt turn (Bedrock Converse accepts ~20 images/request).
+const MAX_REF_IMAGES = 16;
+
+/** The images a referenced cell exposes — a code cell's captured figure PNGs. Pure. */
+export function outputImages(cell: NotebookCell): string[] {
+  return cell.kind === "code" ? (cell.output?.images ?? []) : [];
+}
+
+/**
+ * Like resolveSource, but ALSO collects the images of any referenced code cells so a prompt cell
+ * can reason over a plot (the Canvas result→prompt loop, #244). For a referenced code cell that
+ * produced figure(s), the {{cN}} token is replaced with a short text placeholder ("[figure from
+ * cN]") AND its PNGs are gathered into `images`; text output still inlines as before. Only used for
+ * PROMPT cells (a code cell can't consume an image as source). Pure.
+ */
+export function resolveSourceWithImages(
+  cell: NotebookCell,
+  cells: NotebookCell[],
+): { resolved: string; deps: string[]; images: string[] } {
+  const named = byName(cells);
+  const deps: string[] = [];
+  const images: string[] = [];
+  const resolved = cell.prompt.replace(REF_RE, (whole, name: string) => {
+    const ref = named.get(name);
+    if (!ref || ref.id === cell.id) return whole;
+    // Collect a cell's figures only the FIRST time its name is seen, so referencing {{cN}} twice
+    // doesn't attach (and pay for) the same image twice. `deps` gates both.
+    const firstSeen = !deps.includes(name);
+    if (firstSeen) deps.push(name);
+    const imgs = outputImages(ref);
+    if (imgs.length) {
+      if (firstSeen) images.push(...imgs);
+      const text = outputText(ref);
+      // Reference the figure by name; include any text output (stdout) alongside it.
+      return text ? `[figure from ${name}]\n${text}` : `[figure from ${name}]`;
+    }
+    return outputText(ref);
+  });
+  // Cap the images per turn (Bedrock accepts ~20/request); keep the earliest.
+  return { resolved, deps, images: images.slice(0, MAX_REF_IMAGES) };
+}
+
 /** id → ids it directly depends on (the cells it references). Pure. */
 export function buildDeps(cells: NotebookCell[]): Map<string, string[]> {
   const named = byName(cells);
